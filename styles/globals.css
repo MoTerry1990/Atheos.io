@@ -1,0 +1,526 @@
+/* ==========================================================================
+   Atheos.io — design system
+
+   Tailwind v4 is CSS-first: there is no tailwind.config.js. Every design token
+   lives in this file, which makes it the single source of truth for the visual
+   language. A token defined in `@theme` becomes a utility automatically —
+   `--color-brand-500` yields `bg-brand-500`, `text-brand-500`, `border-brand-500`
+   and so on.
+
+   The structure below is deliberate:
+
+     1. @theme      — the raw scales. Static, semantic-free, rarely edited.
+     2. :root/.dark — semantic roles mapped onto those scales, per theme.
+     3. @theme inline — exposes the semantic roles as utilities.
+
+   Components reference *roles* (`bg-surface`, `text-muted-foreground`), never
+   raw scales. That indirection is the entire reason a theme can be changed
+   without touching a single component.
+   ========================================================================== */
+
+@import "tailwindcss";
+@import "tw-animate-css";
+
+/* Dark mode is class-driven, not media-driven, because the user gets to choose
+   and that choice has to survive a reload. next-themes writes `.dark` onto
+   <html>. */
+@custom-variant dark (&:is(.dark *));
+
+/* ==========================================================================
+   1. Scales
+   ========================================================================== */
+
+@theme {
+  /* ---- Brand -----------------------------------------------------------
+     Violet: the colour of creative tooling, and distinct from the blue every
+     SaaS dashboard defaults to. Defined in oklch so that steps are
+     perceptually even — the same numeric jump looks like the same jump to the
+     eye, which is not true of hex.                                          */
+  --color-brand-50: oklch(0.977 0.014 308.299);
+  --color-brand-100: oklch(0.946 0.033 307.174);
+  --color-brand-200: oklch(0.902 0.063 306.703);
+  --color-brand-300: oklch(0.827 0.119 306.383);
+  --color-brand-400: oklch(0.714 0.203 305.504);
+  --color-brand-500: oklch(0.627 0.265 303.9);
+  --color-brand-600: oklch(0.558 0.288 302.321);
+  --color-brand-700: oklch(0.496 0.265 301.924);
+  --color-brand-800: oklch(0.438 0.218 303.724);
+  --color-brand-900: oklch(0.381 0.176 304.987);
+  --color-brand-950: oklch(0.291 0.149 302.717);
+
+  /* ---- Neutral ---------------------------------------------------------
+     Very slightly cool and desaturated. A true grey next to a saturated brand
+     reads as dirty; a hint of the brand hue in the neutrals makes the whole
+     interface feel considered.                                              */
+  --color-neutral-0: oklch(1 0 0);
+  --color-neutral-50: oklch(0.985 0.002 300);
+  --color-neutral-100: oklch(0.967 0.003 300);
+  --color-neutral-200: oklch(0.922 0.004 300);
+  --color-neutral-300: oklch(0.87 0.006 300);
+  --color-neutral-400: oklch(0.708 0.008 300);
+  --color-neutral-500: oklch(0.556 0.009 300);
+  --color-neutral-600: oklch(0.439 0.008 300);
+  --color-neutral-700: oklch(0.371 0.008 300);
+  --color-neutral-800: oklch(0.269 0.007 300);
+  --color-neutral-850: oklch(0.213 0.006 300);
+  --color-neutral-900: oklch(0.176 0.006 300);
+  --color-neutral-950: oklch(0.129 0.005 300);
+  --color-neutral-1000: oklch(0.09 0.004 300);
+
+  /* ---- Semantic --------------------------------------------------------- */
+  --color-success-500: oklch(0.696 0.17 162.48);
+  --color-success-600: oklch(0.596 0.145 163.225);
+  --color-warning-500: oklch(0.769 0.188 70.08);
+  --color-warning-600: oklch(0.666 0.179 58.318);
+  --color-danger-500: oklch(0.637 0.237 25.331);
+  --color-danger-600: oklch(0.577 0.245 27.325);
+  --color-info-500: oklch(0.685 0.169 237.323);
+  --color-info-600: oklch(0.588 0.158 241.966);
+
+  /* ---- Typography -------------------------------------------------------
+     Two families only. A third is a decision nobody can defend later.        */
+  --font-sans:
+    var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    sans-serif;
+  --font-mono:
+    var(--font-geist-mono), ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  /* Type scale on a ~1.25 ratio. Line heights tighten as size grows, because
+     large text needs proportionally less leading to look right.              */
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1.125rem;
+  --text-sm: 0.875rem;
+  --text-sm--line-height: 1.375rem;
+  --text-base: 1rem;
+  --text-base--line-height: 1.625rem;
+  --text-lg: 1.125rem;
+  --text-lg--line-height: 1.75rem;
+  --text-xl: 1.375rem;
+  --text-xl--line-height: 1.875rem;
+  --text-2xl: 1.75rem;
+  --text-2xl--line-height: 2.125rem;
+  --text-3xl: 2.25rem;
+  --text-3xl--line-height: 2.5rem;
+  --text-4xl: 3rem;
+  --text-4xl--line-height: 3.25rem;
+  --text-5xl: 3.75rem;
+  --text-5xl--line-height: 3.9rem;
+  --text-6xl: 4.75rem;
+  --text-6xl--line-height: 4.9rem;
+
+  /* Display sizes need negative tracking or they look loose and amateurish. */
+  --tracking-tighter: -0.04em;
+  --tracking-tight: -0.02em;
+  --tracking-normal: 0em;
+  --tracking-wide: 0.02em;
+  --tracking-wider: 0.06em;
+
+  /* ---- Spacing ----------------------------------------------------------
+     Tailwind's 4px base is kept. These are additions for layout-scale gaps
+     that would otherwise be written as arbitrary values over and over.       */
+  --spacing-18: 4.5rem;
+  --spacing-22: 5.5rem;
+  --spacing-30: 7.5rem;
+  --spacing-128: 32rem;
+  --spacing-144: 36rem;
+
+  /* ---- Radii ------------------------------------------------------------
+     Everything derives from one value, so the product's "roundness" is a
+     single-line change rather than a search-and-replace.                     */
+  --radius: 0.625rem;
+  --radius-xs: calc(var(--radius) - 6px);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 12px);
+  --radius-3xl: calc(var(--radius) + 20px);
+
+  /* ---- Elevation --------------------------------------------------------
+     Layered shadows rather than one blurry drop. Real objects cast a tight
+     contact shadow *and* a soft ambient one; reproducing both is most of the
+     difference between "premium" and "bootstrap".                            */
+  --shadow-xs: 0 1px 2px 0 oklch(0 0 0 / 0.05);
+  --shadow-sm:
+    0 1px 3px 0 oklch(0 0 0 / 0.08), 0 1px 2px -1px oklch(0 0 0 / 0.06);
+  --shadow-md:
+    0 4px 8px -2px oklch(0 0 0 / 0.1), 0 2px 4px -2px oklch(0 0 0 / 0.06);
+  --shadow-lg:
+    0 12px 20px -6px oklch(0 0 0 / 0.12), 0 4px 8px -4px oklch(0 0 0 / 0.08);
+  --shadow-xl:
+    0 24px 40px -12px oklch(0 0 0 / 0.18), 0 8px 16px -8px oklch(0 0 0 / 0.1);
+  --shadow-glow:
+    0 0 0 1px oklch(0.627 0.265 303.9 / 0.2),
+    0 0 32px -4px oklch(0.627 0.265 303.9 / 0.35);
+
+  /* ---- Breakpoints ------------------------------------------------------
+     `xs` for small phones, `3xl` because a creative tool is used on large
+     displays and an asset grid should keep filling them.                     */
+  --breakpoint-xs: 24rem;
+  --breakpoint-sm: 40rem;
+  --breakpoint-md: 48rem;
+  --breakpoint-lg: 64rem;
+  --breakpoint-xl: 80rem;
+  --breakpoint-2xl: 96rem;
+  --breakpoint-3xl: 120rem;
+
+  /* ---- Motion -----------------------------------------------------------
+     One easing curve for entrances, one for exits, one spring-like curve for
+     anything the user directly manipulated. Durations are short: perceived
+     quality comes from responsiveness, not from long animations.             */
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --ease-in-quart: cubic-bezier(0.5, 0, 0.75, 0);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  --duration-instant: 80ms;
+  --duration-fast: 150ms;
+  --duration-normal: 240ms;
+  --duration-slow: 400ms;
+  --duration-deliberate: 700ms;
+
+  --animate-fade-in: fade-in var(--duration-normal) var(--ease-out-quart) both;
+  --animate-fade-up: fade-up var(--duration-slow) var(--ease-out-quart) both;
+  --animate-scale-in: scale-in var(--duration-fast) var(--ease-spring) both;
+  --animate-shimmer: shimmer 2s linear infinite;
+  --animate-pulse-glow: pulse-glow 2.4s var(--ease-out-quart) infinite;
+
+  @keyframes fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes fade-up {
+    from {
+      opacity: 0;
+      transform: translateY(12px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes scale-in {
+    from {
+      opacity: 0;
+      transform: scale(0.96);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  /* For skeletons while a generation is pending. */
+  @keyframes shimmer {
+    from {
+      background-position: -200% 0;
+    }
+    to {
+      background-position: 200% 0;
+    }
+  }
+
+  /* For the "working on it" state of a running job. */
+  @keyframes pulse-glow {
+    0%,
+    100% {
+      opacity: 1;
+      box-shadow: 0 0 0 0 oklch(0.627 0.265 303.9 / 0.4);
+    }
+    50% {
+      opacity: 0.85;
+      box-shadow: 0 0 0 8px oklch(0.627 0.265 303.9 / 0);
+    }
+  }
+}
+
+/* ==========================================================================
+   2. Semantic roles
+
+   Light theme first, dark as an override. Names describe *purpose*, not
+   appearance: `--surface-raised`, never `--grey-800`. Renaming a colour must
+   never require renaming a component.
+
+   The shadcn/ui contract (background, foreground, primary, muted, accent,
+   destructive, border, input, ring, card, popover, chart-*, sidebar-*) is
+   included so every component pulled in with `shadcn add` inherits this theme
+   with no modification.
+   ========================================================================== */
+
+:root {
+  --background: var(--color-neutral-0);
+  --foreground: var(--color-neutral-950);
+
+  --surface: var(--color-neutral-0);
+  --surface-raised: var(--color-neutral-50);
+  --surface-sunken: var(--color-neutral-100);
+
+  --card: var(--color-neutral-0);
+  --card-foreground: var(--color-neutral-950);
+  --popover: var(--color-neutral-0);
+  --popover-foreground: var(--color-neutral-950);
+
+  --primary: var(--color-brand-600);
+  --primary-foreground: var(--color-neutral-0);
+
+  --secondary: var(--color-neutral-100);
+  --secondary-foreground: var(--color-neutral-900);
+
+  --muted: var(--color-neutral-100);
+  --muted-foreground: var(--color-neutral-500);
+
+  --accent: var(--color-brand-50);
+  --accent-foreground: var(--color-brand-700);
+
+  --destructive: var(--color-danger-600);
+  --destructive-foreground: var(--color-neutral-0);
+  --success: var(--color-success-600);
+  --warning: var(--color-warning-600);
+  --info: var(--color-info-600);
+
+  --border: var(--color-neutral-200);
+  --input: var(--color-neutral-200);
+  --ring: var(--color-brand-500);
+
+  --chart-1: var(--color-brand-500);
+  --chart-2: var(--color-info-500);
+  --chart-3: var(--color-success-500);
+  --chart-4: var(--color-warning-500);
+  --chart-5: var(--color-danger-500);
+
+  --sidebar: var(--color-neutral-50);
+  --sidebar-foreground: var(--color-neutral-900);
+  --sidebar-primary: var(--color-brand-600);
+  --sidebar-primary-foreground: var(--color-neutral-0);
+  --sidebar-accent: var(--color-neutral-100);
+  --sidebar-accent-foreground: var(--color-neutral-900);
+  --sidebar-border: var(--color-neutral-200);
+  --sidebar-ring: var(--color-brand-500);
+}
+
+/* Dark is the primary theme for this product: generated imagery reads better
+   against a dark surround, and creative tools are used for long sessions.
+   Note that surfaces get *lighter* as they rise, inverting the light theme —
+   copying light-mode elevation into dark mode is what makes dark themes look
+   muddy. */
+.dark {
+  --background: var(--color-neutral-1000);
+  --foreground: var(--color-neutral-50);
+
+  --surface: var(--color-neutral-950);
+  --surface-raised: var(--color-neutral-900);
+  --surface-sunken: var(--color-neutral-1000);
+
+  --card: var(--color-neutral-900);
+  --card-foreground: var(--color-neutral-50);
+  --popover: var(--color-neutral-850);
+  --popover-foreground: var(--color-neutral-50);
+
+  --primary: var(--color-brand-500);
+  --primary-foreground: var(--color-neutral-1000);
+
+  --secondary: var(--color-neutral-850);
+  --secondary-foreground: var(--color-neutral-100);
+
+  --muted: var(--color-neutral-850);
+  --muted-foreground: var(--color-neutral-400);
+
+  --accent: var(--color-brand-950);
+  --accent-foreground: var(--color-brand-200);
+
+  --destructive: var(--color-danger-500);
+  --destructive-foreground: var(--color-neutral-950);
+  --success: var(--color-success-500);
+  --warning: var(--color-warning-500);
+  --info: var(--color-info-500);
+
+  /* Hairlines in dark mode are better done with low-alpha white than with a
+     solid grey — it keeps the edge visible over any surface beneath it. */
+  --border: oklch(1 0 0 / 0.1);
+  --input: oklch(1 0 0 / 0.14);
+  --ring: var(--color-brand-400);
+
+  --sidebar: var(--color-neutral-950);
+  --sidebar-foreground: var(--color-neutral-100);
+  --sidebar-primary: var(--color-brand-500);
+  --sidebar-primary-foreground: var(--color-neutral-1000);
+  --sidebar-accent: var(--color-neutral-850);
+  --sidebar-accent-foreground: var(--color-neutral-100);
+  --sidebar-border: oklch(1 0 0 / 0.1);
+  --sidebar-ring: var(--color-brand-400);
+}
+
+/* ==========================================================================
+   3. Expose roles as utilities
+
+   `inline` resolves the var() at build time so `bg-background` compiles to the
+   variable reference rather than a snapshot of its current value — which is
+   what allows a single class to respond to the theme.
+   ========================================================================== */
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-sunken: var(--surface-sunken);
+
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-info: var(--info);
+
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+/* ==========================================================================
+   4. Base layer
+   ========================================================================== */
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  html {
+    /* Anchor links and scroll-to actions should glide, unless the user has
+       asked the system not to animate. */
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-background font-sans text-foreground antialiased;
+    text-rendering: optimizeLegibility;
+    font-feature-settings:
+      "cv02" 1,
+      "cv03" 1,
+      "cv04" 1;
+  }
+
+  /* Display type: tight tracking, balanced wrapping. `text-wrap: balance`
+     stops headings from leaving a single orphaned word on the last line. */
+  h1,
+  h2,
+  h3,
+  h4 {
+    @apply font-semibold tracking-tight;
+    text-wrap: balance;
+  }
+
+  p {
+    text-wrap: pretty;
+  }
+
+  /* A visible, consistent focus ring is an accessibility requirement, not a
+     styling preference. Only ever restyle it — never remove it. */
+  :focus-visible {
+    @apply ring-2 ring-ring ring-offset-2 outline-none;
+    ring-offset-color: var(--background);
+  }
+
+  ::selection {
+    background-color: var(--color-brand-500);
+    color: var(--color-neutral-0);
+  }
+
+  /* Scrollbars, themed. Default light scrollbars against a near-black surface
+     are the most common tell of a dark theme that was added late. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-neutral-400) transparent;
+  }
+
+  .dark * {
+    scrollbar-color: var(--color-neutral-700) transparent;
+  }
+
+  /* Honour the OS-level request to reduce motion. Non-negotiable: for some
+     people this is a vestibular-health setting, not a preference. */
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+/* ==========================================================================
+   5. Composed utilities
+   ========================================================================== */
+
+@utility surface-glass {
+  /* Frosted panel used for overlays and floating toolbars. */
+  background-color: color-mix(in oklch, var(--surface) 72%, transparent);
+  backdrop-filter: blur(16px) saturate(160%);
+  border: 1px solid var(--border);
+}
+
+@utility text-gradient-brand {
+  background-image: linear-gradient(
+    100deg,
+    var(--color-brand-400),
+    var(--color-brand-600) 55%,
+    var(--color-info-500)
+  );
+  background-clip: text;
+  color: transparent;
+}
+
+@utility skeleton {
+  background-image: linear-gradient(
+    90deg,
+    var(--muted) 25%,
+    var(--surface-raised) 50%,
+    var(--muted) 75%
+  );
+  background-size: 200% 100%;
+  animation: var(--animate-shimmer);
+}
