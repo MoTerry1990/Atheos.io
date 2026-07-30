@@ -45,13 +45,42 @@ _Every surface the product will ever be built from._
 no horizontal overflow, and both themes measured against WCAG AA.
 
 > Reordered from the original plan, which had identity here. The design system
-> came first so that Sprint 2's auth screens are assembled from finished
+> came first so that the auth screens are assembled from finished
 > components rather than inventing styling as they go — and so the visual
 > language is decided once, not per-feature.
 
 ---
 
-## Sprint 2 — Identity and account
+## Sprint 2 — Landing page ✅
+
+_The first thing anyone sees._
+
+- Thirteen sections: nav, hero, animated background, trusted by, AI showcase,
+  features, how it works, templates, gallery, pricing, FAQ, footer
+- Motion throughout — orchestrated hero entrance, scroll reveals, sliding tab
+  and billing pills, animated FAQ accordion
+- CSS-only animated background: aurora, drifting orbs, masked grid, grain
+- SEO: full metadata, canonical, generated OG image, sitemap, robots, and
+  Organization / WebSite / SoftwareApplication / FAQPage structured data
+- One content module — the FAQ renders as both accordion and JSON-LD from a
+  single source, so structured data cannot drift from the page
+
+**Exit criteria:** zero console errors, no horizontal overflow at 375px, every
+tap target ≥ 24px, one `h1`, and a clean production build.
+
+> Reordered again: identity moves to Sprint 3. The landing page is what makes
+> the product explicable, and it needs the design system that Sprint 1 built —
+> whereas auth needs neither.
+
+**Honesty constraints held during this sprint**, recorded because they will be
+under pressure later: no invented customer logos, no fabricated usage metrics,
+no `aggregateRating` in structured data without real reviews, and no stock
+imagery presented as model output. The gallery says on the page that its
+artwork is procedural.
+
+---
+
+## Sprint 3 — Identity and account
 
 _The first real user record._
 
@@ -67,7 +96,7 @@ with their credit balance.
 
 ---
 
-## Sprint 2 — The generation core
+## Sprint 4 — The generation core
 
 _The reason the product exists._
 
@@ -83,7 +112,7 @@ download.
 
 ---
 
-## Sprint 3 — The creative workspace
+## Sprint 5 — The creative workspace
 
 - Asset library: browse, search, filter, tag, delete
 - Collections and simple project grouping
@@ -95,7 +124,7 @@ download.
 
 ---
 
-## Sprint 4 — Video and audio
+## Sprint 6 — Video and audio
 
 - Video providers behind the same adapter interface
 - Audio and voice providers behind the same adapter interface
@@ -108,7 +137,7 @@ credit ledger.
 
 ---
 
-## Sprint 5 — Billing
+## Sprint 7 — Billing
 
 - Stripe products, prices, and the credit-pack catalogue
 - Checkout and customer portal
@@ -120,19 +149,19 @@ credit ledger.
 
 ---
 
-## Sprint 6 — The premium surface
+## Sprint 8 — Polish and performance
 
-- Marketing landing page and pricing page
-- Onboarding and empty states
+- Onboarding and first-run experience
 - Motion pass: page transitions, generation choreography
-- SEO, Open Graph, sitemap, structured data
-- Performance budget enforced in CI
+- Landing-page revision against real usage data
+- Core Web Vitals and a performance budget enforced in CI
+- Accessibility audit with a screen reader, not just a linter
 
 **Exit criteria:** the product looks like what it charges for.
 
 ---
 
-## Sprint 7 — Scale and operations
+## Sprint 9 — Scale and operations
 
 - Rate limiting and abuse prevention
 - Provider failover and circuit breaking

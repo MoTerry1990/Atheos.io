@@ -292,6 +292,31 @@
     }
   }
 
+  /* Hero orbs. Long, offset durations so the composition never visibly
+     repeats — two orbs on the same cycle read as a looping GIF. */
+  @keyframes drift {
+    0%,
+    100% {
+      transform: translate3d(0, 0, 0) scale(1);
+    }
+    33% {
+      transform: translate3d(4%, -6%, 0) scale(1.08);
+    }
+    66% {
+      transform: translate3d(-5%, 4%, 0) scale(0.94);
+    }
+  }
+
+  /* Seamless because the track holds two copies of its content. */
+  @keyframes marquee {
+    from {
+      transform: translateX(0);
+    }
+    to {
+      transform: translateX(-50%);
+    }
+  }
+
   /* For the "working on it" state of a running job. */
   @keyframes pulse-glow {
     0%,
@@ -621,6 +646,65 @@
   background:
     linear-gradient(var(--card), var(--card)) padding-box,
     var(--gradient-brand) border-box;
+}
+
+/* --------------------------------------------------------------------------
+   Landing-page atmosphere
+   --------------------------------------------------------------------------
+   These build the hero backdrop. All of them are pure CSS and composited on
+   the GPU — the background must not cost main-thread time, because it is on
+   screen while the page is still hydrating and every dropped frame there is
+   the first impression.
+   -------------------------------------------------------------------------- */
+
+/* Faint technical grid, faded out towards the edges with a mask so it never
+   meets the viewport edge as a hard line. */
+@utility bg-grid {
+  background-image:
+    linear-gradient(to right, var(--border) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--border) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(
+    ellipse 80% 60% at 50% 0%,
+    black 30%,
+    transparent 75%
+  );
+}
+
+/* Soft colour blob. Blurred heavily and animated on transform only, so it
+   never triggers layout or paint. */
+@utility orb {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(72px);
+  opacity: 0.5;
+  will-change: transform;
+}
+
+/* Film grain. Breaks up large flat gradients, which otherwise band badly on
+   8-bit displays — the most common reason a gradient hero looks cheap. */
+@utility grain {
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.28'/%3E%3C/svg%3E");
+  background-size: 180px 180px;
+}
+
+/* Marquee track. Duplicated content plus a -50% translate is what makes the
+   loop seamless; animating `left` or using JS would not be. */
+@utility marquee-track {
+  animation: marquee 38s linear infinite;
+  will-change: transform;
+}
+
+/* Edge fade for marquees and scrollers, so content dissolves rather than being
+   guillotined by the container. */
+@utility mask-fade-x {
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    black 8%,
+    black 92%,
+    transparent
+  );
 }
 
 /* Brand glow for focused or active elements. Deliberately a ring plus a soft
