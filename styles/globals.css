@@ -185,6 +185,46 @@
   --animate-scale-in: scale-in var(--duration-fast) var(--ease-spring) both;
   --animate-shimmer: shimmer 2s linear infinite;
   --animate-pulse-glow: pulse-glow 2.4s var(--ease-out-quart) infinite;
+  --animate-spin-slow: spin 1.4s linear infinite;
+  --animate-sweep: sweep 2.2s var(--ease-out-quart) infinite;
+  --animate-indeterminate: indeterminate 1.4s var(--ease-out-quart) infinite;
+
+  /* ---- Gradients --------------------------------------------------------
+     Three, and only three. A gradient per component is how an interface stops
+     looking designed and starts looking decorated.
+
+       brand     the product's signature — headlines, primary emphasis
+       aurora    ambient background wash, always behind content, never near text
+       surface   a near-invisible sheen that gives large panels depth
+
+     All are defined as tokens rather than inline so a rebrand is one edit.    */
+  --gradient-brand: linear-gradient(
+    100deg,
+    var(--color-brand-400) 0%,
+    var(--color-brand-600) 55%,
+    var(--color-info-500) 100%
+  );
+  --gradient-brand-subtle: linear-gradient(
+    140deg,
+    oklch(0.627 0.265 303.9 / 0.16) 0%,
+    oklch(0.685 0.169 237.323 / 0.08) 100%
+  );
+  --gradient-aurora:
+    radial-gradient(
+      60rem 30rem at 15% -10%,
+      oklch(0.627 0.265 303.9 / 0.22),
+      transparent 60%
+    ),
+    radial-gradient(
+      48rem 26rem at 90% 0%,
+      oklch(0.685 0.169 237.323 / 0.16),
+      transparent 55%
+    );
+  --gradient-surface: linear-gradient(
+    180deg,
+    oklch(1 0 0 / 0.04) 0%,
+    transparent 45%
+  );
 
   @keyframes fade-in {
     from {
@@ -224,6 +264,31 @@
     }
     to {
       background-position: 200% 0;
+    }
+  }
+
+  /* Light sweeping across a surface — used on the loading bar and on the
+     "generating" state of a card. */
+  @keyframes sweep {
+    0% {
+      transform: translateX(-100%);
+    }
+    100% {
+      transform: translateX(200%);
+    }
+  }
+
+  /* Progress with no known total: video generation reports nothing useful for
+     minutes at a time, and a bar that sits at 0% reads as broken. */
+  @keyframes indeterminate {
+    0% {
+      transform: translateX(-100%) scaleX(0.3);
+    }
+    50% {
+      transform: translateX(20%) scaleX(0.6);
+    }
+    100% {
+      transform: translateX(100%) scaleX(0.3);
     }
   }
 
@@ -504,14 +569,23 @@
 }
 
 @utility text-gradient-brand {
-  background-image: linear-gradient(
-    100deg,
-    var(--color-brand-400),
-    var(--color-brand-600) 55%,
-    var(--color-info-500)
-  );
+  background-image: var(--gradient-brand);
   background-clip: text;
   color: transparent;
+}
+
+@utility bg-gradient-brand {
+  background-image: var(--gradient-brand);
+}
+
+@utility bg-gradient-brand-subtle {
+  background-image: var(--gradient-brand-subtle);
+}
+
+/* Ambient background wash. Sits behind content, never behind body text —
+   a gradient under a paragraph destroys its contrast ratio. */
+@utility bg-aurora {
+  background-image: var(--gradient-aurora);
 }
 
 @utility skeleton {
@@ -523,4 +597,87 @@
   );
   background-size: 200% 100%;
   animation: var(--animate-shimmer);
+}
+
+/* A one-pixel gradient rule that fades out at both ends. Used to separate
+   sections without the hard, cheap look of a full-width border. */
+@utility rule-fade {
+  height: 1px;
+  border: 0;
+  background-image: linear-gradient(
+    90deg,
+    transparent,
+    var(--border) 15%,
+    var(--border) 85%,
+    transparent
+  );
+}
+
+/* Hairline gradient border, drawn with a mask so it works on any background.
+   Two backgrounds — one clipped to the padding box, one to the border box —
+   is the only way to get a gradient *border* rather than a gradient block. */
+@utility border-gradient {
+  border: 1px solid transparent;
+  background:
+    linear-gradient(var(--card), var(--card)) padding-box,
+    var(--gradient-brand) border-box;
+}
+
+/* Brand glow for focused or active elements. Deliberately a ring plus a soft
+   halo rather than a plain shadow — it reads as emitted light, which is the
+   whole idea behind the theme. */
+@utility glow-brand {
+  box-shadow: var(--shadow-glow);
+}
+
+@utility glow-brand-sm {
+  box-shadow:
+    0 0 0 1px oklch(0.627 0.265 303.9 / 0.18),
+    0 0 16px -4px oklch(0.627 0.265 303.9 / 0.28);
+}
+
+/* Elevation as named intent rather than a shadow value chosen ad hoc. */
+@utility elevation-flat {
+  box-shadow: none;
+}
+@utility elevation-raised {
+  box-shadow: var(--shadow-sm);
+}
+@utility elevation-floating {
+  box-shadow: var(--shadow-md);
+}
+@utility elevation-overlay {
+  box-shadow: var(--shadow-lg);
+}
+@utility elevation-modal {
+  box-shadow: var(--shadow-xl);
+}
+
+/* Panels large enough that a flat fill looks dead. The sheen is barely
+   perceptible on purpose; if you can point at it, it is too strong. */
+@utility surface-sheen {
+  background-image: var(--gradient-surface);
+}
+
+/* Hides content visually but keeps it available to screen readers. Required
+   for icon-only controls, which is most of a dense creative tool. */
+@utility sr-only-focusable {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+
+  &:focus-visible {
+    position: static;
+    width: auto;
+    height: auto;
+    margin: 0;
+    overflow: visible;
+    clip-path: none;
+    white-space: normal;
+  }
 }

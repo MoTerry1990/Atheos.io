@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 
 import { Toaster } from "@/components/ui/sonner";
+import { MotionProvider } from "@/providers/motion-provider";
 import { ThemeProvider } from "@/providers/theme-provider";
 
 /**
@@ -25,8 +26,10 @@ import { ThemeProvider } from "@/providers/theme-provider";
 export function Providers({ children }: { children: ReactNode }) {
   return (
     <ThemeProvider>
-      {children}
-      <Toaster richColors closeButton position="bottom-right" />
+      <MotionProvider>
+        {children}
+        <Toaster richColors closeButton position="bottom-right" />
+      </MotionProvider>
     </ThemeProvider>
   );
 }

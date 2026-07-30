@@ -29,11 +29,34 @@ _No product surface. Nothing user-facing. The scaffolding everything else stands
 
 ---
 
-## Sprint 1 — Identity and account
+## Sprint 1 — Design system ✅
+
+_Every surface the product will ever be built from._
+
+- Foundations: typography, colour, spacing, elevation, gradients, motion, icons
+- Controls: buttons, inputs and `Field`, cards, badges, dropdowns, selects
+- Overlays: dialog, alert dialog, sheet, popover, tooltip
+- Data: table with a mobile card layout, pagination
+- Feedback: spinners, progress, skeletons, toasts, empty and error states
+- Navigation: sidebar with mobile drawer, top bar, nav, breadcrumbs
+- Live gallery at `/design-system`, plus `docs/DESIGN-SYSTEM.md`
+
+**Exit criteria:** every component renders in both themes, verified at 375px with
+no horizontal overflow, and both themes measured against WCAG AA.
+
+> Reordered from the original plan, which had identity here. The design system
+> came first so that Sprint 2's auth screens are assembled from finished
+> components rather than inventing styling as they go — and so the visual
+> language is decided once, not per-feature.
+
+---
+
+## Sprint 2 — Identity and account
 
 _The first real user record._
 
 - Clerk sign-in / sign-up flows and the `middleware` route matcher
+- `ClerkProvider` wired into the provider composition root
 - Clerk → database user sync via webhook, keyed on `clerkId`
 - Session-aware server helpers (`requireUser`, `getCurrentUser`)
 - Account settings shell: profile, appearance, danger zone
