@@ -7,39 +7,50 @@ import type { Modality } from "@/lib/generated/prisma/enums";
  * put many AI vendors behind one interface, so the value of the product is
  * precisely the quality of this seam.
  *
- * **Types only — no implementations.** Adapters arrive in Sprint 2. Defining
- * the contract first means the data model, credit ledger and job pipeline are
- * all built against a stable shape rather than against whichever vendor we
- * happen to integrate first.
- *
- * The rule this enforces, stated once:
+ * The rule, stated once:
  *
  * > Nothing outside `services/ai` may import a vendor SDK, and nothing outside
  * > this directory may branch on which provider is in use. If a component,
  * > route or feature knows it is talking to a specific vendor, the abstraction
- * > has failed and the cost lands on us the day that vendor changes its pricing,
- * > its API, or its willingness to serve us.
+ * > has failed and the cost lands on us the day that vendor changes its
+ * > pricing, its API, or its willingness to serve us.
+ *
+ * Sprint 6 extended this with **operations**. Everything else is unchanged from
+ * Sprint 0, which is the point — a contract that survives its first real
+ * implementation was worth defining up front.
  */
 
 /** Stable identifier for a provider. A string, not an enum: adding a vendor
  *  must never require a database migration. */
 export type ProviderId = string;
 
-/** A single model offered by a provider. */
-export interface ProviderModel {
-  id: string;
-  providerId: ProviderId;
-  displayName: string;
-  modality: Modality;
+/**
+ * What a request asks the model to *do*.
+ *
+ * Modelled as an operation on one request type rather than as five separate
+ * methods. Vendors disagree wildly about which of these are distinct endpoints
+ * — Replicate makes them all "run a model", OpenAI has separate routes for
+ * generate and edit — and a five-method interface would force every adapter to
+ * stub the ones its vendor folds together.
+ *
+ * A single request with an operation field also means the queue, the credit
+ * ledger and the asset pipeline handle all five identically, which is where
+ * most of the leverage is.
+ */
+export type GenerationOperation =
+  | "text-to-image"
+  | "image-to-image"
+  | "upscale"
+  | "remove-background"
+  | "variations";
 
-  /** What the model can actually do. Drives which controls the UI renders —
-   *  the interface is derived from capability, never hard-coded per vendor. */
-  capabilities: ModelCapabilities;
+/** Operations that require at least one input image. */
+export const OPERATIONS_REQUIRING_INPUT: ReadonlySet<GenerationOperation> =
+  new Set(["image-to-image", "upscale", "remove-background", "variations"]);
 
-  /** Credits charged per generation. Resolved by our own pricing layer, not
-   *  read from the vendor, so margin is ours to set. */
-  creditCost: number;
-}
+/** Operations that ignore the prompt entirely. */
+export const OPERATIONS_WITHOUT_PROMPT: ReadonlySet<GenerationOperation> =
+  new Set(["upscale", "remove-background", "variations"]);
 
 export interface ModelCapabilities {
   supportsNegativePrompt: boolean;
@@ -50,49 +61,66 @@ export interface ModelCapabilities {
   maxOutputs: number;
   /** Absent for image models. */
   maxDurationSeconds?: number;
+  /**
+   * Which operations this model can perform. A model that only upscales
+   * declares exactly that, and the studio will not offer it for a prompt.
+   */
+  operations: readonly GenerationOperation[];
+}
+
+/** A single model offered by a provider. */
+export interface ProviderModel {
+  id: string;
+  providerId: ProviderId;
+  displayName: string;
+  modality: Modality;
+  capabilities: ModelCapabilities;
+  /** Credits charged per output. Resolved by our pricing layer, not the
+   *  vendor, so margin is ours to set. */
+  creditCost: number;
 }
 
 /** A generation request, in *our* vocabulary. Adapters translate this into
  *  whatever shape a vendor wants; callers never see the vendor's shape. */
 export interface GenerationRequest {
+  operation: GenerationOperation;
   modelId: string;
   prompt: string;
   negativePrompt?: string;
   aspectRatio?: string;
+  width?: number;
+  height?: number;
   seed?: number;
   outputs?: number;
-  durationSeconds?: number;
-  /** Source material for image-to-image and reference-driven generation. */
-  inputAssetUrls?: readonly string[];
-  /** Anything the model takes that the common shape does not express. Escape
-   *  hatch, deliberately narrow — if a field appears here for three providers
-   *  it belongs in the interface above instead. */
+  /**
+   * Publicly reachable URLs for source material.
+   *
+   * URLs rather than bytes, deliberately: every provider we have looked at
+   * accepts a URL, uploading is a second failure mode, and passing base64
+   * through a serverless function is how request-size limits get hit. The
+   * pipeline puts user uploads into R2 first and passes those URLs.
+   */
+  inputImageUrls?: readonly string[];
+  /** 0–1. How strongly the input should constrain the result. */
+  inputStrength?: number;
+  /** Upscale factor. Only meaningful for `upscale`. */
+  scale?: number;
+  /** Anything a specific model takes that the common shape does not express.
+   *  Deliberately narrow — if a field appears here for three providers it
+   *  belongs in the interface above. */
   providerOptions?: Record<string, unknown>;
 }
 
 export type JobState =
   "queued" | "running" | "succeeded" | "failed" | "canceled";
 
-/** Normalised job status. Vendors report progress in wildly different ways;
- *  everything above this layer sees only this. */
-export interface GenerationJob {
-  providerJobId: string;
-  state: JobState;
-  /** 0–1 where the vendor reports it; undefined where it does not. Never fake
-   *  a percentage — a progress bar that lies is worse than a spinner. */
-  progress?: number;
-  outputs?: readonly GenerationOutput[];
-  error?: ProviderError;
-}
-
 export interface GenerationOutput {
-  /** Where the vendor is serving the result. Transient — we copy it into R2
-   *  and never hand a vendor URL to a user, because it will expire. */
+  /** Where the vendor is serving the result. Transient — the pipeline copies
+   *  it into R2 and never hands a vendor URL to a user, because it expires. */
   sourceUrl: string;
   mimeType: string;
   width?: number;
   height?: number;
-  durationMs?: number;
   seed?: number;
 }
 
@@ -100,7 +128,7 @@ export interface GenerationOutput {
  * Normalised failure.
  *
  * Every vendor fails differently and describes it badly. Adapters map their
- * errors onto this so that retry logic, credit refunds and user-facing copy are
+ * errors onto this so retry policy, credit refunds and user-facing copy are
  * written once rather than per vendor.
  */
 export interface ProviderError {
@@ -121,23 +149,39 @@ export type ProviderErrorCode =
   | "provider_unavailable"
   | "timeout"
   | "insufficient_provider_credit"
+  | "unsupported_operation"
   | "unknown";
+
+/** Normalised job status. Vendors report progress in wildly different ways;
+ *  everything above this layer sees only this. */
+export interface GenerationJob {
+  providerJobId: string;
+  state: JobState;
+  /** 0–1 where the vendor reports it; undefined where it does not. Never fake
+   *  a percentage — a progress bar that lies is worse than a spinner. */
+  progress?: number;
+  outputs?: readonly GenerationOutput[];
+  error?: ProviderError;
+}
 
 /**
  * What every adapter must implement.
  *
- * Generation is modelled as submit-then-poll rather than a single awaited call.
- * That is not over-engineering: image models take seconds, video models take
- * minutes, and a serverless function cannot hold a request open that long. One
- * shape for all modalities keeps the job pipeline, the UI and the credit ledger
- * from forking per media type.
+ * Generation is submit-then-poll rather than a single awaited call. That is not
+ * over-engineering: image models take seconds, video models take minutes, and a
+ * serverless function cannot hold a request open that long. One shape for all
+ * operations keeps the pipeline, the UI and the credit ledger from forking.
  */
 export interface AIProvider {
   readonly id: ProviderId;
   readonly displayName: string;
 
+  /** True when credentials are present. The registry uses this to decide
+   *  whether the provider can be offered at all. */
+  isConfigured(): boolean;
+
   /** Models this provider currently offers. */
-  listModels(): Promise<readonly ProviderModel[]>;
+  listModels(): readonly ProviderModel[];
 
   /** Submit work. Returns as soon as the vendor accepts it. */
   submit(request: GenerationRequest): Promise<GenerationJob>;
@@ -145,7 +189,23 @@ export interface AIProvider {
   /** Poll for progress. Must be safe to call repeatedly and concurrently. */
   poll(providerJobId: string): Promise<GenerationJob>;
 
-  /** Best-effort cancellation. Not every vendor supports it; those that do not
-   *  should resolve rather than throw, so callers need no special case. */
+  /** Best-effort cancellation. Providers that do not support it should resolve
+   *  rather than throw, so callers need no special case. */
   cancel?(providerJobId: string): Promise<void>;
+}
+
+/** Helper for adapters: build a normalised error without repeating the shape. */
+export function providerError(
+  code: ProviderErrorCode,
+  message: string,
+  options: { retryable?: boolean; raw?: unknown } = {},
+): ProviderError {
+  return {
+    code,
+    message,
+    // Default to non-retryable. Retrying a request that cannot succeed burns
+    // the user's credits twice and hides the real problem.
+    retryable: options.retryable ?? false,
+    raw: options.raw,
+  };
 }

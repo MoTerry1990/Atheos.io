@@ -1,17 +1,14 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-import {
-  DEFAULT_MODEL_ID,
-  findModel,
-  resolutionOptions,
-} from "@/features/studio/data/models";
+import { findModelIn, resolutionOptions } from "@/features/studio/data/models";
 import { STYLE_PRESETS } from "@/features/studio/data/presets";
 import type {
   CameraSettings,
   PromptTemplate,
   ReferenceImage,
   StudioJob,
+  StudioModel,
   StudioParams,
 } from "@/features/studio/types";
 
@@ -54,7 +51,10 @@ const DEFAULT_CAMERA: CameraSettings = {
 
 function defaultParams(): StudioParams {
   return {
-    modelId: DEFAULT_MODEL_ID,
+    // Empty until the catalog loads from the server; `setModels` selects the
+    // first available model. Hard-coding an id here would break the moment a
+    // provider's line-up changed.
+    modelId: "",
     prompt: "",
     negativePrompt: "",
     presetIds: [],
@@ -75,8 +75,15 @@ function defaultParams(): StudioParams {
  * Pure, and exported, because the reconciliation rules are the part most worth
  * testing and the part most likely to be wrong.
  */
-export function reconcileParams(params: StudioParams): StudioParams {
-  const model = findModel(params.modelId);
+export function reconcileParams(
+  params: StudioParams,
+  models: StudioModel[],
+): StudioParams {
+  const model = findModelIn(models, params.modelId);
+  // The catalog may name a model the previous session did not have.
+  if (model.id && model.id !== params.modelId) {
+    params = { ...params, modelId: model.id };
+  }
   const caps = model.capabilities;
   const next = { ...params };
 
@@ -128,17 +135,28 @@ export function assemblePrompt(params: StudioParams): string {
 }
 
 /** Credits a submission will cost. Shown before the button, not after. */
-export function estimateCost(params: StudioParams): number {
-  return findModel(params.modelId).creditCost * params.outputs;
+export function estimateCost(
+  params: StudioParams,
+  models: StudioModel[],
+): number {
+  return findModelIn(models, params.modelId).creditCost * params.outputs;
 }
 
 interface StudioState {
+  /** Loaded from the server. Empty until the studio mounts. */
+  models: StudioModel[];
+  modelsLoaded: boolean;
+  /** True when no real provider is configured — surfaced in the UI. */
+  usingMockProvider: boolean;
+
   params: StudioParams;
   queue: StudioJob[];
   history: StudioJob[];
   /** Job whose result is in the preview panel. Null shows the empty state. */
   selectedJobId: string | null;
 
+  setModels: (models: StudioModel[], usingMockProvider: boolean) => void;
+  setHistory: (history: StudioJob[]) => void;
   setParam: <K extends keyof StudioParams>(
     key: K,
     value: StudioParams[K],
@@ -166,17 +184,39 @@ interface StudioState {
 export const useStudioStore = create<StudioState>()(
   persist(
     (set, get) => ({
+      models: [],
+      modelsLoaded: false,
+      usingMockProvider: false,
       params: defaultParams(),
       queue: [],
       history: [],
       selectedJobId: null,
+
+      /**
+       * Install the catalog and repair the persisted params against it.
+       *
+       * A user's stored `modelId` can name a model that no longer exists — a
+       * provider was removed, or its credentials were rotated out. Reconciling
+       * on load is what stops the composer showing a model the server will
+       * reject.
+       */
+      setModels: (models, usingMockProvider) =>
+        set((state) => ({
+          models,
+          modelsLoaded: true,
+          usingMockProvider,
+          params: reconcileParams(state.params, models),
+        })),
+
+      /** Replace history with the server's copy — it is the source of truth. */
+      setHistory: (history) => set({ history }),
 
       setParam: (key, value) =>
         set((state) => ({ params: { ...state.params, [key]: value } })),
 
       setModel: (modelId) =>
         set((state) => ({
-          params: reconcileParams({ ...state.params, modelId }),
+          params: reconcileParams({ ...state.params, modelId }, state.models),
         })),
 
       togglePreset: (presetId) =>
@@ -238,12 +278,15 @@ export const useStudioStore = create<StudioState>()(
 
       applyTemplate: (template) =>
         set((state) => ({
-          params: reconcileParams({
-            ...state.params,
-            prompt: template.prompt,
-            negativePrompt: template.negativePrompt ?? "",
-            presetIds: template.presetIds ?? [],
-          }),
+          params: reconcileParams(
+            {
+              ...state.params,
+              prompt: template.prompt,
+              negativePrompt: template.negativePrompt ?? "",
+              presetIds: template.presetIds ?? [],
+            },
+            state.models,
+          ),
         })),
 
       randomiseSeed: () =>
@@ -305,28 +348,36 @@ export const useStudioStore = create<StudioState>()(
         if (!job) return;
 
         set({
-          params: reconcileParams({
-            ...job.params,
-            // References held object URLs from a previous session; those are
-            // dead. Everything else restores cleanly.
-            references: [],
-          }),
+          params: reconcileParams(
+            {
+              ...job.params,
+              // References held object URLs from a previous session; those are
+              // dead. Everything else restores cleanly.
+              references: [],
+            },
+            state.models,
+          ),
         });
       },
     }),
     {
       name: "atheos:studio",
-      version: 1,
+      version: 2,
       /**
-       * Persist the composer and the history, never the queue.
+       * Persist the composer only.
        *
-       * References are stripped too: their `url` is an object URL, which is
-       * only valid for the document that created it. Restoring one produces an
-       * image that silently fails to load — worse than not restoring it.
+       * History used to be persisted here. It is now owned by the server, and
+       * keeping a local copy would mean two sources of truth that disagree the
+       * moment a generation is deleted or finishes in another tab.
+       *
+       * References are stripped: their `url` is an object URL, valid only for
+       * the document that created it. Restoring one produces an image that
+       * silently fails to load — worse than not restoring it.
+       *
+       * The queue was never persisted; it describes work that is not running.
        */
       partialize: (state) => ({
         params: { ...state.params, references: [] },
-        history: state.history,
       }),
     },
   ),

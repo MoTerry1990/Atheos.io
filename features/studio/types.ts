@@ -82,7 +82,12 @@ export type JobStatus =
 
 export interface JobOutput {
   id: string;
-  /** Procedural placeholder until a provider is connected — see lib/preview.ts. */
+  /**
+   * Public URL for the stored asset, resolved from its object key in
+   * `lib/job-mapper`. Empty only while storage is unconfigured.
+   */
+  url?: string;
+  /** Fallback tint, shown while the image loads or if the CDN is unreachable. */
   hue: number;
   seed: number;
   width: number;

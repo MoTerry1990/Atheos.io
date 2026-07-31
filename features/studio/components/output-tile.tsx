@@ -111,6 +111,9 @@ export function OutputTile({
       )}
       style={{ aspectRatio: `${output.width} / ${output.height}` }}
     >
+      {/* The gradient is the backdrop, not the picture. It shows while the
+          real asset loads and remains visible if the CDN is unreachable, so a
+          slow image is never an empty grey box. */}
       <div
         aria-hidden
         className="absolute inset-0"
@@ -119,6 +122,21 @@ export function OutputTile({
           backgroundImage: gradientFor(output),
         }}
       />
+
+      {output.url ? (
+        /* eslint-disable-next-line @next/next/no-img-element --
+           Asset hosts are configured per deployment, so next/image would need
+           every possible R2 hostname in remotePatterns at build time. The
+           objects are already immutable and CDN-cached, which is most of what
+           the optimiser would provide. */
+        <img
+          src={output.url}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          className="absolute inset-0 size-full object-cover"
+        />
+      ) : null}
       <div
         className="absolute inset-0 grain opacity-15 mix-blend-overlay"
         aria-hidden

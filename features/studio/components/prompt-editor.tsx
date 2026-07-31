@@ -14,8 +14,8 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { Control } from "@/features/studio/components/model-picker";
 import { PROMPT_TEMPLATES } from "@/features/studio/data/presets";
-import { findModel } from "@/features/studio/data/models";
 import { assemblePrompt, useStudioStore } from "@/store/studio-store";
+import { useSelectedModel } from "@/features/studio/lib/use-model";
 
 /**
  * Prompt editor, template picker and negative prompt.
@@ -48,7 +48,7 @@ export function PromptEditor() {
 
   const [showAssembled, setShowAssembled] = useState(false);
 
-  const model = findModel(params.modelId);
+  const model = useSelectedModel();
   const assembled = assemblePrompt(params);
   const hasAdditions = assembled !== prompt.trim() && assembled.length > 0;
 

@@ -159,6 +159,19 @@ enum Modality {
   AUDIO
 }
 
+/// What the request asked the model to do.
+///
+/// An enum rather than a string, unlike `provider` and `model`: operations are
+/// a *product* concept we define, not a vendor's. The set is small, closed, and
+/// worth having the database enforce.
+enum GenerationOperation {
+  TEXT_TO_IMAGE
+  IMAGE_TO_IMAGE
+  UPSCALE
+  REMOVE_BACKGROUND
+  VARIATIONS
+}
+
 enum GenerationStatus {
   QUEUED
   RUNNING
@@ -173,12 +186,21 @@ model Generation {
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  modality Modality
+  modality  Modality
+  operation GenerationOperation @default(TEXT_TO_IMAGE)
 
   /// Provider slug, e.g. "openai". Deliberately a string, not an enum: adding
   /// a provider must not require a migration.
   provider String
   model    String
+
+  /// The generation this one was derived from — an upscale, a background
+  /// removal, or a set of variations. Self-referential so lineage survives
+  /// without a join table, and `SetNull` so deleting an ancestor does not
+  /// cascade away work the user still has.
+  parentId String?
+  parent   Generation?  @relation("GenerationLineage", fields: [parentId], references: [id], onDelete: SetNull)
+  children Generation[] @relation("GenerationLineage")
 
   prompt         String  @db.Text
   negativePrompt String? @db.Text
@@ -209,6 +231,7 @@ model Generation {
   @@index([userId, createdAt])
   @@index([status])
   @@index([provider, providerJobId])
+  @@index([parentId])
   @@map("generations")
 }
 

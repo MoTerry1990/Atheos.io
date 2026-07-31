@@ -8,9 +8,9 @@ import { Slider } from "@/components/ui/slider";
 import { Control } from "@/features/studio/components/model-picker";
 import {
   dimensionsFor,
-  findModel,
   resolutionOptions,
 } from "@/features/studio/data/models";
+import { useSelectedModel } from "@/features/studio/lib/use-model";
 import { ASPECT_RATIO_LABELS } from "@/features/studio/data/presets";
 import { useStudioStore } from "@/store/studio-store";
 import { cn } from "@/lib/utils";
@@ -33,7 +33,7 @@ import { cn } from "@/lib/utils";
 function AspectRatioPicker() {
   const params = useStudioStore((state) => state.params);
   const setParam = useStudioStore((state) => state.setParam);
-  const model = findModel(params.modelId);
+  const model = useSelectedModel();
 
   return (
     <Control label="Aspect ratio">
@@ -87,7 +87,7 @@ function AspectRatioPicker() {
 function SizePicker() {
   const params = useStudioStore((state) => state.params);
   const setParam = useStudioStore((state) => state.setParam);
-  const model = findModel(params.modelId);
+  const model = useSelectedModel();
 
   const options = resolutionOptions(model);
   const { width, height } = dimensionsFor(
@@ -170,7 +170,7 @@ function SeedControl() {
   const params = useStudioStore((state) => state.params);
   const setParam = useStudioStore((state) => state.setParam);
   const randomiseSeed = useStudioStore((state) => state.randomiseSeed);
-  const model = findModel(params.modelId);
+  const model = useSelectedModel();
 
   if (!model.capabilities.supportsSeed) {
     return (
@@ -228,7 +228,7 @@ function SeedControl() {
 function OutputCount() {
   const params = useStudioStore((state) => state.params);
   const setParam = useStudioStore((state) => state.setParam);
-  const model = findModel(params.modelId);
+  const model = useSelectedModel();
   const max = model.capabilities.maxOutputs;
 
   if (max <= 1) return null;

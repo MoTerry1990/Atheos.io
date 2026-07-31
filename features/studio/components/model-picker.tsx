@@ -12,7 +12,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { STUDIO_MODELS, findModel } from "@/features/studio/data/models";
+import { useModels, useSelectedModel } from "@/features/studio/lib/use-model";
 import { useStudioStore } from "@/store/studio-store";
 import { cn } from "@/lib/utils";
 
@@ -40,9 +40,10 @@ const BADGES = {
 export function ModelPicker() {
   const modelId = useStudioStore((state) => state.params.modelId);
   const setModel = useStudioStore((state) => state.setModel);
-  const current = findModel(modelId);
+  const models = useModels();
+  const current = useSelectedModel();
 
-  const byModality = STUDIO_MODELS.reduce<Record<string, typeof STUDIO_MODELS>>(
+  const byModality = models.reduce<Record<string, typeof models>>(
     (groups, model) => {
       (groups[model.modality] ??= []).push(model);
       return groups;

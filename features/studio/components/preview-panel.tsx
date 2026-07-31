@@ -16,6 +16,7 @@ import {
   OutputTile,
   downloadOutput,
 } from "@/features/studio/components/output-tile";
+import { OutputActions } from "@/features/studio/components/output-actions";
 import { useStudioStore } from "@/store/studio-store";
 import { cn } from "@/lib/utils";
 
@@ -180,7 +181,11 @@ export function PreviewPanel() {
         )}
       </div>
 
-      <div className="space-y-2 border-t p-3">
+      <div className="space-y-3 border-t p-3">
+        {/* Derived operations live beside the result they act on — upscale,
+            background removal and variations all need an existing image. */}
+        <OutputActions job={job} outputUrl={job.outputs[0]?.url ?? null} />
+
         <p className="flex items-center gap-1.5 text-2xs font-medium tracking-wider text-muted-foreground uppercase">
           <Sparkles className="size-3" aria-hidden />
           Settings used

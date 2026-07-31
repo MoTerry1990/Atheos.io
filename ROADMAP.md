@@ -175,18 +175,52 @@ not change.
 
 ---
 
-## Sprint 6 — The generation core
+## Sprint 6 — AI image generation ✅
 
-_Connecting the studio to something real._
+_The studio, connected to something real._
 
-- Provider adapter interface implemented for the first two image providers
-- Server-side job pipeline replacing `local-runner.ts`: submit, persist, poll
-- Generated output copied into R2, metadata into Postgres
-- Credit debit on success, automatic refund on provider failure
-- Studio queue reads from the server, so a reload shows what is actually running
+- Provider contract extended with **operations**: text-to-image, image-to-image,
+  upscale, background removal, variations
+- Three adapters behind it — Replicate (all five operations), OpenAI
+  (generation and edits), and an explicitly labelled mock
+- `services/ai/registry.ts` selects providers by configured credentials; adding
+  a token makes its models appear with no deploy and no feature flag
+- Server pipeline: credit debit and generation row in one transaction, provider
+  call outside it, outputs copied into R2, idempotent refund on failure
+- `POST /api/generations`, `GET|DELETE /api/generations/[id]`
+- Studio wired to the server; `local-runner.ts` deleted
+- Derived operations offered from a finished result, with `parentId` lineage
 
-**Exit criteria:** a signed-in user spends credits and gets an image they can
-download.
+**Exit criteria:** unauthenticated API calls return 401 JSON, invalid input
+returns field-level 400s, the studio degrades to a readable error rather than
+crashing, and typecheck, lint and build are clean.
+
+> **Not verified end to end.** The pipeline needs a database, a Clerk session
+> and R2 credentials, none of which exist in this environment. Every code path
+> is typechecked and the API contract is exercised, but no generation has
+> actually run. First task with real infrastructure: one submit against the mock
+> provider, confirming the ledger debits, the asset lands in R2 and a forced
+> failure refunds exactly once.
+
+**The mock provider is the fallback, not a peer.** When no credentials are
+configured the registry offers it so the whole pipeline stays reviewable —
+credits, storage, refunds and error states all execute for real. The moment a
+real provider is configured the mock disappears entirely, and the studio shows a
+banner whenever it is active. Its output is an SVG with "Mock provider — not AI
+generated" rendered into the image itself.
+
+**Replicate model versions are placeholders.** Replicate pins models by version
+hash; ours are marked `PLACEHOLDER` and rejected at submit with a clear message.
+Inventing plausible-looking hashes would have failed as an opaque 422 instead.
+
+**Known limitation:** the client is the job runner. Each poll advances the
+generation, so closing the tab mid-run leaves a job at RUNNING until the user
+returns. A scheduled reconciler belongs with the operational work in Sprint 11.
+
+**Project saving** is complete server-side — a `collectionId` on the request
+files results into a collection as they are stored. The UI for choosing one
+arrives with the library in Sprint 7, since there is nowhere to manage
+collections yet.
 
 ---
 

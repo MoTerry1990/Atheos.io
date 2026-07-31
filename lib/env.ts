@@ -56,6 +56,13 @@ export const env = createEnv({
     // ---- Uploads --------------------------------------------------------
     UPLOADTHING_TOKEN: z.string().min(1).optional(),
 
+    // ---- AI providers ---------------------------------------------------
+    // Presence is what enables a provider — see services/ai/registry.ts.
+    // With none of these set, the registry falls back to an explicitly
+    // labelled mock so the pipeline can still be exercised.
+    REPLICATE_API_TOKEN: z.string().min(1).optional(),
+    OPENAI_API_KEY: z.string().min(1).optional(),
+
     // ---- Object storage (Cloudflare R2) ---------------------------------
     R2_ACCOUNT_ID: z.string().min(1).optional(),
     R2_ACCESS_KEY_ID: z.string().min(1).optional(),
@@ -101,6 +108,9 @@ export const env = createEnv({
     STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET,
 
     UPLOADTHING_TOKEN: process.env.UPLOADTHING_TOKEN,
+
+    REPLICATE_API_TOKEN: process.env.REPLICATE_API_TOKEN,
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY,
 
     R2_ACCOUNT_ID: process.env.R2_ACCOUNT_ID,
     R2_ACCESS_KEY_ID: process.env.R2_ACCESS_KEY_ID,

@@ -6,8 +6,8 @@ import { useRef, useState } from "react";
 
 import { Slider } from "@/components/ui/slider";
 import { Control } from "@/features/studio/components/model-picker";
-import { findModel } from "@/features/studio/data/models";
 import { useStudioStore } from "@/store/studio-store";
+import { useSelectedModel } from "@/features/studio/lib/use-model";
 import { formatBytes } from "@/utils/format";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
@@ -41,7 +41,6 @@ const MAX_BYTES = 10 * 1024 * 1024;
 const ACCEPTED = ["image/jpeg", "image/png", "image/webp"];
 
 export function ReferenceUpload() {
-  const modelId = useStudioStore((state) => state.params.modelId);
   const references = useStudioStore((state) => state.params.references);
   const addReference = useStudioStore((state) => state.addReference);
   const removeReference = useStudioStore((state) => state.removeReference);
@@ -50,7 +49,7 @@ export function ReferenceUpload() {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
 
-  const model = findModel(modelId);
+  const model = useSelectedModel();
   if (!model.capabilities.supportsImageInput) {
     return (
       <p className="text-xs text-muted-foreground">
