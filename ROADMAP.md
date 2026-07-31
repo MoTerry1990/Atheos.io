@@ -80,19 +80,33 @@ artwork is procedural.
 
 ---
 
-## Sprint 3 — Identity and account
+## Sprint 3 — Authentication ✅
 
 _The first real user record._
 
-- Clerk sign-in / sign-up flows and the `middleware` route matcher
-- `ClerkProvider` wired into the provider composition root
-- Clerk → database user sync via webhook, keyed on `clerkId`
-- Session-aware server helpers (`requireUser`, `getCurrentUser`)
-- Account settings shell: profile, appearance, danger zone
-- Seeded free-tier credit grant on user creation
+- Custom sign-in, sign-up, verify-email, forgot-password and reset-password
+  screens built on Clerk 7 signals, plus OAuth and an SSO callback
+- `ClerkProvider` in the composition root, themed with our design tokens
+- **Resource-based** authorisation — `requireUserId()` / `requireUser()` at each
+  protected surface, not a middleware path matcher
+- Clerk → Postgres user sync via a signature-verified, idempotent webhook, with
+  the 200-credit signup grant written in the same transaction as the ledger entry
+- Account area: profile, avatar upload, theme, notification preferences, and a
+  type-to-confirm delete
 
-**Exit criteria:** a real person can sign up, and a row exists in our database
-with their credit balance.
+**Exit criteria:** protected routes redirect signed-out users to sign-in with the
+destination preserved; unsigned webhook posts are rejected with 400; typecheck,
+lint and production build all clean.
+
+> **Not verified end-to-end.** These flows are typechecked and render correctly,
+> but no sign-up has actually been completed — that needs a real Clerk instance,
+> and this repository has only a structurally-valid placeholder key. First task
+> with live credentials: run one signup, one OAuth login, one password reset, and
+> confirm the webhook creates the user row and the credit ledger entry.
+
+**Deferred deliberately:** MFA and enterprise SSO. Both are supported by the same
+API but each is a flow with its own screens; accounts with MFA get an explicit
+"not wired up yet" message rather than a silent failure.
 
 ---
 

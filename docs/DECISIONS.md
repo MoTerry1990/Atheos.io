@@ -265,3 +265,104 @@ Named so they read as decisions rather than omissions.
 | TanStack Query                      | Nothing to poll yet.                                                                                                                                     | Sprint 2 |
 | Rate limiting                       | Needs a real traffic shape to tune against.                                                                                                              | Sprint 7 |
 | Test suite                          | Deliberate: there is no behaviour to test in Sprint 0, and tests over scaffolding calcify it. Arrives with the first business logic — the credit ledger. | Sprint 2 |
+
+---
+
+## 13. Authorisation lives with the resource, not in middleware
+
+**Decision.** `middleware.ts` establishes the Clerk session and records the
+pathname. It does **not** protect routes. Every protected surface calls
+`requireUserId()` or `requireUser()` itself.
+
+**Why.** This was going to be the opposite — a `createRouteMatcher` deny-list in
+middleware — until Clerk 7 emitted a deprecation explaining why that is unsafe:
+
+> Middleware-based auth checks rely on path matching, which can diverge from how
+> Next.js routes requests and leave protected resources reachable.
+
+A pathname regex is a _model_ of the route tree. Parallel routes, intercepting
+routes, route groups and rewrites all resolve in ways the model does not see, and
+when the model and the router disagree the router wins — serving the resource.
+
+The resource-based version cannot drift: a new page inside `app/(app)/` inherits
+the layout's check by existing there, not by someone remembering to add a
+pattern.
+
+**What it costs.** The check must be repeated in Server Actions and route
+handlers, because layouts do not run for either and both are directly
+addressable over HTTP. That repetition is the price of the guarantee, and it is
+stated as a rule in `lib/auth.ts` and `CLAUDE.md`.
+
+A secondary finding: `auth.protect()` in middleware returned **404** rather than
+redirecting, because middleware cannot resolve a sign-in URL. Silent 404s on
+protected pages would have looked like a routing bug for a long time.
+
+---
+
+## 14. Custom auth screens on Clerk's signals API
+
+**Decision.** Sign-in, sign-up, verification, forgot-password and reset are built
+from `useSignIn`/`useSignUp` and our own components, rather than Clerk's
+prebuilt `<SignIn>` / `<SignUp>`.
+
+**Why.** The brief asked for these as distinct screens, and auth is where a user
+decides whether to trust the product with a password — a visible seam between
+"our product" and "a vendor's widget" is worst exactly there.
+
+Clerk still does everything that matters. Passwords go straight to
+`signIn.password()` and are verified server-side; we never see, store or
+transmit them ourselves.
+
+**Two things about Clerk 7 that are easy to get wrong**, both now load-bearing in
+this codebase:
+
+1. **Errors are returned, not thrown.** `const { error } = await
+signIn.password(...)`. A `try/catch` alone catches nothing, and the form
+   silently does nothing on a wrong password.
+2. **`finalize()` establishes the session**, replacing `setActive`. Navigating
+   before it resolves lands the user on a protected route with no session, which
+   bounces them straight back to sign-in.
+
+**What it costs.** MFA and enterprise SSO are not wired. Both are supported by
+the same API, but each is a flow with its own screens, and building them
+speculatively would be guessing at requirements. Accounts with MFA get an
+explicit "not wired up yet" message rather than a silent failure — the flows
+check `status` and refuse to treat a non-`complete` result as success.
+
+---
+
+## 15. Notification preferences in Clerk metadata, for now
+
+**Decision.** Stored in Clerk's `unsafeMetadata`, not in our `users` table.
+
+**Why.** The name is alarming and worth decoding: `unsafeMetadata` means
+_user-writable from the browser_, as opposed to `publicMetadata`, which only a
+backend can set. That is exactly right for preferences — the user is the
+authority on whether they want an email — and exactly wrong for anything that
+grants access or costs money. A credit balance in `unsafeMetadata` would be
+editable from the devtools console.
+
+**What it costs.** Long term these belong in our database, so the service that
+_sends_ an email does not have to call Clerk to find out whether it may. It is
+not there yet because there is no email service to gate, and adding a column to
+store a preference nothing reads is speculative. The migration is a webhook away.
+
+Values are merged over defaults on read, never trusted as-is — user-writable
+metadata can contain anything.
+
+---
+
+## 16. Account enumeration: different answers on different screens
+
+**Decision.** The sign-in form says "no account found with that email". The
+forgot-password form does not — it shows the success state either way.
+
+**Why.** These look inconsistent and are not. Sign-in already reveals account
+existence through the password check itself, so withholding it there costs
+usability for no security gain. Password reset has no such leak to begin with, so
+saying "no account" would _introduce_ one: an oracle for testing an address list,
+useful for credential stuffing and targeted phishing.
+
+**What it costs.** A user who mistypes their address on the reset form gets no
+feedback and simply never receives the email — the same experience as mistyping
+into an address that happens to exist. That is the intended trade.
