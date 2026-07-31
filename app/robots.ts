@@ -20,7 +20,17 @@ export default function robots(): MetadataRoute.Robots {
       {
         userAgent: "*",
         allow: "/",
-        disallow: ["/api/", "/design-system"],
+        // Internal tooling and authenticated surfaces. All of these also carry
+        // `noindex` — robots.txt saves the crawl, the meta tag is what actually
+        // keeps them out of the index if a link to one leaks.
+        disallow: [
+          "/api/",
+          "/design-system",
+          "/dashboard-preview",
+          "/dashboard",
+          "/profile",
+          "/settings",
+        ],
       },
     ],
     sitemap: `${baseUrl}/sitemap.xml`,

@@ -47,9 +47,21 @@ export default clerkMiddleware(async (_auth, request) => {
 
 export const config = {
   matcher: [
-    // Everything except Next internals and static files. Running Clerk for a
-    // font or an image adds latency to every asset for no benefit.
-    "/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)",
+    /**
+     * Everything except:
+     *
+     * - `_next` and static files — running Clerk for a font or an image adds
+     *   latency to every asset for no benefit.
+     * - `design-system` and `dashboard-preview` — internal tooling with no
+     *   session. This exclusion is not cosmetic: on a development instance
+     *   Clerk performs a handshake **redirect** on every matched request, which
+     *   made both routes unreachable in a browser. A preview whose entire
+     *   purpose is to render without Clerk must not be gated by Clerk.
+     *
+     * Excluding them is safe because neither reads user data — the rule that
+     * matters is in `lib/auth.ts`, not here.
+     */
+    "/((?!_next|design-system|dashboard-preview|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)",
     "/(api|trpc)(.*)",
   ],
 };

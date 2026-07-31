@@ -1,46 +1,46 @@
 import type { ReactNode } from "react";
 
 import { Toaster } from "@/components/ui/sonner";
-import { ClerkProvider } from "@/providers/clerk-provider";
 import { MotionProvider } from "@/providers/motion-provider";
 import { ThemeProvider } from "@/providers/theme-provider";
 
 /**
- * The composition root for every application-wide provider.
+ * Application-wide providers.
  *
  * Keeping this in one file means `app/layout.tsx` stays readable no matter how
  * many contexts accumulate, and there is exactly one place to look to answer
  * "what wraps my component tree, and in what order?".
  *
- * ## Order is load-bearing
+ * Theme sits outermost so anything rendering during hydration already knows
+ * which theme it is in — including the toaster, which would otherwise flash the
+ * wrong colour scheme. Motion is innermost: nothing depends on it, so it should
+ * wrap as little as possible.
  *
- * `ThemeProvider` → `ClerkProvider` → `MotionProvider`.
+ * ## Why ClerkProvider is NOT here
  *
- * Theme sits outermost because **Clerk reads the resolved theme** to build its
- * `appearance` palette. Nesting it the other way round leaves Clerk's own
- * surfaces — the user button, MFA prompts — in the wrong colour scheme until
- * they remount.
+ * It used to be, and that was wrong twice over.
  *
- * Motion is innermost: nothing else depends on it, and it should wrap as little
- * as possible.
+ * **Correctness.** `ClerkProvider` initialises against a real Clerk instance and
+ * throws if it cannot reach one. From the root layout it wraps *every* route,
+ * so a failure took down hydration on pages that have nothing to do with
+ * authentication — the landing page and the internal previews included. The
+ * symptom was subtle and expensive to diagnose: server-rendered HTML looked
+ * perfect, but no effect ever ran, so every animation sat frozen at its initial
+ * value.
  *
- * The toaster lives inside all three so its portal inherits the theme.
+ * **Weight.** It also shipped Clerk's client bundle to the marketing site,
+ * which has no session, no user button, and only plain links to `/sign-in`.
  *
- * Deliberately *not* here yet:
- *
- *   QueryProvider   added when there is server state to poll — generation jobs.
- *                   React Server Components cover everything before that, and a
- *                   client cache with nothing to cache is just weight.
+ * It now lives in `app/(auth)/layout.tsx` and `app/(app)/layout.tsx` — the two
+ * groups that actually need a session. See `providers/clerk-provider.tsx`.
  */
 export function Providers({ children }: { children: ReactNode }) {
   return (
     <ThemeProvider>
-      <ClerkProvider>
-        <MotionProvider>
-          {children}
-          <Toaster richColors closeButton position="bottom-right" />
-        </MotionProvider>
-      </ClerkProvider>
+      <MotionProvider>
+        {children}
+        <Toaster richColors closeButton position="bottom-right" />
+      </MotionProvider>
     </ThemeProvider>
   );
 }

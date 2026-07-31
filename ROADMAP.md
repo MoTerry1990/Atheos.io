@@ -110,7 +110,41 @@ API but each is a flow with its own screens; accounts with MFA get an explicit
 
 ---
 
-## Sprint 4 — The generation core
+## Sprint 4 — Dashboard ✅
+
+_The room the product happens in._
+
+- App shell: sidebar with mobile drawer, top navigation, credit pill,
+  notifications menu with unread state
+- Workspace header with animated counters, five quick actions
+- Credits card, storage ring with per-kind breakdown
+- Recent projects grid, merged activity timeline
+- Real Prisma queries in `services/dashboard.ts`, batched into one transaction
+- A `DashboardData` contract shared by the service and a fixture set, so
+  `DashboardView` is a pure function of its data
+
+**Exit criteria:** no horizontal overflow at 375px, every tap target ≥ 24px,
+empty and pending states designed rather than defaulted, clean build.
+
+> Reordered again — the generation core moves to Sprint 5. The dashboard is
+> where generation results will land, so building the container first means
+> Sprint 5 has somewhere to put its output.
+
+**The verification split matters more than the components.** The dashboard needs
+a database and a Clerk session, neither of which exists here, so the UI would
+otherwise be unverifiable. Splitting data access from presentation and adding
+`/dashboard-preview` (fixtures, three states, `noindex`) means the real
+components were actually rendered and measured rather than only typechecked.
+That is what caught the 59px mobile overflow.
+
+**Still unverified:** every Prisma query in `services/dashboard.ts`. They
+typecheck against the generated client, but no query has been run. First task
+with a live database: load the dashboard for a seeded account and confirm the
+aggregates, the activity merge ordering and the storage breakdown.
+
+---
+
+## Sprint 5 — The generation core
 
 _The reason the product exists._
 
@@ -126,7 +160,7 @@ download.
 
 ---
 
-## Sprint 5 — The creative workspace
+## Sprint 6 — The creative workspace
 
 - Asset library: browse, search, filter, tag, delete
 - Collections and simple project grouping
@@ -138,7 +172,7 @@ download.
 
 ---
 
-## Sprint 6 — Video and audio
+## Sprint 7 — Video and audio
 
 - Video providers behind the same adapter interface
 - Audio and voice providers behind the same adapter interface
@@ -151,7 +185,7 @@ credit ledger.
 
 ---
 
-## Sprint 7 — Billing
+## Sprint 8 — Billing
 
 - Stripe products, prices, and the credit-pack catalogue
 - Checkout and customer portal
@@ -163,7 +197,7 @@ credit ledger.
 
 ---
 
-## Sprint 8 — Polish and performance
+## Sprint 9 — Polish and performance
 
 - Onboarding and first-run experience
 - Motion pass: page transitions, generation choreography
@@ -175,7 +209,7 @@ credit ledger.
 
 ---
 
-## Sprint 9 — Scale and operations
+## Sprint 10 — Scale and operations
 
 - Rate limiting and abuse prevention
 - Provider failover and circuit breaking

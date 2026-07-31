@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
+import { ClerkProvider } from "@/providers/clerk-provider";
+
 /**
  * Auth route group.
  *
@@ -13,6 +15,12 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
+/**
+ * Clerk is mounted here rather than in the root layout. These routes need a
+ * session; the landing page and the internal previews do not, and wrapping them
+ * meant a Clerk initialisation failure broke hydration site-wide. See
+ * `providers/index.tsx`.
+ */
 export default function AuthLayout({ children }: { children: ReactNode }) {
-  return <>{children}</>;
+  return <ClerkProvider>{children}</ClerkProvider>;
 }
