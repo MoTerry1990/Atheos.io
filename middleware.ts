@@ -52,7 +52,8 @@ export const config = {
      *
      * - `_next` and static files — running Clerk for a font or an image adds
      *   latency to every asset for no benefit.
-     * - `design-system` and `dashboard-preview` — internal tooling with no
+     * - `design-system`, `dashboard-preview` and `studio-preview` — internal
+     *   tooling with no
      *   session. This exclusion is not cosmetic: on a development instance
      *   Clerk performs a handshake **redirect** on every matched request, which
      *   made both routes unreachable in a browser. A preview whose entire
@@ -61,7 +62,7 @@ export const config = {
      * Excluding them is safe because neither reads user data — the rule that
      * matters is in `lib/auth.ts`, not here.
      */
-    "/((?!_next|design-system|dashboard-preview|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)",
+    "/((?!_next|design-system|dashboard-preview|studio-preview|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)",
     "/(api|trpc)(.*)",
   ],
 };

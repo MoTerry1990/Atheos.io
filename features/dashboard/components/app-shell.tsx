@@ -7,6 +7,7 @@ import {
   LayoutDashboard,
   Layers,
   Search,
+  Wand2,
   Settings,
   Sparkles,
   UserRound,
@@ -50,6 +51,7 @@ const NAV: NavSectionData[] = [
     title: "Workspace",
     items: [
       { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+      { href: "/studio", label: "Studio", icon: Wand2 },
       { href: "/dashboard", label: "Projects", icon: Layers, disabled: true },
       { href: "/dashboard", label: "Library", icon: Images, disabled: true },
     ],

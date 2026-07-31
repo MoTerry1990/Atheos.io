@@ -27,6 +27,8 @@ export default function robots(): MetadataRoute.Robots {
           "/api/",
           "/design-system",
           "/dashboard-preview",
+          "/studio-preview",
+          "/studio",
           "/dashboard",
           "/profile",
           "/settings",

@@ -144,35 +144,64 @@ aggregates, the activity merge ordering and the storage breakdown.
 
 ---
 
-## Sprint 5 — The generation core
+## Sprint 5 — AI Studio ✅
 
-_The reason the product exists._
+_The core product, as interface and state._
 
-- Provider adapter interface — one contract, many vendors
-- First two image providers behind it, selectable at request time
-- Async job pipeline: queued → running → succeeded/failed, with progress
-- Generated output written to R2, metadata to Postgres
-- Credit debit on success, refund on provider failure
-- Generation UI: prompt, parameters, live job state, result
+- Composer: model picker, prompt editor with templates, negative prompt,
+  reference upload with per-image strength, style presets, camera controls,
+  aspect ratio, size, outputs, creativity, seed with lock
+- Results: preview panel, live queue, history, working downloads
+- `store/studio-store.ts` — params (persisted), queue (ephemeral), history
+  (persisted, capped)
+- Capability-driven rendering: every control comes from the selected model's
+  declared `ModelCapabilities`, and `reconcileParams` repairs settings the new
+  model cannot honour
+
+**Exit criteria:** the job lifecycle reaches every state, the queue is never
+persisted, switching models repairs invalid params, no overflow at 375px.
+
+> **No AI provider is connected, and the interface says so.** A banner states it,
+> outputs are obviously procedural, and downloaded files carry a stamp. The
+> models in the catalog are fictional on purpose — naming a real vendor would
+> advertise an integration that does not exist.
+
+`features/studio/lib/local-runner.ts` drives the lifecycle on timers so the
+queue, progress, failure and history states can actually be reached and
+reviewed. It fails one job in eight, because the failure path is the one a
+happy-path demo never exercises. **Sprint 6 deletes that file** and replaces it
+with a server-side pipeline; the `StudioJob` shape the components consume does
+not change.
+
+---
+
+## Sprint 6 — The generation core
+
+_Connecting the studio to something real._
+
+- Provider adapter interface implemented for the first two image providers
+- Server-side job pipeline replacing `local-runner.ts`: submit, persist, poll
+- Generated output copied into R2, metadata into Postgres
+- Credit debit on success, automatic refund on provider failure
+- Studio queue reads from the server, so a reload shows what is actually running
 
 **Exit criteria:** a signed-in user spends credits and gets an image they can
 download.
 
 ---
 
-## Sprint 6 — The creative workspace
+## Sprint 7 — The creative workspace
 
 - Asset library: browse, search, filter, tag, delete
 - Collections and simple project grouping
 - UploadThing intake for user-supplied source material
-- Image-to-image and reference-driven generation
 - Bulk actions and export
 
 **Exit criteria:** a user's work persists and is findable a week later.
 
 ---
 
-## Sprint 7 — Video and audio
+## Sprint 8 — Video and audio
 
 - Video providers behind the same adapter interface
 - Audio and voice providers behind the same adapter interface
@@ -185,7 +214,7 @@ credit ledger.
 
 ---
 
-## Sprint 8 — Billing
+## Sprint 9 — Billing
 
 - Stripe products, prices, and the credit-pack catalogue
 - Checkout and customer portal
@@ -197,7 +226,7 @@ credit ledger.
 
 ---
 
-## Sprint 9 — Polish and performance
+## Sprint 10 — Polish and performance
 
 - Onboarding and first-run experience
 - Motion pass: page transitions, generation choreography
@@ -209,7 +238,7 @@ credit ledger.
 
 ---
 
-## Sprint 10 — Scale and operations
+## Sprint 11 — Scale and operations
 
 - Rate limiting and abuse prevention
 - Provider failover and circuit breaking
