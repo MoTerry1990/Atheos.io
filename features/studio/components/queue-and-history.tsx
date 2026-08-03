@@ -7,8 +7,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ProgressBar } from "@/components/ui/loading";
 import { EmptyState } from "@/components/ui/state";
+import { ApiError, cancelGeneration } from "@/features/studio/lib/api";
 import { useStudioStore } from "@/store/studio-store";
 import { formatRelativeTime } from "@/utils/format";
+import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 
 /**
@@ -17,13 +19,13 @@ import { cn } from "@/lib/utils";
  * Two lists of the same thing at different stages, so they share a row
  * component and a selection model. Clicking either puts it in the preview.
  *
- * ## The queue is ephemeral, the history is not
+ * ## Neither list is persisted locally any more
  *
- * The store persists history and deliberately never persists the queue: a
- * restored queue describes work that is not running, and on reload those jobs
- * would sit at "running" forever. That is a state the interface would have to
- * lie about. Sprint 6 moves the queue server-side, where a reload can ask what
- * actually happened.
+ * Both come from the server on mount, split by status. That replaced a
+ * persisted queue, which described work that was not running — on reload those
+ * jobs sat at "running" forever, a state the interface had to lie about. Asking
+ * the server means a reload learns what actually happened, and anything still
+ * unfinished is picked back up by the workspace's poller rather than stranded.
  *
  * ## Exit animations
  *
@@ -57,6 +59,30 @@ export function QueuePanel() {
   const selectedJobId = useStudioStore((state) => state.selectedJobId);
   const selectJob = useStudioStore((state) => state.selectJob);
   const cancelJob = useStudioStore((state) => state.cancelJob);
+
+  /**
+   * Cancel on the server, then locally.
+   *
+   * Dropping the row without telling the server would leave a generation
+   * running that nobody is watching — the provider still bills us for it, and
+   * the user's credits are never refunded because nothing settles the job. The
+   * DELETE does both.
+   *
+   * The row is removed regardless of the outcome: a cancel that failed because
+   * the job had already finished is not something to make the user act on, and
+   * the next load reconciles against the server anyway.
+   */
+  async function cancel(id: string) {
+    try {
+      await cancelGeneration(id);
+    } catch (cause) {
+      if (cause instanceof ApiError && cause.status !== 404) {
+        toast.error("Could not cancel", { description: cause.message });
+      }
+    } finally {
+      cancelJob(id);
+    }
+  }
 
   return (
     <section aria-labelledby="queue-heading" className="space-y-3">
@@ -107,13 +133,13 @@ export function QueuePanel() {
                       tabIndex={0}
                       onClick={(event) => {
                         event.stopPropagation();
-                        cancelJob(job.id);
+                        void cancel(job.id);
                       }}
                       onKeyDown={(event) => {
                         if (event.key === "Enter" || event.key === " ") {
                           event.preventDefault();
                           event.stopPropagation();
-                          cancelJob(job.id);
+                          void cancel(job.id);
                         }
                       }}
                       aria-label="Cancel job"
@@ -127,7 +153,7 @@ export function QueuePanel() {
                     {job.params.prompt || "No prompt"}
                   </p>
 
-                  <div className="mt-2">
+                  <div className="mt-2 space-y-1">
                     <ProgressBar
                       size="sm"
                       value={
@@ -135,6 +161,13 @@ export function QueuePanel() {
                       }
                       label={`Progress for ${job.modelName}`}
                     />
+                    {/* When the queue is picked back up after a reload, the
+                        start time is the only thing that distinguishes a job
+                        submitted moments ago from one that has been running
+                        since before this tab existed. */}
+                    <p className="text-2xs text-muted-foreground">
+                      started {formatRelativeTime(job.createdAt)}
+                    </p>
                   </div>
                 </button>
               </motion.li>

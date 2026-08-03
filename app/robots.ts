@@ -25,13 +25,30 @@ export default function robots(): MetadataRoute.Robots {
         // keeps them out of the index if a link to one leaks.
         disallow: [
           "/api/",
+          // Internal tooling. Every preview route added since Sprint 4 —
+          // listing them individually was already a maintenance trap by the
+          // fifth one, so the pattern covers any future `*-preview`.
           "/design-system",
           "/dashboard-preview",
           "/studio-preview",
+          "/projects-preview",
+          "/billing-preview",
+          "/marketplace-preview",
+          "/community-preview",
+          "/admin-preview",
+          "/dev/",
+          // Authenticated surfaces. All carry `noindex` as well; this only
+          // saves the crawl.
           "/studio",
           "/dashboard",
+          "/projects",
+          "/marketplace",
           "/profile",
           "/settings",
+          // Deliberately **not** listed: `/admin`. It returns 404 to everyone
+          // who is not an admin (§ 38), and naming it here would advertise a
+          // path that is otherwise indistinguishable from a typo — the exact
+          // thing robots.txt being public makes a bad idea.
         ],
       },
     ],

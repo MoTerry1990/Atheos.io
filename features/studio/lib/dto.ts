@@ -38,6 +38,7 @@ interface GenerationRow {
     mimeType: string;
     width: number | null;
     height: number | null;
+    durationMs: number | null;
   }[];
 }
 
@@ -66,9 +67,13 @@ export interface GenerationDTO {
     id: string;
     /** Object key, not a URL — the CDN hostname is an operational detail. */
     storageKey: string;
+    /** Drives whether the preview mounts an image or a video element. It is
+     *  the only reliable signal — a storage key's extension is ours to choose
+     *  and a video model can return several container formats. */
     mimeType: string;
     width: number | null;
     height: number | null;
+    durationMs: number | null;
   }[];
 }
 
@@ -94,6 +99,7 @@ export function toGenerationDTO(row: GenerationRow): GenerationDTO {
       mimeType: asset.mimeType,
       width: asset.width,
       height: asset.height,
+      durationMs: asset.durationMs,
     })),
     // Deliberately absent: providerJobId, userId, internal parameters.
   };
@@ -110,6 +116,9 @@ export function toGenerationDTO(row: GenerationRow): GenerationDTO {
 export function toStudioModel(model: ProviderModel): StudioModel {
   const isUpscaler = model.capabilities.operations.includes("upscale");
   const isRemover = model.capabilities.operations.includes("remove-background");
+  const isVideo = model.modality === "VIDEO";
+
+  const durations = model.capabilities.durations ?? [];
 
   return {
     id: model.id,
@@ -120,18 +129,26 @@ export function toStudioModel(model: ProviderModel): StudioModel {
       ? "Increases resolution while preserving detail. Takes an image, not a prompt."
       : isRemover
         ? "Cuts the subject out and returns a transparent background."
-        : `${model.capabilities.maxOutputs} output${model.capabilities.maxOutputs > 1 ? "s" : ""} per run · ${model.capabilities.supportsSeed ? "reproducible with a seed" : "no seed"}`,
+        : isVideo
+          ? `${durations.join("s or ")}s clips${model.capabilities.supportsImageInput ? ", from a prompt or a still" : ""}`
+          : `${model.capabilities.maxOutputs} output${model.capabilities.maxOutputs > 1 ? "s" : ""} per run · ${model.capabilities.supportsSeed ? "reproducible with a seed" : "no seed"}`,
     modality: model.modality,
     capabilities: model.capabilities,
     creditCost: model.creditCost,
     // A rough expectation so the interface can set one before committing
     // credits. Not a promise, and labelled as approximate everywhere it shows.
-    typicalSeconds: isRemover
-      ? 6
-      : isUpscaler
-        ? 12
-        : model.creditCost > 10
-          ? 40
-          : 14,
+    //
+    // Video is branched on modality rather than on price. The old rule — "over
+    // 10 credits means slow" — put a 90-credit video model at 40 seconds, which
+    // is off by minutes and would have every clip look overdue before it began.
+    typicalSeconds: isVideo
+      ? 150
+      : isRemover
+        ? 6
+        : isUpscaler
+          ? 12
+          : model.creditCost > 10
+            ? 40
+            : 14,
   };
 }

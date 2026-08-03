@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+import { guard } from "@/lib/api-guard";
+
 import {
   GenerationError,
   cancelGeneration,
@@ -27,10 +29,19 @@ import { toGenerationDTO } from "@/features/studio/lib/dto";
  * another account is a 404 rather than a leak.
  */
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
+
+  // The studio polls this while a job runs, so it sits under the generous
+  // `read` policy rather than `generate` — the cost here is a database read,
+  // not a provider call.
+  const gate = await guard(request, {
+    policy: "read",
+    context: "GET /api/generations/[id]",
+  });
+  if (gate instanceof NextResponse) return gate;
 
   try {
     const generation = await pollGeneration(id);
@@ -51,10 +62,16 @@ export async function GET(
 }
 
 export async function DELETE(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params;
+
+  const gate = await guard(request, {
+    policy: "mutation",
+    context: "DELETE /api/generations/[id]",
+  });
+  if (gate instanceof NextResponse) return gate;
 
   try {
     await cancelGeneration(id);

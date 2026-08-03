@@ -65,7 +65,7 @@ export function CreditsCard({ credits }: { credits: CreditSummary }) {
           </div>
 
           <Button variant="outline" size="sm" asChild>
-            <Link href="/settings">
+            <Link href="/settings/billing">
               Manage
               <ArrowUpRight />
             </Link>
@@ -87,16 +87,25 @@ export function CreditsCard({ credits }: { credits: CreditSummary }) {
                 does not patch up, which can strand the bar at zero. Reduced
                 motion is handled globally by MotionConfig. See
                 docs/DESIGN-SYSTEM.md. */}
+            {/* `scaleX`, not `width`.
+                Animating width makes the browser lay out and paint the bar on
+                every frame of a 0.9s animation. `scaleX` is composited — it
+                runs on the GPU and touches neither layout nor paint. Visually
+                identical for a solid bar; `origin-left` is what makes it grow
+                from the left rather than from the centre.
+
+                The gradient variant does stretch rather than translate, which
+                is imperceptible at these dimensions and worth the frames. */}
             <motion.div
-              initial={{ width: 0 }}
-              animate={{ width: `${ratio * 100}%` }}
+              initial={{ scaleX: 0 }}
+              animate={{ scaleX: ratio }}
               transition={{
                 duration: 0.9,
                 ease: [0.25, 1, 0.5, 1],
                 delay: 0.1,
               }}
               className={cn(
-                "h-full rounded-full",
+                "h-full w-full origin-left rounded-full",
                 tone === "brand" && "bg-gradient-brand",
                 tone === "warning" && "bg-warning",
                 tone === "destructive" && "bg-destructive",

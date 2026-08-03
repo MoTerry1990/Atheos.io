@@ -120,7 +120,7 @@ A correction is a new row with the opposite sign, never an edit.
 | ---------------------------------------------- | ------------------------------------------------------ |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | How the pieces fit, directory rules, request lifecycle |
 | [`docs/DECISIONS.md`](docs/DECISIONS.md)       | Every Sprint 0 decision, why, and what it costs        |
-| [`ROADMAP.md`](ROADMAP.md)                     | Sprints 0–7 and what is deliberately deferred          |
+| [`ROADMAP.md`](ROADMAP.md)                     | Sprints 0–11 and what is deliberately deferred         |
 | [`CLAUDE.md`](CLAUDE.md)                       | Working agreements for AI-assisted development         |
 
 ---
@@ -132,8 +132,10 @@ Stated so they read as decisions rather than oversights:
 - **`ClerkProvider` and auth middleware are not wired.** They land in Sprint 1
   with the auth surface. Wiring a provider that throws without live credentials
   is a worse foundation than one honest gap.
-- **No Content-Security-Policy.** Needs the real origin list for Clerk, Stripe
-  and each AI provider. Sprint 7.
+- **No Content-Security-Policy.** Needs the real origin list for Clerk, Stripe,
+  each AI provider and the R2 hostname. Still open as of Sprint 7 — it lands
+  with the operational hardening in Sprint 11, where the production origins are
+  actually known.
 - **No tests.** There is no behaviour to test yet, and tests over scaffolding
   calcify it. They arrive with the credit ledger in Sprint 2.
 - **No migration has been run.** The schema validates and the client generates;

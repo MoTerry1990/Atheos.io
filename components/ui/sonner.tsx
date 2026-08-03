@@ -17,6 +17,13 @@ const Toaster = ({ ...props }: ToasterProps) => {
     <Sonner
       theme={theme as ToasterProps["theme"]}
       className="toaster group"
+      // Sonner's close button is a 16px hit target — below WCAG 2.5.8's 24px
+      // minimum, and it appears on every toast in the product. Same miss the
+      // dialog and sheet close buttons had until Sprint 10; this is the last
+      // place in the app it survived.
+      toastOptions={{
+        classNames: { closeButton: "size-6" },
+      }}
       icons={{
         success: <CircleCheckIcon className="size-4" />,
         info: <InfoIcon className="size-4" />,

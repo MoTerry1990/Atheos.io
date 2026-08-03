@@ -1,5 +1,8 @@
+import { ApiError, request, upload } from "@/lib/http";
 import type { GenerationDTO } from "@/features/studio/lib/dto";
 import type { ProviderModel } from "@/services/ai/types";
+
+export { ApiError };
 
 /**
  * The studio's client for the generation API.
@@ -9,49 +12,6 @@ import type { ProviderModel } from "@/services/ai/types";
  * `response.ok`, and error handling is written once instead of at every call
  * site.
  */
-
-export class ApiError extends Error {
-  constructor(
-    message: string,
-    readonly status: number,
-    readonly code?: string,
-  ) {
-    super(message);
-    this.name = "ApiError";
-  }
-}
-
-async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  let response: Response;
-
-  try {
-    response = await fetch(url, {
-      ...init,
-      headers: { "Content-Type": "application/json", ...init?.headers },
-      cache: "no-store",
-    });
-  } catch {
-    // Network-level failure. Distinguished from an API error because the advice
-    // is different: check your connection, not your settings.
-    throw new ApiError(
-      "Could not reach the server. Check your connection and try again.",
-      0,
-      "network",
-    );
-  }
-
-  const body = await response.json().catch(() => null);
-
-  if (!response.ok) {
-    throw new ApiError(
-      body?.error ?? "Something went wrong.",
-      response.status,
-      body?.code,
-    );
-  }
-
-  return body as T;
-}
 
 export interface SubmitPayload {
   operation: string;
@@ -64,6 +24,8 @@ export interface SubmitPayload {
   inputImageUrls?: string[];
   inputStrength?: number;
   scale?: number;
+  durationSeconds?: number;
+  cameraMotion?: string;
   parentId?: string;
   collectionId?: string;
 }
@@ -75,6 +37,24 @@ export function submitGeneration(payload: SubmitPayload) {
   );
 }
 
+/**
+ * Upload a reference image and get back a URL the provider can fetch.
+ *
+ * Uses `upload()` rather than `request()`: that one sets a JSON content type,
+ * and a multipart body must be allowed to set its own boundary. Sending
+ * `FormData` with an explicit Content-Type is the classic way to make an upload
+ * fail with a parse error on the server.
+ */
+export function uploadReference(
+  file: File,
+  signal?: AbortSignal,
+): Promise<{ assetId: string; storageKey: string; url: string }> {
+  const body = new FormData();
+  body.append("file", file);
+
+  return upload("/api/uploads", body, signal);
+}
+
 export function pollGeneration(id: string) {
   return request<{ generation: GenerationDTO }>(`/api/generations/${id}`);
 }
@@ -83,6 +63,32 @@ export function cancelGeneration(id: string) {
   return request<{ status: string }>(`/api/generations/${id}`, {
     method: "DELETE",
   });
+}
+
+export interface CollectionSummary {
+  id: string;
+  name: string;
+  description: string | null;
+  assetCount: number;
+  updatedAt: number;
+}
+
+export function listCollections() {
+  return request<{ collections: CollectionSummary[] }>("/api/collections");
+}
+
+export function createCollection(name: string) {
+  return request<{ collection: CollectionSummary }>("/api/collections", {
+    method: "POST",
+    body: JSON.stringify({ name }),
+  });
+}
+
+export function saveToCollection(collectionId: string, assetIds: string[]) {
+  return request<{ added: number; assetCount: number }>(
+    `/api/collections/${collectionId}/assets`,
+    { method: "POST", body: JSON.stringify({ assetIds }) },
+  );
 }
 
 export function loadStudio() {
@@ -115,7 +121,11 @@ export async function pollUntilSettled(
   } = {},
 ): Promise<GenerationDTO> {
   const started = Date.now();
-  const timeoutMs = options.timeoutMs ?? 5 * 60_000;
+  // Fifteen minutes, up from five. A video model routinely runs for two or
+  // three, and a queue backed up behind other work runs for longer; the old
+  // ceiling would have given up on jobs that were still perfectly healthy and
+  // told the user something untrue about them.
+  const timeoutMs = options.timeoutMs ?? 15 * 60_000;
   let delay = 1000;
 
   for (;;) {

@@ -12,6 +12,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
+import { PLAN_DEFINITIONS } from "@/services/billing/catalogue";
+
 /**
  * All marketing copy, in one module.
  *
@@ -320,58 +322,32 @@ export interface PricingTier {
   featured?: boolean;
 }
 
-export const PRICING: readonly PricingTier[] = [
-  {
-    id: "starter",
-    name: "Starter",
-    description: "Enough to find out whether this fits how you work.",
-    monthly: 0,
-    yearly: 0,
-    credits: "200 credits monthly",
-    features: [
-      "Image generation",
-      "Single asset library",
-      "Standard queue",
-      "Community support",
-    ],
-    cta: "Start free",
-  },
-  {
-    id: "studio",
-    name: "Studio",
-    description: "For people who generate every day and need it to be fast.",
-    monthly: 24,
-    yearly: 19,
-    credits: "3,000 credits monthly",
-    features: [
-      "Image, video and audio",
-      "Side-by-side model comparison",
-      "Priority queue",
-      "Collections and tagging",
-      "Automatic refunds on provider failure",
-      "Email support",
-    ],
-    cta: "Request early access",
-    featured: true,
-  },
-  {
-    id: "scale",
-    name: "Scale",
-    description: "For teams putting generated work into production.",
-    monthly: 79,
-    yearly: 64,
-    credits: "12,000 credits monthly",
-    features: [
-      "Everything in Studio",
-      "Highest queue priority",
-      "Bulk generation and export",
-      "Usage analytics and cost breakdown",
-      "Early access to new providers",
-      "Priority support",
-    ],
-    cta: "Talk to us",
-  },
-] as const;
+/**
+ * Derived from the billing catalogue, not written twice.
+ *
+ * Until Sprint 9 this was a hand-maintained list, which was fine while nothing
+ * could be bought. Now that checkout is real, two lists would eventually
+ * advertise $24 and charge something else — and the user would find that out at
+ * the card form. `services/billing/catalogue.ts` owns the numbers; this shapes
+ * them for a marketing card.
+ *
+ * Imported from `catalogue` rather than `plans` on purpose: this module reaches
+ * client components, and `plans` reads server environment variables.
+ *
+ * The catalogue holds minor units because that is what Stripe bills in; the
+ * page shows dollars, so the conversion happens here, once.
+ */
+export const PRICING: readonly PricingTier[] = PLAN_DEFINITIONS.map((plan) => ({
+  id: plan.tier.toLowerCase(),
+  name: plan.name,
+  description: plan.description,
+  monthly: plan.monthly / 100,
+  yearly: plan.yearly / 100,
+  credits: `${plan.monthlyCredits.toLocaleString("en-US")} credits monthly`,
+  features: plan.features,
+  cta: plan.monthly === 0 ? "Start free" : `Choose ${plan.name}`,
+  featured: plan.featured,
+}));
 
 export const PRICING_NOTE =
   "Credits are consumed per generation and priced by modality — video costs more than an image because it costs us more. Unused credits roll over for one month. Cancel any time.";

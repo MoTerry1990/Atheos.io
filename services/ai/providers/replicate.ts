@@ -7,6 +7,7 @@ import {
   type GenerationRequest,
   type ProviderModel,
 } from "@/services/ai/types";
+import { CAMERA_MOTIONS } from "@/services/ai/motion";
 import { env } from "@/lib/env";
 
 /**
@@ -99,6 +100,30 @@ const MODELS: (ProviderModel & { version: string })[] = [
     },
   },
   {
+    id: "replicate/video-gen",
+    providerId: "replicate",
+    displayName: "Motion 1",
+    modality: "VIDEO",
+    // An order of magnitude above a still, which is roughly the real cost
+    // ratio. Pricing a clip like an image is how a platform loses money on
+    // every use of its most impressive feature.
+    creditCost: 90,
+    version: "PLACEHOLDER_video_gen_version",
+    capabilities: {
+      supportsNegativePrompt: true,
+      supportsImageInput: true,
+      supportsSeed: true,
+      aspectRatios: ["16:9", "9:16", "1:1"],
+      // One clip per run. Video is slow and expensive enough that batching
+      // four is a bill nobody asked for.
+      maxOutputs: 1,
+      durations: [5, 10],
+      maxDurationSeconds: 10,
+      cameraMotions: CAMERA_MOTIONS,
+      operations: ["text-to-video", "image-to-video"],
+    },
+  },
+  {
     id: "replicate/remove-bg",
     providerId: "replicate",
     displayName: "Background Remover",
@@ -142,6 +167,24 @@ function buildInput(
   const [source] = request.inputImageUrls ?? [];
 
   switch (request.operation) {
+    case "text-to-video":
+    case "image-to-video":
+      return {
+        // Camera motion is appended to the prompt rather than sent as a
+        // parameter: these models read it as caption text, and the vendors we
+        // have looked at expose no structured motion control.
+        prompt: [request.prompt, request.cameraMotion]
+          .filter(Boolean)
+          .join(", "),
+        ...(model.capabilities.supportsNegativePrompt && request.negativePrompt
+          ? { negative_prompt: request.negativePrompt }
+          : {}),
+        ...(source ? { image: source } : {}),
+        duration: request.durationSeconds ?? 5,
+        ...(request.aspectRatio ? { aspect_ratio: request.aspectRatio } : {}),
+        ...(request.seed !== undefined ? { seed: request.seed } : {}),
+      };
+
     case "upscale":
       return { image: source, scale: request.scale ?? 2 };
 
@@ -205,13 +248,44 @@ function toState(
   }
 }
 
-/** Replicate returns a string or an array depending on the model. */
+/**
+ * Replicate returns a string or an array depending on the model.
+ *
+ * The MIME type is inferred from the extension rather than assumed. The same
+ * response shape carries a PNG from an image model and an MP4 from a video one,
+ * and assuming PNG would store a clip under an image content type — which then
+ * refuses to play in a browser and is classified as an image asset in our own
+ * database.
+ */
 function toOutputs(output: ReplicatePrediction["output"]) {
   if (!output) return [];
   const urls = Array.isArray(output) ? output : [output];
+
   return urls
     .filter((url): url is string => typeof url === "string")
-    .map((url) => ({ sourceUrl: url, mimeType: "image/png" }));
+    .map((url) => ({ sourceUrl: url, mimeType: mimeTypeFor(url) }));
+}
+
+const EXTENSION_MIME_TYPES: Record<string, string> = {
+  mp4: "video/mp4",
+  webm: "video/webm",
+  mov: "video/quicktime",
+  gif: "image/gif",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  webp: "image/webp",
+  png: "image/png",
+};
+
+function mimeTypeFor(url: string): string {
+  // Strip the query first — Replicate serves signed URLs, and ".mp4?token=…"
+  // has no usable extension until it is gone.
+  const path = url.split("?")[0].toLowerCase();
+  const extension = path.slice(path.lastIndexOf(".") + 1);
+  // Falls back to PNG because every image model here emits PNG; a video whose
+  // URL carries no extension would be mislabelled, which is why the video
+  // models above are pinned to vendors that return one.
+  return EXTENSION_MIME_TYPES[extension] ?? "image/png";
 }
 
 /**

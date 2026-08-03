@@ -22,13 +22,16 @@ import { env } from "@/lib/env";
  * endpoint. That also keeps the exit door open: switching to S3, B2 or MinIO
  * is an endpoint change, not a rewrite.
  *
- * ## Why this is separate from UploadThing
+ * ## One storage system, not two
  *
- * Different jobs. UploadThing handles *inbound* files from a browser — presigned
- * URLs, progress, type-safe routes, all the plumbing we would otherwise write
- * badly. R2 holds *outbound* media we generated server-side, where there is no
- * browser involved and per-gigabyte delivery cost is the dominant concern.
- * See `docs/DECISIONS.md`.
+ * Sprint 0 planned a split: UploadThing for *inbound* browser uploads, R2 for
+ * *outbound* generated media (§ 4). It never happened. When `/api/uploads` was
+ * built in Sprint 7 it took multipart form data and wrote straight here, which
+ * turned out to be the whole job — the plumbing UploadThing was meant to save
+ * us is about thirty lines when the destination is already S3-compatible.
+ *
+ * So R2 holds both, `Asset.source` records which path a file came in through,
+ * and Sprint 14 removed the unused dependency. See § 46 in `docs/DECISIONS.md`.
  */
 
 function requireR2Config() {

@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 
+import { AIModels } from "@/features/marketing/components/ai-models";
 import { AIShowcase } from "@/features/marketing/components/ai-showcase";
+import { AnimatedDemo } from "@/features/marketing/components/animated-demo";
 import { Faq } from "@/features/marketing/components/faq";
 import { Features } from "@/features/marketing/components/features";
 import { Gallery } from "@/features/marketing/components/gallery";
@@ -8,6 +10,7 @@ import { Hero } from "@/features/marketing/components/hero";
 import { HowItWorks } from "@/features/marketing/components/how-it-works";
 import { Pricing } from "@/features/marketing/components/pricing";
 import { Templates } from "@/features/marketing/components/templates";
+import { Testimonials } from "@/features/marketing/components/testimonials";
 import { TrustedBy } from "@/features/marketing/components/trusted-by";
 import { SITE } from "@/features/marketing/content";
 
@@ -51,12 +54,31 @@ export default function LandingPage() {
     <>
       <Hero />
       <TrustedBy />
+
+      {/* The demo sits directly after the fold. A visitor who has read the hero
+          is asking "what is it actually like", and answering that before the
+          feature list is what stops the page reading as a brochure. */}
+      <AnimatedDemo />
+
       <AIShowcase />
       <Features />
       <HowItWorks />
+
+      {/* Providers before templates: which models are connected is a
+          qualifying question, and a buyer who needs a vendor we do not have
+          should find that out before scrolling a gallery. */}
+      <AIModels />
+
       <Templates />
       <Gallery />
       <Pricing />
+
+      {/* Renders nothing — `TESTIMONIALS` is empty because there are no
+          customers yet. Mounted anyway so the section appears the moment a
+          real, consented quote exists, rather than needing this file edited
+          under launch pressure. */}
+      <Testimonials />
+
       <Faq />
     </>
   );

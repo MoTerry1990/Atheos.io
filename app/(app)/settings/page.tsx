@@ -1,5 +1,9 @@
+import { CreditCard } from "lucide-react";
 import type { Metadata } from "next";
+import dynamic from "next/dynamic";
+import Link from "next/link";
 
+import { Button } from "@/components/ui/button";
 import { Container } from "@/components/layout/container";
 import { PageHeader } from "@/components/layout/page-header";
 import {
@@ -11,10 +15,36 @@ import {
 } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AvatarUpload } from "@/features/account/components/avatar-upload";
-import { DangerZone } from "@/features/account/components/danger-zone";
-import { NotificationSettings } from "@/features/account/components/notification-settings";
 import { ProfileForm } from "@/features/account/components/profile-form";
-import { ThemeSettings } from "@/features/account/components/theme-settings";
+
+/**
+ * The three tabs behind a click are code-split.
+ *
+ * Profile is `defaultValue`, so its two components are needed for first paint
+ * and stay static. Appearance, Notifications and Account are not: Radix `Tabs`
+ * unmounts inactive content, so eagerly bundling them shipped three panels —
+ * including the delete-account flow and its confirmation dialog — to every
+ * visitor who came to change their display name.
+ *
+ * No `ssr: false`: this is a Server Component, and the panels still render on
+ * the server when their tab is the active one. The split is about which chunk
+ * the browser downloads, not about where it renders.
+ */
+const ThemeSettings = dynamic(() =>
+  import("@/features/account/components/theme-settings").then(
+    (m) => m.ThemeSettings,
+  ),
+);
+
+const NotificationSettings = dynamic(() =>
+  import("@/features/account/components/notification-settings").then(
+    (m) => m.NotificationSettings,
+  ),
+);
+
+const DangerZone = dynamic(() =>
+  import("@/features/account/components/danger-zone").then((m) => m.DangerZone),
+);
 
 export const metadata: Metadata = { title: "Settings" };
 
@@ -38,6 +68,24 @@ export default function SettingsPage() {
         title="Settings"
         description="Manage your profile, appearance and notifications."
       />
+
+      {/* Billing is a link, not a fifth tab. Stripe redirects back to it after
+          checkout, and a destination that only exists as tab state cannot be
+          linked to — the user would land on Profile after paying. */}
+      <div className="mb-6 flex items-center justify-between gap-3 rounded-lg border border-border p-3">
+        <div className="min-w-0">
+          <p className="text-sm font-medium">Plan and billing</p>
+          <p className="text-xs text-muted-foreground">
+            Your subscription, credits, invoices and usage.
+          </p>
+        </div>
+        <Button variant="outline" size="sm" asChild>
+          <Link href="/settings/billing">
+            <CreditCard />
+            Open billing
+          </Link>
+        </Button>
+      </div>
 
       <Tabs defaultValue="profile" className="mt-2">
         <TabsList className="mb-6 w-full [scrollbar-width:none] justify-start overflow-x-auto [&::-webkit-scrollbar]:hidden">

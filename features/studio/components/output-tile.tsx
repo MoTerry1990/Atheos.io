@@ -1,6 +1,7 @@
 "use client";
 
 import { Download } from "lucide-react";
+import Image from "next/image";
 
 import { Button } from "@/components/ui/button";
 import type { JobOutput } from "@/features/studio/types";
@@ -8,18 +9,23 @@ import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 
 /**
- * A generated output.
+ * A generated output — a still or a clip.
  *
- * **The imagery is procedural, not model output.** No provider is connected
- * until Sprint 6. Rendering something that looked like a real generation would
- * misrepresent the product to anyone reviewing it, so these are unmistakably
- * gradients — and the studio carries a banner saying so.
+ * ## The type of the file decides what is mounted
  *
- * What is real here is everything around the pixels: the aspect ratio comes
- * from the requested dimensions, the seed is displayed, and the download
- * genuinely produces a file at the requested resolution. When a provider
- * arrives, an `<img>` replaces the gradient and nothing else in this component
- * changes.
+ * Not the model's modality, and not the storage key's extension. A video model
+ * can return a poster frame, and the mock provider returns an animated SVG for
+ * a clip because encoding a real MP4 server-side to stand in for one nobody
+ * watches is not worth an ffmpeg dependency. Mounting a `<video>` over a file
+ * that is not one produces a black rectangle with a broken control bar, so the
+ * asset's own MIME type is the only signal used here.
+ *
+ * ## The gradient is a backdrop, not the picture
+ *
+ * It shows while the asset loads and stays visible if the CDN is unreachable,
+ * so a slow file is never an empty grey box. In Sprint 5 it *was* the picture,
+ * clearly labelled as such; with providers connected it has receded to what it
+ * always should have been.
  */
 
 function gradientFor(output: JobOutput): string {
@@ -31,78 +37,59 @@ function gradientFor(output: JobOutput): string {
   ].join(", ");
 }
 
+export function isVideoOutput(output: JobOutput): boolean {
+  return output.mimeType.startsWith("video/");
+}
+
+function formatDuration(durationMs: number): string {
+  const seconds = Math.round(durationMs / 1000);
+  if (seconds < 60) return `${seconds}s`;
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
 /**
- * Render the placeholder to a canvas and download it.
+ * Download an output.
  *
- * Deliberately produced at the **requested** dimensions rather than the
- * displayed ones, so the download pipeline — filename, MIME type, object-URL
- * lifecycle, the size the user actually asked for — is exercised now rather
- * than written blind in Sprint 6.
+ * Goes through `/api/assets/{id}/download`, which checks ownership and then
+ * redirects to a presigned URL carrying the attachment header. It does **not**
+ * link straight to the CDN: the `download` attribute is ignored cross-origin,
+ * so that would open the file in the tab — playing the video, or replacing the
+ * app with the image — rather than saving it.
+ *
+ * An anchor click rather than `fetch` or `location.href`. The browser follows
+ * the redirect, sees `Content-Disposition: attachment`, saves the file and
+ * leaves the page where it is — no bytes pass through JavaScript, which matters
+ * when the file is a 50MB clip, and unlike `location.href` it can be called
+ * several times to save a batch.
  */
-async function downloadOutput(output: JobOutput, label: string) {
-  const canvas = document.createElement("canvas");
-  canvas.width = output.width;
-  canvas.height = output.height;
-
-  const context = canvas.getContext("2d");
-  if (!context) {
-    toast.error("Could not prepare the download");
+function downloadOutput(output: JobOutput) {
+  if (!output.url) {
+    toast.error("Nothing to download", {
+      description: "This result was not stored — file storage is unconfigured.",
+    });
     return;
   }
 
-  const gradient = context.createLinearGradient(
-    0,
-    0,
-    canvas.width,
-    canvas.height,
-  );
-  gradient.addColorStop(0, `hsl(${output.hue} 70% 55%)`);
-  gradient.addColorStop(0.5, `hsl(${(output.hue + 55) % 360} 65% 40%)`);
-  gradient.addColorStop(1, `hsl(${(output.hue + 300) % 360} 60% 20%)`);
-  context.fillStyle = gradient;
-  context.fillRect(0, 0, canvas.width, canvas.height);
-
-  // Stamped so a downloaded file cannot be mistaken for real output once it
-  // has left the app and lost its surrounding context.
-  context.fillStyle = "rgba(255,255,255,0.75)";
-  context.font = `${Math.max(12, Math.round(canvas.width / 40))}px sans-serif`;
-  context.fillText(
-    "Atheos placeholder — no provider connected",
-    Math.round(canvas.width * 0.04),
-    Math.round(canvas.height * 0.94),
-  );
-
-  const blob = await new Promise<Blob | null>((resolve) =>
-    canvas.toBlob(resolve, "image/png"),
-  );
-  if (!blob) {
-    toast.error("Could not prepare the download");
-    return;
-  }
-
-  const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = `atheos-${label}-${output.seed}.png`;
+  anchor.href = `/api/assets/${output.id}/download`;
+  // The server names the file; this only signals intent to the browser so it
+  // does not treat the request as navigation.
+  anchor.download = "";
+  anchor.rel = "noopener";
   anchor.click();
-  // Revoke on the next tick — revoking synchronously can cancel the download
-  // in some browsers before it has started reading the blob.
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-
-  toast.success("Download started", anchor.download);
 }
 
 export function OutputTile({
   output,
-  label,
   className,
   showActions = true,
 }: {
   output: JobOutput;
-  label: string;
   className?: string;
   showActions?: boolean;
 }) {
+  const video = isVideoOutput(output);
+
   return (
     <figure
       className={cn(
@@ -111,9 +98,6 @@ export function OutputTile({
       )}
       style={{ aspectRatio: `${output.width} / ${output.height}` }}
     >
-      {/* The gradient is the backdrop, not the picture. It shows while the
-          real asset loads and remains visible if the CDN is unreachable, so a
-          slow image is never an empty grey box. */}
       <div
         aria-hidden
         className="absolute inset-0"
@@ -124,23 +108,49 @@ export function OutputTile({
       />
 
       {output.url ? (
-        /* eslint-disable-next-line @next/next/no-img-element --
-           Asset hosts are configured per deployment, so next/image would need
-           every possible R2 hostname in remotePatterns at build time. The
-           objects are already immutable and CDN-cached, which is most of what
-           the optimiser would provide. */
-        <img
-          src={output.url}
-          alt=""
-          loading="lazy"
-          decoding="async"
-          className="absolute inset-0 size-full object-cover"
-        />
+        video ? (
+          <video
+            src={output.url}
+            className="absolute inset-0 size-full object-cover"
+            // Controls, because this is the result the user paid for and they
+            // will want to scrub it. Muted and playsInline so autoplay is
+            // permitted at all — a browser blocks an unmuted autoplay, and iOS
+            // takes an un-inlined video fullscreen without asking.
+            controls
+            loop
+            muted
+            playsInline
+            autoPlay
+            // `metadata` rather than `auto`: the tile may be one of several in
+            // a grid, and preloading four clips in full is a lot of somebody's
+            // bandwidth for a panel they have not looked at yet.
+            preload="metadata"
+          />
+        ) : (
+          /* The per-deployment-hostname problem that kept this a raw `<img>`
+             is solved in next.config.ts: the bucket's public host comes from
+             `NEXT_PUBLIC_R2_PUBLIC_URL`, which is known at build time.
+             Immutable CDN caching was most of what the optimiser provides —
+             but not the responsive variants, which is the part that matters in
+             a grid. */
+          <Image
+            src={output.url}
+            alt=""
+            fill
+            sizes="(max-width: 640px) 50vw, 280px"
+            className="absolute inset-0 size-full object-cover"
+          />
+        )
       ) : null}
-      <div
-        className="absolute inset-0 grain opacity-15 mix-blend-overlay"
-        aria-hidden
-      />
+
+      {/* Skipped over video: the grain sits above the element and would swallow
+          clicks on the native control bar. */}
+      {video ? null : (
+        <div
+          className="absolute inset-0 grain opacity-15 mix-blend-overlay"
+          aria-hidden
+        />
+      )}
 
       {showActions ? (
         <figcaption
@@ -150,15 +160,20 @@ export function OutputTile({
             "translate-y-full transition-transform duration-200",
             "group-focus-within:translate-y-0 group-hover:translate-y-0",
             "motion-reduce:translate-y-0",
+            // A video's own controls live along the bottom edge. Lifting the
+            // caption clear of them keeps both usable.
+            video && "bottom-12 bg-none",
           )}
         >
           <span className="font-mono text-2xs text-white/80 tabular-nums">
-            {output.width}×{output.height} · seed {output.seed}
+            {output.width}×{output.height}
+            {output.durationMs ? ` · ${formatDuration(output.durationMs)}` : ""}
+            {output.seed ? ` · seed ${output.seed}` : ""}
           </span>
           <Button
             size="icon-xs"
             variant="secondary"
-            onClick={() => downloadOutput(output, label)}
+            onClick={() => downloadOutput(output)}
             aria-label="Download"
             title="Download"
           >

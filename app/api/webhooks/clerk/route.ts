@@ -2,6 +2,10 @@ import { verifyWebhook } from "@clerk/nextjs/webhooks";
 import type { UserJSON, WebhookEvent } from "@clerk/nextjs/server";
 import { type NextRequest, NextResponse } from "next/server";
 
+import { guard } from "@/lib/api-guard";
+
+import { env } from "@/lib/env";
+import { isUniqueViolation } from "@/lib/prisma-errors";
 import { prisma } from "@/lib/prisma";
 
 /**
@@ -131,6 +135,41 @@ async function handleUserDeleted(id: string) {
 }
 
 export async function POST(request: NextRequest) {
+  // Rate limited before the signature is verified.
+  //
+  // Verification is HMAC over the whole body — cheap, but not free, and an
+  // unauthenticated endpoint whose URL is discoverable is exactly the shape an
+  // attacker floods. `auth: "none"` because the signature *is* the
+  // authentication; `csrf: false` because a webhook sender is not a browser and
+  // sends no Origin, so the cross-origin check would reject every real call.
+  //
+  // Keyed by IP, which is the only identity available here. The limit is set
+  // well above either provider's real delivery rate.
+  const gate = await guard(request, {
+    policy: "sensitive",
+    auth: "none",
+    csrf: false,
+    context: "POST /api/webhooks/clerk",
+  });
+  if (gate instanceof NextResponse) return gate;
+
+  // Checked explicitly, mirroring the Stripe webhook.
+  //
+  // `verifyWebhook` reads this variable itself and throws when it is missing,
+  // which landed in the catch below and logged "signature verification failed"
+  // — sending whoever read that log hunting for a signature mismatch when the
+  // actual problem was an unset variable. This is the single most consequential
+  // misconfiguration in the project: without it no sign-up creates a user row,
+  // and every downstream feature is confused about who exists.
+  if (!env.CLERK_WEBHOOK_SIGNING_SECRET) {
+    console.error(
+      "clerk webhook received but CLERK_WEBHOOK_SIGNING_SECRET is unset",
+    );
+    return new NextResponse("Webhook verification is not configured", {
+      status: 503,
+    });
+  }
+
   let event: WebhookEvent;
 
   try {
@@ -141,21 +180,41 @@ export async function POST(request: NextRequest) {
     return new NextResponse("Invalid signature", { status: 400 });
   }
 
+  // The **event** id, from Svix — not `event.data.id`, which is the *user* id.
+  //
+  // Using the subject id here was a serious bug. `user_abc` would be claimed by
+  // the first `user.created`, and then every later `user.updated` for that same
+  // person collided with it and was dropped as a "duplicate" — so a profile
+  // synced exactly once and never again. Worse, the eventual `user.deleted`
+  // collided too, leaving the row (and all their personal data) undeleted after
+  // an account deletion.
+  //
+  // `svix-id` is unique per delivery, which is what idempotency actually needs.
+  // Verification has already succeeded by this point, so the header is present;
+  // refusing when it is absent is still better than inventing a key.
+  const eventId = request.headers.get("svix-id");
+  if (!eventId) {
+    console.error("clerk webhook: verified request carried no svix-id header");
+    return new NextResponse("Missing event id", { status: 400 });
+  }
+
   try {
-    await prisma.$transaction(async (tx) => {
-      // Claim the event id first. A duplicate delivery violates the primary key
-      // and lands in the catch below as an already-processed no-op.
-      await tx.webhookEvent.create({
-        data: {
-          id: event.data.id ?? `${event.type}-unknown`,
-          source: "clerk",
-          eventType: event.type,
-        },
-      });
+    // Claim the event id first. A duplicate delivery violates the primary key
+    // and lands in the catch below as an already-processed no-op.
+    await prisma.webhookEvent.create({
+      data: { id: eventId, source: "clerk", eventType: event.type },
     });
-  } catch {
-    // Already processed. 200 so Svix stops retrying.
-    return NextResponse.json({ status: "duplicate" });
+  } catch (error) {
+    // Only a primary-key collision means "already processed". A bare catch here
+    // treated a dropped connection as a duplicate, returned 200, stopped Svix
+    // retrying, and lost the signup grant silently.
+    if (isUniqueViolation(error)) {
+      return NextResponse.json({ status: "duplicate" });
+    }
+
+    console.error("clerk webhook: could not claim event id", error);
+    // 500 so Svix retries. Nothing has been written yet, so a retry is safe.
+    return new NextResponse("Could not record the event", { status: 500 });
   }
 
   try {
@@ -182,8 +241,13 @@ export async function POST(request: NextRequest) {
     // Release the idempotency claim so the retry is not rejected as a
     // duplicate. Without this, one transient database blip means the user is
     // never synced and no retry can ever fix it.
+    //
+    // Must be the same `eventId` that was claimed above. It previously deleted
+    // by `event.data.id ?? ""`, which no longer matches the claim — and in the
+    // fallback case never matched anything at all, so the release silently did
+    // nothing and the retry was rejected.
     await prisma.webhookEvent
-      .deleteMany({ where: { id: event.data.id ?? "" } })
+      .deleteMany({ where: { id: eventId } })
       .catch(() => undefined);
 
     return new NextResponse("Processing failed", { status: 500 });

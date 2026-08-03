@@ -45,14 +45,18 @@ export function PromptEditor() {
   const params = useStudioStore((state) => state.params);
   const setParam = useStudioStore((state) => state.setParam);
   const applyTemplate = useStudioStore((state) => state.applyTemplate);
+  const installed = useStudioStore((state) => state.installed);
 
   const [showAssembled, setShowAssembled] = useState(false);
 
   const model = useSelectedModel();
-  const assembled = assemblePrompt(params);
+  const assembled = assemblePrompt(params, installed.styles);
   const hasAdditions = assembled !== prompt.trim() && assembled.length > 0;
 
-  const byCategory = PROMPT_TEMPLATES.reduce<
+  // Built-ins first, then anything downloaded. Grouped by category, which for
+  // an installed pack *is* the pack name — so a prompt someone downloaded is
+  // always traceable to the thing they can uninstall.
+  const byCategory = [...PROMPT_TEMPLATES, ...installed.templates].reduce<
     Record<string, typeof PROMPT_TEMPLATES>
   >((groups, template) => {
     (groups[template.category] ??= []).push(template);
@@ -69,6 +73,11 @@ export function PromptEditor() {
             placeholder="Describe what you want to see — subject, setting, light, mood."
             rows={5}
             className="resize-y"
+            /* The `/` shortcut's target. A data attribute rather than an id
+               because the studio preview route renders this component twice on
+               one page, and duplicate ids would make the shortcut focus
+               whichever the browser found first. */
+            data-studio-prompt
           />
 
           <div className="flex flex-wrap items-center gap-2">

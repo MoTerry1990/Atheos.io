@@ -38,7 +38,20 @@ export interface HeadingProps
   extends
     Omit<ComponentPropsWithoutRef<"h2">, "color">,
     VariantProps<typeof headingVariants> {
-  as?: Extract<ElementType, "h1" | "h2" | "h3" | "h4" | "h5" | "h6">;
+  /**
+   * `p` and `div` are allowed alongside the six heading levels.
+   *
+   * Not a loophole — the opposite. Text that *looks* like a heading and is not
+   * one is a real and common thing: a type specimen, a hero subtitle, a large
+   * number on a metric card. Without an escape hatch the only way to get the
+   * size is to reach for a heading tag, which is precisely the misuse this
+   * component exists to prevent. The design-system gallery had done exactly
+   * that and given itself two `<h1>`s.
+   */
+  as?: Extract<
+    ElementType,
+    "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "p" | "div"
+  >;
 }
 
 export function Heading({

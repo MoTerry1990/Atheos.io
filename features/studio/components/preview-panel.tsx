@@ -3,10 +3,12 @@
 import {
   AlertCircle,
   Download,
+  Globe,
   ImageIcon,
   RotateCcw,
   Sparkles,
 } from "lucide-react";
+import { useEffect, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -15,8 +17,13 @@ import { ProgressBar, Spinner } from "@/components/ui/loading";
 import {
   OutputTile,
   downloadOutput,
+  isVideoOutput,
 } from "@/features/studio/components/output-tile";
 import { OutputActions } from "@/features/studio/components/output-actions";
+import { SaveToProject } from "@/features/studio/components/save-to-project";
+import { PublishDialog } from "@/features/community/components/publish-dialog";
+import { useCommunityApi } from "@/features/community/lib/api-context";
+import type { StudioJob } from "@/features/studio/types";
 import { useStudioStore } from "@/store/studio-store";
 import { cn } from "@/lib/utils";
 
@@ -43,6 +50,89 @@ import { cn } from "@/lib/utils";
  * The prompt, model, seed and settings that produced a result are what make it
  * reproducible. On a tool for iterating, that is the point of the panel.
  */
+/**
+ * Wall-clock time since a job was submitted.
+ *
+ * Derived from `Date.now()` on every tick rather than counted up, because a
+ * background tab throttles `setInterval` to roughly once a second at best and
+ * pauses it outright when the tab is hidden. Counting ticks would show 40
+ * seconds for a job that has been running for three minutes — a bug this
+ * codebase has already made once, in the Sprint 5 studio runner.
+ *
+ * Mounted only while a job is running, so nothing ticks on an idle panel.
+ */
+/**
+ * Publish the first output.
+ *
+ * The whole-post decision belongs to one asset, so this offers the first
+ * output rather than the whole job — a four-image batch is four separate
+ * decisions, and publishing them as one would be publishing three the user did
+ * not look at.
+ *
+ * Whether a handle exists is checked lazily, when the dialog opens. Fetching it
+ * on every preview render would be a request per generation for a button most
+ * people never press.
+ */
+function PublishAction({ job }: { job: StudioJob }) {
+  const api = useCommunityApi();
+  const [open, setOpen] = useState(false);
+  const [hasHandle, setHasHandle] = useState(true);
+
+  const output = job.outputs[0];
+  if (job.status !== "succeeded" || !output?.url) return null;
+
+  return (
+    <>
+      <Button
+        size="xs"
+        variant="outline"
+        onClick={() => {
+          setOpen(true);
+          api
+            .loadMyProfile()
+            .then((data) => setHasHandle(Boolean(data.profile)))
+            // A failed check assumes a handle exists. The publish call itself
+            // returns `handle_required` if not, so the worst case is one extra
+            // round trip rather than a dialog that refuses somebody who is
+            // perfectly able to publish.
+            .catch(() => setHasHandle(true));
+        }}
+      >
+        <Globe />
+        Publish
+      </Button>
+
+      <PublishDialog
+        open={open}
+        onOpenChange={setOpen}
+        assetId={output.id}
+        hasHandle={hasHandle}
+      />
+    </>
+  );
+}
+
+function Elapsed({ since }: { since: number }) {
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const seconds = Math.max(0, Math.round((now - since) / 1000));
+  const label =
+    seconds < 60
+      ? `${seconds}s`
+      : `${Math.floor(seconds / 60)}m ${String(seconds % 60).padStart(2, "0")}s`;
+
+  return (
+    <p className="text-2xs text-muted-foreground tabular-nums">
+      {label} elapsed
+    </p>
+  );
+}
+
 export function PreviewPanel() {
   const selectedJobId = useStudioStore((state) => state.selectedJobId);
   const queue = useStudioStore((state) => state.queue);
@@ -67,6 +157,7 @@ export function PreviewPanel() {
   }
 
   const isRunning = job.status === "queued" || job.status === "running";
+  const isVideoJob = job.outputs.some(isVideoOutput);
   const gridColumns =
     job.outputs.length === 1
       ? "grid-cols-1"
@@ -112,11 +203,7 @@ export function PreviewPanel() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() =>
-                job.outputs.forEach((output) =>
-                  downloadOutput(output, job.id.slice(-6)),
-                )
-              }
+              onClick={() => job.outputs.forEach(downloadOutput)}
             >
               <Download />
               {job.outputs.length > 1
@@ -143,6 +230,10 @@ export function PreviewPanel() {
                     ? "Working — this model does not report progress."
                     : `${Math.round(job.progress * 100)}%`}
               </p>
+              {/* The only honest number available for a video model, and the
+                  one that stops a two-minute wait feeling like a hang. A faked
+                  percentage would be worse than none. */}
+              <Elapsed since={job.createdAt} />
             </div>
           </div>
         ) : job.status === "failed" ? (
@@ -171,11 +262,7 @@ export function PreviewPanel() {
         ) : (
           <div className={cn("grid gap-3", gridColumns)}>
             {job.outputs.map((output) => (
-              <OutputTile
-                key={output.id}
-                output={output}
-                label={job.id.slice(-6)}
-              />
+              <OutputTile key={output.id} output={output} />
             ))}
           </div>
         )}
@@ -184,7 +271,11 @@ export function PreviewPanel() {
       <div className="space-y-3 border-t p-3">
         {/* Derived operations live beside the result they act on — upscale,
             background removal and variations all need an existing image. */}
-        <OutputActions job={job} outputUrl={job.outputs[0]?.url ?? null} />
+        <div className="flex flex-wrap items-center gap-2">
+          <SaveToProject job={job} />
+          <PublishAction job={job} />
+          <OutputActions job={job} output={job.outputs[0] ?? null} />
+        </div>
 
         <p className="flex items-center gap-1.5 text-2xs font-medium tracking-wider text-muted-foreground uppercase">
           <Sparkles className="size-3" aria-hidden />
@@ -198,6 +289,17 @@ export function PreviewPanel() {
         <div className="flex flex-wrap gap-x-3 gap-y-1 text-2xs text-muted-foreground tabular-nums">
           <span>{job.params.aspectRatio}</span>
           <span>{job.params.resolution}px</span>
+          {/* Shown only when a clip was actually produced, so an image job does
+              not carry a duration it never had. The composer's default value
+              would otherwise leak into every history entry. */}
+          {isVideoJob ? (
+            <>
+              <span>{job.params.durationSeconds}s</span>
+              {job.params.cameraMotion ? (
+                <span>{job.params.cameraMotion}</span>
+              ) : null}
+            </>
+          ) : null}
           <span>creativity {Math.round(job.params.creativity * 100)}%</span>
           {job.params.seed !== null ? (
             <span>seed {job.params.seed}</span>

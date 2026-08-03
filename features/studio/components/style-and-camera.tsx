@@ -1,6 +1,6 @@
 "use client";
 
-import { Camera, Palette, X } from "lucide-react";
+import { Camera, Palette, UserRound, X } from "lucide-react";
 
 import {
   Accordion,
@@ -8,6 +8,7 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
+import { Button } from "@/components/ui/button";
 import { Control } from "@/features/studio/components/model-picker";
 import {
   CAMERA_OPTIONS,
@@ -44,6 +45,14 @@ export function StyleAndCamera() {
   const camera = useStudioStore((state) => state.params.camera);
   const togglePreset = useStudioStore((state) => state.togglePreset);
   const setCamera = useStudioStore((state) => state.setCamera);
+  const installed = useStudioStore((state) => state.installed);
+  const setParam = useStudioStore((state) => state.setParam);
+  const prompt = useStudioStore((state) => state.params.prompt);
+
+  // Built-in presets and downloaded ones render as one list. Ids are namespaced
+  // in `lib/installed.ts`, so a pack style called "cinematic" cannot silently
+  // shadow the built-in one.
+  const allPresets = [...STYLE_PRESETS, ...installed.styles];
 
   const activeCameraCount = Object.values(camera).filter(Boolean).length;
 
@@ -64,7 +73,7 @@ export function StyleAndCamera() {
 
         <AccordionContent>
           <div className="flex flex-wrap gap-2 pt-1">
-            {STYLE_PRESETS.map((preset) => {
+            {allPresets.map((preset) => {
               const active = presetIds.includes(preset.id);
               return (
                 <button
@@ -72,7 +81,13 @@ export function StyleAndCamera() {
                   type="button"
                   onClick={() => togglePreset(preset.id)}
                   aria-pressed={active}
-                  title={preset.fragment}
+                  title={
+                    "source" in preset && preset.source
+                      ? `${preset.fragment}
+
+From ${preset.source}`
+                      : preset.fragment
+                  }
                   className={cn(
                     "flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-all",
                     "focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:outline-none",
@@ -96,6 +111,69 @@ export function StyleAndCamera() {
           </div>
         </AccordionContent>
       </AccordionItem>
+
+      {/* Only when something is installed. An empty section teaching people
+          that characters exist is the marketplace's job, not the composer's. */}
+      {installed.characters.length > 0 ? (
+        <AccordionItem value="characters">
+          <AccordionTrigger className="text-sm">
+            <span className="flex items-center gap-2">
+              <UserRound className="size-4 text-muted-foreground" aria-hidden />
+              Characters
+              <span className="rounded-full bg-primary/15 px-1.5 py-0.5 text-2xs font-medium text-primary tabular-nums">
+                {installed.characters.length}
+              </span>
+            </span>
+          </AccordionTrigger>
+
+          <AccordionContent>
+            <div className="space-y-2 pt-1">
+              {/* A character inserts its anchor text **into the prompt field**,
+                  where it can be read and edited, rather than being appended
+                  invisibly at submit like a preset. A described subject is
+                  something people rewrite constantly — changing the hair, the
+                  clothing, the age — and a fragment they cannot reach is a
+                  fragment they cannot adjust. */}
+              {installed.characters.map((character) => (
+                <div
+                  key={character.id}
+                  className="rounded-lg border border-border p-2.5"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="text-xs font-medium">{character.name}</p>
+                    <Button
+                      size="xs"
+                      variant="outline"
+                      onClick={() =>
+                        setParam(
+                          "prompt",
+                          prompt.trim()
+                            ? `${prompt.trim()}, ${character.anchor}`
+                            : character.anchor,
+                        )
+                      }
+                    >
+                      Insert
+                    </Button>
+                  </div>
+                  <p className="mt-1 line-clamp-3 text-2xs text-muted-foreground">
+                    {character.anchor}
+                  </p>
+                  {character.seed !== undefined ? (
+                    <button
+                      type="button"
+                      onClick={() => setParam("seed", character.seed ?? null)}
+                      className="mt-1.5 text-2xs text-primary underline-offset-2 hover:underline focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:outline-none"
+                    >
+                      Use reference seed {character.seed}
+                    </button>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          </AccordionContent>
+        </AccordionItem>
+      ) : null}
 
       <AccordionItem value="camera">
         <AccordionTrigger className="text-sm">

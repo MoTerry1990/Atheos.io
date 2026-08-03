@@ -10,3 +10,7 @@ prisma/migrations
 lib/generated
 public
 *.min.*
+
+# Playwright run artefacts. Generated, not authored.
+test-results
+playwright-report

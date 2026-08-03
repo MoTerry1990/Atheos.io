@@ -53,6 +53,8 @@ export function dtoToStudioJob(dto: GenerationDTO): Partial<StudioJob> & {
     outputs: dto.outputs.map((output, index) => ({
       id: output.id,
       url: assetUrl(output.storageKey),
+      mimeType: output.mimeType,
+      durationMs: output.durationMs,
       // Retained so the preview can fall back to a gradient while an image
       // loads, and so a broken CDN does not produce an empty grey box.
       hue: (index * 53 + dto.id.charCodeAt(0) * 7) % 360,
@@ -92,6 +94,10 @@ export function dtoToHistoryJob(dto: GenerationDTO): StudioJob {
     seedLocked: false,
     outputs: typeof stored.outputs === "number" ? stored.outputs : 1,
     references: [],
+    durationSeconds:
+      typeof stored.durationSeconds === "number" ? stored.durationSeconds : 5,
+    cameraMotion:
+      typeof stored.cameraMotion === "string" ? stored.cameraMotion : null,
   };
 
   return {

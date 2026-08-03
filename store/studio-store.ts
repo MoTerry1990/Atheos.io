@@ -2,6 +2,11 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
 import { findModelIn, resolutionOptions } from "@/features/studio/data/models";
+import {
+  EMPTY_INSTALLED,
+  type InstalledContent,
+} from "@/features/studio/lib/installed";
+import { creditsFor } from "@/services/ai/pricing";
 import { STYLE_PRESETS } from "@/features/studio/data/presets";
 import type {
   CameraSettings,
@@ -10,6 +15,7 @@ import type {
   StudioJob,
   StudioModel,
   StudioParams,
+  StylePreset,
 } from "@/features/studio/types";
 
 /**
@@ -66,6 +72,8 @@ function defaultParams(): StudioParams {
     seedLocked: false,
     outputs: 1,
     references: [],
+    durationSeconds: 5,
+    cameraMotion: null,
   };
 }
 
@@ -100,6 +108,27 @@ export function reconcileParams(
 
   next.outputs = Math.min(Math.max(1, next.outputs), caps.maxOutputs);
 
+  // Video: a duration the model does not offer would be silently rounded by the
+  // provider, and the user billed for a clip they did not choose. Snap to the
+  // nearest declared value instead, and say so by showing it selected.
+  if (caps.durations?.length) {
+    if (!caps.durations.includes(next.durationSeconds)) {
+      next.durationSeconds = caps.durations.reduce((best, option) =>
+        Math.abs(option - next.durationSeconds) <
+        Math.abs(best - next.durationSeconds)
+          ? option
+          : best,
+      );
+    }
+  }
+
+  // A motion phrase the new model has never heard would be pasted into its
+  // prompt and interpreted as scene description. Dropping it is the lesser
+  // surprise, and the control disappears with it.
+  if (next.cameraMotion && !caps.cameraMotions?.includes(next.cameraMotion)) {
+    next.cameraMotion = null;
+  }
+
   const allowed = resolutionOptions(model);
   if (!allowed.includes(next.resolution)) {
     // Nearest allowed value, not the first — someone who chose 2048 wants the
@@ -120,9 +149,27 @@ export function reconcileParams(
  * Exported so the composer can show it. Nothing is added to a user's prompt
  * without them being able to read it.
  */
-export function assemblePrompt(params: StudioParams): string {
+export function assemblePrompt(
+  params: StudioParams,
+  /**
+   * Styles from installed marketplace packs.
+   *
+   * Passed in rather than read from the store, so this stays a pure function of
+   * its arguments — it is the one place a prompt is assembled, and a hidden
+   * dependency on global state is how the composer's preview and the submitted
+   * prompt end up disagreeing.
+   *
+   * Without it, a preset id from a pack resolves to nothing and its fragment is
+   * silently dropped: the chip stays lit and the style never applies.
+   */
+  installedStyles: readonly StylePreset[] = [],
+): string {
   const presetFragments = params.presetIds
-    .map((id) => STYLE_PRESETS.find((preset) => preset.id === id)?.fragment)
+    .map(
+      (id) =>
+        STYLE_PRESETS.find((preset) => preset.id === id)?.fragment ??
+        installedStyles.find((preset) => preset.id === id)?.fragment,
+    )
     .filter(Boolean) as string[];
 
   const cameraFragments = Object.values(params.camera).filter(
@@ -134,12 +181,19 @@ export function assemblePrompt(params: StudioParams): string {
     .join(", ");
 }
 
-/** Credits a submission will cost. Shown before the button, not after. */
+/**
+ * Credits a submission will cost. Shown before the button, not after.
+ *
+ * Delegates to `services/ai/pricing`, which the server also uses to charge. The
+ * estimate and the invoice have to be the same function or they will eventually
+ * be different numbers.
+ */
 export function estimateCost(
   params: StudioParams,
   models: StudioModel[],
 ): number {
-  return findModelIn(models, params.modelId).creditCost * params.outputs;
+  const model = findModelIn(models, params.modelId);
+  return creditsFor(model, params.outputs, params.durationSeconds);
 }
 
 interface StudioState {
@@ -149,6 +203,19 @@ interface StudioState {
   /** True when no real provider is configured — surfaced in the UI. */
   usingMockProvider: boolean;
 
+  /**
+   * Content from installed marketplace packs.
+   *
+   * Held here rather than fetched by each component that needs it: the prompt
+   * editor, the style chips and the prompt assembler all read it, and three
+   * independent fetches would be three chances to disagree about what is
+   * installed.
+   *
+   * Never persisted. It is derived from server state, and a stale local copy
+   * would offer a pack the user uninstalled on another device.
+   */
+  installed: InstalledContent;
+
   params: StudioParams;
   queue: StudioJob[];
   history: StudioJob[];
@@ -156,7 +223,10 @@ interface StudioState {
   selectedJobId: string | null;
 
   setModels: (models: StudioModel[], usingMockProvider: boolean) => void;
+  setInstalled: (installed: InstalledContent) => void;
   setHistory: (history: StudioJob[]) => void;
+  /** Install the server's generations, split by whether they are still running. */
+  hydrate: (jobs: StudioJob[]) => void;
   setParam: <K extends keyof StudioParams>(
     key: K,
     value: StudioParams[K],
@@ -167,6 +237,11 @@ interface StudioState {
   addReference: (reference: ReferenceImage) => void;
   removeReference: (id: string) => void;
   setReferenceStrength: (id: string, strength: number) => void;
+  /** Called when the upload to our storage settles, either way. */
+  settleReference: (
+    id: string,
+    result: { remoteUrl: string } | { error: string },
+  ) => void;
   applyTemplate: (template: PromptTemplate) => void;
   randomiseSeed: () => void;
   reset: () => void;
@@ -187,6 +262,7 @@ export const useStudioStore = create<StudioState>()(
       models: [],
       modelsLoaded: false,
       usingMockProvider: false,
+      installed: EMPTY_INSTALLED,
       params: defaultParams(),
       queue: [],
       history: [],
@@ -208,8 +284,35 @@ export const useStudioStore = create<StudioState>()(
           params: reconcileParams(state.params, models),
         })),
 
+      setInstalled: (installed) => set({ installed }),
+
       /** Replace history with the server's copy — it is the source of truth. */
       setHistory: (history) => set({ history }),
+
+      /**
+       * Install the server's generations on load.
+       *
+       * Splits on status rather than dropping everything into history, because
+       * a job can still be running when the studio mounts. Video made this
+       * unavoidable: a clip takes minutes, and the tab that started it is
+       * routinely closed, reloaded or replaced before it finishes. Filing a
+       * running job under "history" would show it as a finished generation with
+       * no outputs — the interface asserting something false about work that is
+       * still in progress.
+       *
+       * Unfinished jobs go back into the queue and the workspace resumes
+       * polling them. Selection is left alone: this runs on mount, before
+       * anything is selected, and stamping one here would override a deep link.
+       */
+      hydrate: (jobs) =>
+        set({
+          queue: jobs.filter(
+            (job) => job.status === "queued" || job.status === "running",
+          ),
+          history: jobs.filter(
+            (job) => job.status !== "queued" && job.status !== "running",
+          ),
+        }),
 
       setParam: (key, value) =>
         set((state) => ({ params: { ...state.params, [key]: value } })),
@@ -272,6 +375,24 @@ export const useStudioStore = create<StudioState>()(
             ...state.params,
             references: state.params.references.map((ref) =>
               ref.id === id ? { ...ref, strength } : ref,
+            ),
+          },
+        })),
+
+      settleReference: (id, result) =>
+        set((state) => ({
+          params: {
+            ...state.params,
+            references: state.params.references.map((ref) =>
+              ref.id === id
+                ? "remoteUrl" in result
+                  ? {
+                      ...ref,
+                      status: "ready" as const,
+                      remoteUrl: result.remoteUrl,
+                    }
+                  : { ...ref, status: "failed" as const, error: result.error }
+                : ref,
             ),
           },
         })),
@@ -362,7 +483,10 @@ export const useStudioStore = create<StudioState>()(
     }),
     {
       name: "atheos:studio",
-      version: 2,
+      // 3: params gained durationSeconds and cameraMotion. A v2 payload
+      // restores without them, and `reconcileParams` cannot repair a field that
+      // is absent rather than wrong - so the version bump discards it.
+      version: 3,
       /**
        * Persist the composer only.
        *

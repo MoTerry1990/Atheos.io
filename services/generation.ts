@@ -1,7 +1,8 @@
 import "server-only";
 
-import { getCurrentUser } from "@/lib/auth";
+import { requireApiUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { estimateCost } from "@/services/ai/cost";
 import {
   findModel,
   isUsingMockProvider,
@@ -11,6 +12,7 @@ import {
 import {
   OPERATIONS_REQUIRING_INPUT,
   type GenerationOperation,
+  type GenerationOutput,
   type GenerationRequest,
   type ProviderError,
 } from "@/services/ai/types";
@@ -57,6 +59,8 @@ const OPERATION_TO_DB: Record<GenerationOperation, DbOperation> = {
   upscale: "UPSCALE",
   "remove-background": "REMOVE_BACKGROUND",
   variations: "VARIATIONS",
+  "text-to-video": "TEXT_TO_VIDEO",
+  "image-to-video": "IMAGE_TO_VIDEO",
 };
 
 /**
@@ -69,18 +73,6 @@ const OPERATION_TO_DB: Record<GenerationOperation, DbOperation> = {
  *
  * Same guarantee, different failure mode for a different caller.
  */
-async function requireApiUser() {
-  const user = await getCurrentUser();
-  if (!user) {
-    throw new GenerationError(
-      "You need to be signed in to do that.",
-      401,
-      "unauthenticated",
-    );
-  }
-  return user;
-}
-
 export class GenerationError extends Error {
   constructor(
     message: string,
@@ -103,6 +95,8 @@ export interface SubmitInput {
   inputImageUrls?: string[];
   inputStrength?: number;
   scale?: number;
+  durationSeconds?: number;
+  cameraMotion?: string;
   /** Generation this derives from, for lineage. */
   parentId?: string;
   /** Collection to file the results into on success. */
@@ -164,7 +158,9 @@ export async function submitGeneration(input: SubmitInput) {
     Math.max(1, input.outputs ?? 1),
     model.capabilities.maxOutputs,
   );
-  const cost = priceFor(input.modelId, outputs);
+
+  const durationSeconds = resolveDuration(model, input.durationSeconds);
+  const cost = priceFor(input.modelId, outputs, durationSeconds);
 
   if (user.creditBalance < cost) {
     throw new GenerationError(
@@ -196,6 +192,8 @@ export async function submitGeneration(input: SubmitInput) {
           inputImageUrls: input.inputImageUrls ?? [],
           inputStrength: input.inputStrength,
           scale: input.scale,
+          durationSeconds,
+          cameraMotion: input.cameraMotion,
           collectionId: input.collectionId,
         },
         creditsCost: cost,
@@ -237,6 +235,8 @@ export async function submitGeneration(input: SubmitInput) {
       inputImageUrls: input.inputImageUrls,
       inputStrength: input.inputStrength,
       scale: input.scale,
+      durationSeconds,
+      cameraMotion: input.cameraMotion,
     };
 
     const job = await provider.submit(request);
@@ -322,6 +322,32 @@ async function failGeneration(generationId: string, message: string) {
   await refund(generationId, generation.userId, generation.creditsCost);
 }
 
+/**
+ * The clip length we will actually generate and charge for.
+ *
+ * Snapped to a duration the model declares, not merely bounded. The request
+ * schema caps duration at 30s, which stops the obvious abuse but still lets a
+ * client ask a 5-or-10-second model for 7 — and a provider handed 7 will round
+ * it silently, so the user gets a clip they did not choose at a price that does
+ * not match it. Snapping here makes the stored parameters, the charge and the
+ * output describe the same thing.
+ *
+ * Returns undefined for image models, so nothing about video leaks into an
+ * image request.
+ */
+function resolveDuration(
+  model: { capabilities: { durations?: readonly number[] } },
+  requested: number | undefined,
+): number | undefined {
+  const durations = model.capabilities.durations;
+  if (!durations?.length) return undefined;
+  if (requested === undefined) return Math.min(...durations);
+
+  return durations.reduce((best, option) =>
+    Math.abs(option - requested) < Math.abs(best - requested) ? option : best,
+  );
+}
+
 function assetKindFor(mimeType: string): AssetKind {
   if (mimeType.startsWith("video/")) return "VIDEO";
   if (mimeType.startsWith("audio/")) return "AUDIO";
@@ -333,13 +359,10 @@ function assetKindFor(mimeType: string): AssetKind {
 async function settleSuccess(
   generationId: string,
   userId: string,
-  outputs: readonly {
-    sourceUrl: string;
-    mimeType: string;
-    width?: number;
-    height?: number;
-    seed?: number;
-  }[],
+  // The provider contract's own output type rather than a structural copy of
+  // it. The copy drifted the moment video added `durationMs`, which is the
+  // argument against restating a type you already import.
+  outputs: readonly GenerationOutput[],
   input?: Pick<SubmitInput, "collectionId">,
 ) {
   const stored: {
@@ -373,6 +396,7 @@ async function settleSuccess(
           sizeBytes: asset.sizeBytes,
           width: output.width ?? null,
           height: output.height ?? null,
+          durationMs: output.durationMs ?? null,
           checksum: asset.checksum,
         },
       });
@@ -388,9 +412,63 @@ async function settleSuccess(
       }
     }
 
+    /**
+     * Record what this generation cost us, and the units of work behind it.
+     *
+     * Sprint 19 added these columns and its own report closed with "nothing
+     * writes the telemetry columns yet — until the pipeline writes them, this
+     * sprint's persistence work is a schema with nothing in it". This is the
+     * line that closes that.
+     *
+     * Written in the **same transaction** as the status change. A generation
+     * that is SUCCEEDED but has no cost row is a hole in the margin report that
+     * nothing will ever fill, because the provider response is gone by then.
+     *
+     * Counts are derived from what was actually stored, not from what was
+     * requested. A model that returned three images when four were asked for
+     * costs three, and a report built on the request would overstate it.
+     */
+    const images = stored.filter(
+      ({ asset }) => assetKindFor(asset.mimeType) === "IMAGE",
+    ).length;
+
+    const videoSeconds = stored.reduce(
+      (total, { output }) =>
+        total + Math.round((output.durationMs ?? 0) / 1000),
+      0,
+    );
+
+    // The model is read from the row rather than threaded through the
+    // signature: `settleSuccess` is called from two places and both already
+    // have the generation id, so a parameter would be the same lookup written
+    // twice. `findModel` returns null for a model that has since been retired,
+    // in which case the cost is genuinely unknown and recorded as null.
+    const row = await tx.generation.findUnique({
+      where: { id: generationId },
+      select: { model: true },
+    });
+
+    const model = row ? findModel(row.model) : null;
+
+    const cost = model
+      ? estimateCost(model, stored.length, {
+          durationSeconds: videoSeconds || undefined,
+        })
+      : { costMicroUsd: null };
+
     await tx.generation.update({
       where: { id: generationId },
-      data: { status: "SUCCEEDED", completedAt: new Date() },
+      data: {
+        status: "SUCCEEDED",
+        completedAt: new Date(),
+        // Null when the model has no cost basis. Never zero — a zero here
+        // would make an unpriced model the most profitable in the report.
+        costMicroUsd: cost.costMicroUsd,
+        // Null rather than 0 for a modality this job did not produce, so
+        // "no images" and "not an image job" stay distinguishable in a SUM.
+        imageCount: images || null,
+        videoSeconds: videoSeconds || null,
+      },
     });
   });
 }
@@ -416,6 +494,7 @@ export async function pollGeneration(generationId: string) {
           mimeType: true,
           width: true,
           height: true,
+          durationMs: true,
         },
       },
     },
@@ -481,6 +560,7 @@ export async function pollGeneration(generationId: string) {
           mimeType: true,
           width: true,
           height: true,
+          durationMs: true,
         },
       },
     },
@@ -535,6 +615,7 @@ export async function listGenerations(limit = 40) {
           mimeType: true,
           width: true,
           height: true,
+          durationMs: true,
         },
       },
     },

@@ -2,11 +2,14 @@
 
 import { UserButton } from "@clerk/nextjs";
 import {
+  AtSign,
   Coins,
+  Compass,
   Images,
   LayoutDashboard,
   Layers,
   Search,
+  Store,
   Wand2,
   Settings,
   Sparkles,
@@ -33,11 +36,11 @@ import { SITE } from "@/features/marketing/content";
  *
  * ## Navigation reflects what exists
  *
- * Library and Projects are marked `disabled` rather than hidden. Showing a
- * destination that does not work yet is honest — the product's shape is
- * visible, and a disabled item with a tooltip is clearer than a nav that
- * mysteriously grows between releases. Hiding them would make the app look
- * thinner than it is; linking them would 404.
+ * Library is still marked `disabled` rather than hidden. Showing a destination
+ * that does not work yet is honest — the product's shape is visible, and a
+ * disabled item with a tooltip is clearer than a nav that mysteriously grows
+ * between releases. Hiding it would make the app look thinner than it is;
+ * linking it would 404. Projects graduated in Sprint 8 and is now a real link.
  *
  * ## The credit pill is a link, not an indicator
  *
@@ -52,7 +55,9 @@ const NAV: NavSectionData[] = [
     items: [
       { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
       { href: "/studio", label: "Studio", icon: Wand2 },
-      { href: "/dashboard", label: "Projects", icon: Layers, disabled: true },
+      { href: "/projects", label: "Projects", icon: Layers },
+      { href: "/marketplace", label: "Marketplace", icon: Store },
+      { href: "/explore", label: "Explore", icon: Compass },
       { href: "/dashboard", label: "Library", icon: Images, disabled: true },
     ],
   },
@@ -60,6 +65,7 @@ const NAV: NavSectionData[] = [
     title: "Account",
     items: [
       { href: "/profile", label: "Profile", icon: UserRound },
+      { href: "/settings/profile", label: "Public profile", icon: AtSign },
       { href: "/settings", label: "Settings", icon: Settings },
     ],
   },
@@ -86,8 +92,11 @@ export function AppShell({
   );
 
   const sidebarFooter = (
+    // Points at billing now that it exists. This pill is the fastest route to
+    // "why am I out of credits", and until Sprint 9 it landed on Settings,
+    // which could not answer that.
     <Link
-      href="/settings"
+      href="/settings/billing"
       className="flex items-center justify-between gap-2 rounded-lg px-2 py-1.5 transition-colors hover:bg-accent/60"
     >
       <span className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -123,7 +132,7 @@ export function AppShell({
                 className="hidden text-muted-foreground sm:inline-flex"
                 asChild
               >
-                <Link href="/settings">
+                <Link href="/settings/billing">
                   <Coins />
                   <span className="tabular-nums">
                     {creditBalance.toLocaleString("en-US")}

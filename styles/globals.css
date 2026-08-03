@@ -593,6 +593,38 @@
   border: 1px solid var(--border);
 }
 
+/* A 24x24 minimum hit area, per WCAG 2.5.8, without changing how big the
+   control looks.
+
+   Some controls are correctly small: a checkbox is 16px and a switch is 32x18
+   because that is what they should look like. The success criterion is about
+   the area a finger can hit, not the area the eye can see, so the fix is an
+   invisible expander rather than a bigger box.
+
+   The pseudo-element is absolutely positioned, so it contributes nothing to
+   layout — the control still occupies its original space and still aligns with
+   its label. It is centred, so the extra 4px falls evenly on each side.
+
+   Applied on the component rather than at each call site. RC1 found a 22px
+   checkbox row on `/design-system` that came from a consumer wrapping the
+   control in a tight flex row; putting the guarantee in the primitive means no
+   consumer can undo it. */
+@utility tap-target {
+  position: relative;
+
+  &::before {
+    content: "";
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    translate: -50% -50%;
+    width: 100%;
+    height: 100%;
+    min-width: 24px;
+    min-height: 24px;
+  }
+}
+
 @utility text-gradient-brand {
   background-image: var(--gradient-brand);
   background-clip: text;
@@ -764,4 +796,26 @@
     clip-path: none;
     white-space: normal;
   }
+}
+
+/**
+ * Skip rendering work for cards that are far off-screen.
+ *
+ * `content-visibility: auto` lets the browser omit layout, style, paint and
+ * hit-testing for a subtree it has decided is not near the viewport. In a
+ * gallery of a few hundred cards — each with an image, badges, a menu and a
+ * hover overlay — that is most of the work on the page.
+ *
+ * `contain-intrinsic-size` is the load-bearing half. Without it a skipped
+ * element reports zero height, the scrollbar lurches as cards enter and leave,
+ * and every one of those lurches is cumulative layout shift. The value is the
+ * card's real rendered height: a 16/10 media box on a ~320px column plus the
+ * text block underneath.
+ *
+ * Deliberately not applied to the first screenful — a card that is visible on
+ * load gains nothing and pays for the containment check.
+ */
+@utility card-defer {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 320px;
 }

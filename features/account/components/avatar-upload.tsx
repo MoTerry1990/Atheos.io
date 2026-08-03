@@ -15,8 +15,8 @@ import { toast } from "@/lib/toast";
  *
  * Goes to **Clerk**, not to our own storage, via `user.setProfileImage()`.
  * That is deliberate: Clerk already owns the identity record and serves the
- * image from its CDN with the right cache headers, and routing it through
- * UploadThing or R2 would mean two copies of the same picture with no agreed
+ * image from its CDN with the right cache headers, and routing it through our
+ * own storage would mean two copies of the same picture with no agreed
  * source of truth. Our `users.imageUrl` column is refreshed from the
  * `user.updated` webhook, so the mirror stays correct without extra work.
  *

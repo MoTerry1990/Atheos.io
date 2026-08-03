@@ -4,9 +4,10 @@ import { Copy, Scissors, Sparkles, ZoomIn } from "lucide-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { isVideoOutput } from "@/features/studio/components/output-tile";
 import { ApiError, submitGeneration } from "@/features/studio/lib/api";
 import { useModels } from "@/features/studio/lib/use-model";
-import type { StudioJob } from "@/features/studio/types";
+import type { JobOutput, StudioJob } from "@/features/studio/types";
 import { useStudioStore } from "@/store/studio-store";
 import { toast } from "@/lib/toast";
 
@@ -53,17 +54,26 @@ const ACTIONS = [
 
 export function OutputActions({
   job,
-  outputUrl,
+  output,
 }: {
   job: StudioJob;
-  outputUrl: string | null;
+  output: JobOutput | null;
 }) {
   const models = useModels();
   const enqueue = useStudioStore((state) => state.enqueue);
   const [pending, setPending] = useState<string | null>(null);
 
+  const outputUrl = output?.url ?? null;
+
   // Nothing to derive from until the asset has a reachable URL.
   if (!outputUrl || job.status !== "succeeded") return null;
+
+  // Every action here takes an image and returns an image. Offering "upscale"
+  // beside a clip would submit the video URL to a still-image model, which
+  // fails at the provider after the credits are spent. There is no video
+  // upscaler in the catalogue yet; when there is, it declares `upscale` and
+  // this list grows from capabilities rather than from an edit here.
+  if (output && isVideoOutput(output)) return null;
 
   const available = ACTIONS.filter((action) =>
     models.some((model) =>

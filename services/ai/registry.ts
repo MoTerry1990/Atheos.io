@@ -1,5 +1,7 @@
 import "server-only";
 
+import { creditsFor } from "@/services/ai/pricing";
+import { googleProvider } from "@/services/ai/providers/google";
 import { mockProvider } from "@/services/ai/providers/mock";
 import { openaiProvider } from "@/services/ai/providers/openai";
 import { replicateProvider } from "@/services/ai/providers/replicate";
@@ -34,7 +36,11 @@ import type {
  */
 
 /** Real providers, in preference order. */
-const REAL_PROVIDERS: AIProvider[] = [replicateProvider, openaiProvider];
+const REAL_PROVIDERS: AIProvider[] = [
+  replicateProvider,
+  openaiProvider,
+  googleProvider,
+];
 
 function configuredProviders(): AIProvider[] {
   const configured = REAL_PROVIDERS.filter((provider) =>
@@ -88,11 +94,23 @@ export function providerById(providerId: string): AIProvider | null {
   );
 }
 
-/** Credits a request will cost. Priced by us, per output. */
-export function priceFor(modelId: string, outputs: number): number {
+/**
+ * Credits a request will cost. Priced by us, per output.
+ *
+ * The arithmetic lives in `services/ai/pricing`, which the studio imports too —
+ * the estimate shown before the button and the amount debited after it have to
+ * be the same function.
+ *
+ * Callers pass the *clamped* output count: upscale and background removal
+ * always produce one image regardless of what was asked for, so charging per
+ * requested output would overcharge.
+ */
+export function priceFor(
+  modelId: string,
+  outputs: number,
+  durationSeconds?: number,
+): number {
   const model = findModel(modelId);
   if (!model) return 0;
-  // Upscale and background removal always produce one image regardless of what
-  // was asked for, so charging per requested output would overcharge.
-  return model.creditCost * Math.max(1, outputs);
+  return creditsFor(model, outputs, durationSeconds);
 }

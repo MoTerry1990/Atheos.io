@@ -1,5 +1,6 @@
 import "server-only";
 
+import { CAMERA_MOTIONS } from "@/services/ai/motion";
 import {
   providerError,
   type AIProvider,
@@ -59,7 +60,32 @@ const MODELS: ProviderModel[] = [
       ],
     },
   },
+  {
+    id: "mock/motion",
+    providerId: "mock",
+    displayName: "Mock Motion",
+    modality: "VIDEO",
+    creditCost: 40,
+    capabilities: {
+      supportsNegativePrompt: true,
+      supportsImageInput: true,
+      supportsSeed: true,
+      aspectRatios: ["16:9", "9:16", "1:1"],
+      maxOutputs: 1,
+      durations: [5, 10],
+      maxDurationSeconds: 10,
+      cameraMotions: CAMERA_MOTIONS,
+      operations: ["text-to-video", "image-to-video"],
+    },
+  },
 ];
+
+function isVideoOperation(request: GenerationRequest) {
+  return (
+    request.operation === "text-to-video" ||
+    request.operation === "image-to-video"
+  );
+}
 
 const FAIL_ON_SUBMIT = 0.1;
 const FAIL_WHILE_RUNNING = 0.05;
@@ -90,14 +116,19 @@ function placeholderImage(
   width: number,
   height: number,
   label: string,
+  animated = false,
 ): string {
+  const motion = animated
+    ? `<circle cy="46%" r="${Math.round(width / 22)}" fill="rgba(255,255,255,0.4)"><animate attributeName="cx" values="18%;82%;18%" dur="4s" repeatCount="indefinite"/></circle>`
+    : "";
+
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
 <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
 <stop offset="0%" stop-color="hsl(${hue} 70% 55%)"/>
 <stop offset="55%" stop-color="hsl(${(hue + 55) % 360} 65% 38%)"/>
 <stop offset="100%" stop-color="hsl(${(hue + 300) % 360} 60% 18%)"/>
 </linearGradient></defs>
-<rect width="100%" height="100%" fill="url(#g)"/>
+<rect width="100%" height="100%" fill="url(#g)"/>${motion}
 <text x="4%" y="94%" font-family="sans-serif" font-size="${Math.max(12, Math.round(width / 42))}" fill="rgba(255,255,255,0.78)">Mock provider — not AI generated · ${label}</text>
 </svg>`;
 
@@ -136,10 +167,14 @@ export const mockProvider: AIProvider = {
 
     const id = `mock_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
 
-    // Upscaling and background removal are quick; generation is not.
-    const durationMs =
-      request.operation === "upscale" ||
-      request.operation === "remove-background"
+    // Roughly proportional to the real thing: a still takes seconds, a clip
+    // takes minutes. Compressed, but long enough that the video path actually
+    // exercises the indeterminate progress bar and a poll sequence that
+    // outlives the tab, rather than finishing before either matters.
+    const durationMs = isVideoOperation(request)
+      ? 20_000
+      : request.operation === "upscale" ||
+          request.operation === "remove-background"
         ? 1500
         : 4000;
 
@@ -181,11 +216,19 @@ export const mockProvider: AIProvider = {
       };
     }
 
+    const isVideo = isVideoOperation(job.request);
+
     if (elapsed < job.durationMs) {
       return {
         providerJobId,
         state: elapsed < 500 ? "queued" : "running",
-        progress: Math.min(0.99, elapsed / job.durationMs),
+        // Video reports no progress. That is not laziness in the mock — real
+        // video models genuinely do not expose one, and the interface has to
+        // survive a job that runs for minutes with nothing to show but time
+        // elapsed. Faking a percentage here would hide that.
+        progress: isVideo
+          ? undefined
+          : Math.min(0.99, elapsed / job.durationMs),
       };
     }
 
@@ -212,17 +255,27 @@ export const mockProvider: AIProvider = {
               }
             : { width, height };
 
+        // A video output is an animated SVG, not a real container. Encoding an
+        // MP4 would need ffmpeg on the server for a placeholder nobody watches;
+        // an SVG that visibly moves proves the storage, history and download
+        // paths without that dependency. Its MIME type stays image/svg+xml,
+        // so the preview correctly treats it as the still image it is rather
+        // than mounting a video element over a file that is not one.
         return {
           sourceUrl: placeholderImage(
             hueFor(seed, index),
             scaled.width,
             scaled.height,
             job.request.operation,
+            isVideo,
           ),
           mimeType: "image/svg+xml",
           width: scaled.width,
           height: scaled.height,
           seed: seed + index,
+          ...(isVideo
+            ? { durationMs: (job.request.durationSeconds ?? 5) * 1000 }
+            : {}),
         };
       }),
     };

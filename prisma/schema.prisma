@@ -52,11 +52,62 @@ model User {
   /// transaction that writes the ledger entry.
   creditBalance Int @default(0)
 
+  /// Elevated access.
+  ///
+  /// **Not the root of trust.** `ADMIN_USER_IDS` in the environment is, and it
+  /// is checked independently — see `services/admin/auth.ts`. This column lets
+  /// a bootstrap admin grant access without a deploy; the environment list is
+  /// what makes a database compromise insufficient on its own, and what
+  /// recovers access if this column is ever wrong.
+  role Role @default(USER)
+
+  /// Public handle, used at `/u/{handle}`.
+  ///
+  /// Null until claimed. A profile is opt-in: signing up must not publish a
+  /// page about somebody, and deriving a handle from their email would do
+  /// exactly that.
+  ///
+  /// Stored lower-cased with a case-insensitive unique index enforced in the
+  /// service, because `Ada` and `ada` being different people is an
+  /// impersonation vector rather than a feature.
+  handle String? @unique
+
+  /// Shown on the public profile instead of `name`, which comes from Clerk and
+  /// is often a real legal name somebody did not choose to publish.
+  displayName String?
+  bio         String? @db.Text
+  /// One link. A list invites link farms and needs its own moderation.
+  website     String?
+
+  /// Denormalised, written with the follow that changed them.
+  followerCount  Int @default(0)
+  followingCount Int @default(0)
+
+  /// Editorial. Set by us, never derived from follower count.
+  featuredAt DateTime?
+
+  posts     Post[]
+  postLikes PostLike[]
+  comments  Comment[]
+  following Follow[]   @relation("Following")
+  followers Follow[]   @relation("Followers")
+
+  /// Stripe's customer id.
+  ///
+  /// On the user, not on `Subscription`, because a customer exists before a
+  /// subscription does and can outlive one: somebody who only ever buys credit
+  /// packs is a paying customer with no subscription at all. Hanging it off the
+  /// subscription would force a fake subscription row to hold it.
+  stripeCustomerId String? @unique
+
   subscription       Subscription?
   generations        Generation[]
   assets             Asset[]
   collections        Collection[]
+  folders            Folder[]
   creditTransactions CreditTransaction[]
+  marketplaceSaves   MarketplaceFavorite[]
+  marketplaceItems   MarketplaceInstall[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -69,6 +120,11 @@ model User {
 // Billing — mirrors of Stripe, never the source of truth
 // --------------------------------------------------------------------------
 
+enum BillingInterval {
+  MONTH
+  YEAR
+}
+
 enum SubscriptionStatus {
   TRIALING
   ACTIVE
@@ -78,6 +134,18 @@ enum SubscriptionStatus {
   INCOMPLETE_EXPIRED
   UNPAID
   PAUSED
+}
+
+/// Which plan a subscription is on.
+///
+/// Ours, not Stripe's. A price id is an identifier in a third party's system
+/// that changes when marketing changes a number; entitlements must not. The
+/// mapping from price id to tier lives in `services/billing/plans.ts` and is
+/// resolved once, on the way in from a webhook.
+enum PlanTier {
+  STARTER
+  STUDIO
+  SCALE
 }
 
 model Subscription {
@@ -91,12 +159,29 @@ model Subscription {
   stripePriceId        String?
   stripeProductId      String?
 
+  /// Resolved from `stripePriceId` when the webhook lands. Stored so an
+  /// entitlement check is a column read rather than a catalogue lookup that
+  /// depends on environment variables being present.
+  planTier PlanTier @default(STARTER)
+
+  /// Billing period. Monthly and yearly are the same tier at different
+  /// cadences, so this is not part of `PlanTier` — it changes the invoice, not
+  /// what the user can do.
+  interval BillingInterval @default(MONTH)
+
   status SubscriptionStatus @default(INCOMPLETE)
 
   currentPeriodStart DateTime?
   currentPeriodEnd   DateTime?
   cancelAtPeriodEnd  Boolean   @default(false)
   canceledAt         DateTime?
+
+  /// A pending downgrade, scheduled for the end of the paid period.
+  ///
+  /// Held here rather than applied immediately, because a downgrade must never
+  /// take away what somebody has already paid for. Null when nothing is
+  /// pending.
+  scheduledTier PlanTier?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -170,11 +255,20 @@ enum GenerationOperation {
   UPSCALE
   REMOVE_BACKGROUND
   VARIATIONS
+  TEXT_TO_VIDEO
+  IMAGE_TO_VIDEO
 }
 
 enum GenerationStatus {
   QUEUED
   RUNNING
+  /// Failed, but the failure was transient and another attempt is scheduled.
+  ///
+  /// Distinct from QUEUED on purpose. A job waiting for its first run and a job
+  /// waiting out a backoff look identical in a status column, and they are not:
+  /// one is normal, the other means a provider is misbehaving. Merging them
+  /// hides a rising retry rate, which is the earliest signal of an outage.
+  RETRYING
   SUCCEEDED
   FAILED
   CANCELED
@@ -221,6 +315,124 @@ model Generation {
   /// survives independently of any accounting change.
   creditsCost Int @default(0)
 
+  // ---- What this generation cost *us*, and how it behaved -----------------
+  //
+  // Added in Sprint 19. `creditsCost` above is what the user was charged;
+  // everything here is operational truth about the request itself, and none of
+  // it was recorded before — which is why PROJECT_AUDIT.md said unit economics
+  // were unmeasurable and there was no way to answer "why was that slow".
+
+  /// Provider cost in **micro-USD** (millionths of a dollar).
+  ///
+  /// Integer, for the same reason the credit ledger is: floating-point money
+  /// stops adding up. Micro rather than cents because a fast image model is
+  /// genuinely $0.003 and cents would round most of the catalogue to zero.
+  ///
+  /// Nullable and **never defaulted to zero**: null means "we have no cost
+  /// basis for this model", and defaulting to 0 would make an unpriced model
+  /// look like the most profitable one in the table.
+  costMicroUsd Int?
+
+  /// Milliseconds from our request leaving to the provider accepting the job.
+  ///
+  /// Submit latency only — not how long the generation took, which is
+  /// `startedAt` to `completedAt`. Kept separate because they fail differently:
+  /// a slow submit is the provider's API struggling, a slow completion is
+  /// simply a large model.
+  latencyMs Int?
+
+  // ---- Units of work (Sprint 21) -------------------------------------------
+  //
+  // Cost is recorded in `costMicroUsd` above, but a single money column cannot
+  // answer "why did last month cost more" — the answer is always one of these
+  // moving. Recorded per generation so a report can attribute spend to the
+  // thing that caused it rather than to a provider name.
+  //
+  // All nullable, all with no default. A video generation has no image count,
+  // and defaulting it to 0 would make "zero images" and "not an image job"
+  // indistinguishable in a SUM.
+
+  /// Billable compute time reported by the provider, in milliseconds.
+  ///
+  /// Distinct from `latencyMs` (how long the API call took) and from
+  /// startedAt→completedAt (how long we waited). This is what the vendor
+  /// charges for, and only some vendors report it.
+  gpuTimeMs Int?
+
+  /// Images produced. Null for video and audio jobs.
+  imageCount Int?
+
+  /// Video produced, in seconds. Null for image and audio jobs.
+  videoSeconds Int?
+
+  /// Audio produced, in seconds. Null for image and video jobs.
+  ///
+  /// Recorded now although nothing generates audio yet, because adding it later
+  /// means a second migration on a table that will be much larger by then.
+  audioSeconds Int?
+
+  /// Token usage, where the provider reports it.
+  ///
+  /// Only the text and vision providers do. Null on every image and video
+  /// model, and that is a real absence rather than a zero.
+  promptTokens     Int?
+  completionTokens Int?
+
+  /// The provider originally asked for, when the manager failed over.
+  ///
+  /// Null on the normal path. Non-null means `provider` above is *not* what the
+  /// user chose — the record of a substitution, which they were told about.
+  requestedProvider String?
+
+  /// Every provider attempted, with the error each returned.
+  ///
+  /// Written by the Provider Manager. This is what a support conversation
+  /// actually needs: not "it failed" but "Replicate timed out twice, then
+  /// OpenAI accepted it".
+  attempts Json?
+
+  // ---- Worker queue (Sprint 20) --------------------------------------------
+  //
+  // Until now the browser was the job runner: a closed tab stopped a generation
+  // advancing until someone reopened the studio. These columns are what let a
+  // server-side worker own the job instead.
+
+  /// 0–100 where the provider reports it, null where it does not.
+  ///
+  /// Never invented. A progress bar that moves on a timer rather than on real
+  /// information is worse than a spinner, because it makes a promise about
+  /// completion time that nothing is keeping.
+  progress Int?
+
+  /// How many times this job has been attempted, across all providers.
+  attemptCount Int @default(0)
+
+  /// When a retrying job becomes eligible again.
+  ///
+  /// The worker claims on `nextAttemptAt <= now()`, so backoff is expressed as
+  /// data rather than as a sleeping process — which is the only form that
+  /// survives the worker being restarted.
+  nextAttemptAt DateTime?
+
+  /// Claim fields. A worker sets both atomically when it takes a job.
+  ///
+  /// `lockedAt` is what makes a crashed worker recoverable: a lock older than
+  /// the lease is reclaimable, so a job whose worker died is picked up rather
+  /// than sitting in RUNNING forever.
+  lockedAt DateTime?
+  lockedBy String?
+
+  /// Where to POST when this job reaches a terminal state.
+  ///
+  /// Optional. Set by API callers who cannot hold a connection open; the studio
+  /// polls instead and sets nothing.
+  webhookUrl       String?
+  webhookDelivered Boolean @default(false)
+  webhookAttempts  Int     @default(0)
+  webhookLastError String? @db.Text
+
+  logs GenerationLog[]
+
   assets             Asset[]
   creditTransactions CreditTransaction[]
 
@@ -232,6 +444,19 @@ model Generation {
   @@index([status])
   @@index([provider, providerJobId])
   @@index([parentId])
+  /// Cost reporting scans by provider over a window. Without this the margin
+  /// query is a sequential scan over every generation ever made.
+  @@index([provider, createdAt])
+  /// The worker's claim query. Without this every tick scans the whole table to
+  /// find a handful of runnable jobs, and the scan gets slower as history grows
+  /// — so the queue would degrade in proportion to the product's success.
+  @@index([status, nextAttemptAt])
+  /// Reclaiming jobs from workers that died mid-run.
+  @@index([status, lockedAt])
+  /// Per-user usage reporting over a period. `status` is in the key so a report
+  /// can exclude failed jobs without a filter step — which is most of the rows
+  /// in a bad week.
+  @@index([userId, status, createdAt])
   @@map("generations")
 }
 
@@ -249,7 +474,7 @@ enum AssetKind {
 enum AssetSource {
   /// Produced by a generation, written server-side to R2.
   GENERATED
-  /// Supplied by the user through UploadThing.
+  /// Supplied by the user, written server-side to R2 by /api/uploads.
   UPLOADED
 }
 
@@ -284,6 +509,7 @@ model Asset {
   thumbnailKey String?
 
   collections CollectionAsset[]
+  posts       Post[]
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -295,6 +521,38 @@ model Asset {
   @@map("assets")
 }
 
+/// A folder holding projects.
+///
+/// Deliberately **flat**: a folder contains projects, never other folders.
+/// Nesting is one nullable `parentId` away, and adding it later is a migration
+/// with no data loss — whereas shipping it now means cycle detection on move,
+/// recursive counts, and a tree control, for a depth most libraries never
+/// reach. See `docs/DECISIONS.md` § 22.
+model Folder {
+  id String @id @default(cuid())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  name String
+
+  /// Hue, 0–360. A colour rather than an icon: it survives being shrunk to a
+  /// 8px dot in a sidebar, which an icon does not.
+  hue Int @default(268)
+
+  /// `SetNull`, never `Cascade`. Deleting a folder must not delete the work
+  /// inside it — that is the single most destructive mistake this schema could
+  /// make possible, and the projects simply become unfiled.
+  projects Collection[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, name])
+  @@map("folders")
+}
+
+/// A project. `Collection` in storage, "project" everywhere a user can see.
 model Collection {
   id String @id @default(cuid())
 
@@ -304,12 +562,65 @@ model Collection {
   name        String
   description String?
 
+  /// Free-text notes. Separate from `description`, which is the one-line
+  /// summary shown on a card; this is the brief nobody wants truncated.
+  notes String? @db.Text
+
+  /// Loose labels. A `String[]` rather than a join table: tags here are
+  /// per-user free text with no attributes of their own, and a Tag entity would
+  /// be three tables and a rename cascade to store what an array stores.
+  tags String[] @default([])
+
+  /// Accent hue, 0–360.
+  hue Int @default(268)
+
+  /// Cover image for the card. An asset id, resolved on read — storing a URL
+  /// would break the moment the CDN hostname changes.
+  coverAssetId String?
+
+  folderId String?
+  folder   Folder? @relation(fields: [folderId], references: [id], onDelete: SetNull)
+
+  /// Archived, not deleted. The row and every membership survive; the project
+  /// simply stops appearing in the default view. This is what makes hard
+  /// deletion an acceptable default for the delete action — there is a
+  /// non-destructive way to make something go away.
+  archivedAt DateTime?
+
+  isFavorite Boolean @default(false)
+
+  /// Drives the "Recent" view. Distinct from `updatedAt`, which moves when
+  /// anything on the row changes — including an archive or a rename from a
+  /// bulk action nobody would call "opening" it.
+  lastOpenedAt DateTime?
+
+  /// Public URL segment, `/u/{handle}/c/{publicSlug}`.
+  ///
+  /// Separate from the name so renaming a shared collection does not break a
+  /// link somebody has already sent. Null until it is shared.
+  publicSlug String?
+
+  /// Null while private. A shared collection shows only the assets inside it
+  /// that have themselves been published — see `services/community`, where
+  /// that intersection is enforced rather than assumed.
+  sharedAt DateTime?
+
   assets CollectionAsset[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  /// Names stay unique per user even across folders. Two projects called
+  /// "Client work" in different folders is a support ticket waiting to happen,
+  /// and it makes `Duplicate` responsible for generating a free name.
   @@unique([userId, name])
+  /// Unique per user, not globally: two people may both share "Portfolio", and
+  /// the URL is namespaced by handle so they cannot collide.
+  @@unique([userId, publicSlug])
+  @@index([userId, lastOpenedAt])
+  @@index([userId, archivedAt])
+  @@index([folderId])
+  @@index([sharedAt])
   @@map("collections")
 }
 
@@ -325,6 +636,300 @@ model CollectionAsset {
   @@id([collectionId, assetId])
   @@index([assetId])
   @@map("collection_assets")
+}
+
+// --------------------------------------------------------------------------
+// Administration
+// --------------------------------------------------------------------------
+
+enum Role {
+  USER
+  ADMIN
+}
+
+/// What an admin did.
+///
+/// ## Append-only, and not optional
+///
+/// An admin dashboard can read every user's email and adjust anybody's credit
+/// balance. Without a log, "who granted this account 50,000 credits" has no
+/// answer — and the first time that question is asked will be the worst
+/// possible time to discover there is no record.
+///
+/// Written in the **same transaction** as the change it describes, so an action
+/// cannot succeed unaudited. Reads are logged too, for the ones that expose
+/// somebody else's data: opening a support view is a disclosure, and a log that
+/// only records writes cannot answer "who looked at this account".
+///
+/// Nothing deletes from this table. A correction is a new row.
+model AdminAuditLog {
+  id String @id @default(cuid())
+
+  /// The admin. Not a relation with a cascade — deleting a staff account must
+  /// not erase what they did.
+  actorId    String
+  actorEmail String
+
+  /// `credits.adjust`, `user.role`, `comment.delete`, `support.view`.
+  action String
+
+  /// What was acted on. A user id, a comment id, a post slug.
+  subjectType String
+  subjectId   String
+
+  /// Enough to reconstruct the change without joining to a row that may since
+  /// have moved on. Never contains secrets.
+  detail Json?
+
+  /// Free text. Required by the service for anything that moves money — an
+  /// adjustment with no stated reason is one nobody can review.
+  reason String? @db.Text
+
+  createdAt DateTime @default(now())
+
+  @@index([actorId, createdAt])
+  @@index([subjectType, subjectId])
+  @@index([action, createdAt])
+  @@map("admin_audit_log")
+}
+
+// --------------------------------------------------------------------------
+// Community
+// --------------------------------------------------------------------------
+
+/// A published piece of work.
+///
+/// ## Separate from `Asset`, deliberately
+///
+/// An asset is a file somebody generated. A post is a decision to show it to
+/// strangers. Collapsing them into a `published` boolean on `Asset` would make
+/// that decision an attribute of the file, and unpublishing would have nowhere
+/// to put the caption, the publication date or the engagement — all of which
+/// should survive a take-down and return if it goes back up.
+///
+/// It also keeps the blast radius small: nothing in the studio, the projects
+/// page or the storage layer has to know this table exists.
+///
+/// ## Nothing is public by default
+///
+/// A row here exists only because somebody pressed Publish. The studio holds
+/// people's unfinished and commercial work; a product that defaults it to
+/// visible has misunderstood what it is holding.
+model Post {
+  id String @id @default(cuid())
+
+  /// Short public identifier used in URLs. Not the cuid, which is long and
+  /// leaks insertion order.
+  slug String @unique
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  assetId String
+  asset   Asset  @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  caption String? @db.Text
+
+  /// Whether the prompt is shown publicly.
+  ///
+  /// Opt-in separately from publishing the image. A prompt is the part people
+  /// most want to see and the part a professional is most likely to consider
+  /// their method — so it is two decisions, not one.
+  showPrompt Boolean @default(true)
+
+  /// Null while withdrawn. The row survives a take-down so the engagement and
+  /// the caption come back if it is republished.
+  publishedAt DateTime?
+
+  /// Editorially set by us. Never derived from popularity — see
+  /// `services/community` for why featuring is a curatorial act.
+  featuredAt DateTime?
+
+  /// Denormalised counts.
+  ///
+  /// Written in the same transaction as the like or comment that changed them.
+  /// A gallery of twenty-four cards would otherwise be twenty-four counting
+  /// subqueries, and the count is on every card.
+  likeCount    Int @default(0)
+  commentCount Int @default(0)
+
+  likes    PostLike[]
+  comments Comment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([publishedAt])
+  @@index([userId, publishedAt])
+  @@index([featuredAt])
+  @@map("posts")
+}
+
+model PostLike {
+  postId String
+  post   Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  /// Composite primary key: liking twice is the same fact, and the database
+  /// should say so rather than application code remembering to check.
+  @@id([postId, userId])
+  @@index([userId, createdAt])
+  @@index([postId, createdAt])
+  @@map("post_likes")
+}
+
+model Comment {
+  id String @id @default(cuid())
+
+  postId String
+  post   Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  body String @db.Text
+
+  /// Soft delete. A removed comment leaves a tombstone so the replies around it
+  /// still make sense, and so a moderation decision can be reviewed rather than
+  /// being a row that silently vanished.
+  deletedAt DateTime?
+
+  /// Set when somebody reports it. There is no automated moderation — this is
+  /// a queue for a human, and the product says so rather than implying safety
+  /// it does not have.
+  reportedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([postId, createdAt])
+  @@index([reportedAt])
+  @@map("comments")
+}
+
+/// A follow.
+///
+/// Two ids on one row, with a composite key. `followerId` follows
+/// `followingId` — named in full rather than `a`/`b` because getting the
+/// direction backwards is the classic bug here and short names invite it.
+model Follow {
+  followerId String
+  follower   User   @relation("Following", fields: [followerId], references: [id], onDelete: Cascade)
+
+  followingId String
+  following   User   @relation("Followers", fields: [followingId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@id([followerId, followingId])
+  @@index([followingId, createdAt])
+  @@map("follows")
+}
+
+// --------------------------------------------------------------------------
+// Marketplace
+// --------------------------------------------------------------------------
+
+/// What a marketplace item is.
+enum MarketplaceKind {
+  TEMPLATE
+  PROMPT_PACK
+  STYLE_PACK
+  CHARACTER
+  VOICE_PACK
+}
+
+/// A user's saved item.
+///
+/// ## There is no `MarketplaceItem` table
+///
+/// The catalogue is **code**, in `services/marketplace/catalogue.ts`, exactly
+/// like the AI model registry. Items are first-party, versioned with the
+/// repository, and reviewed like any other change; putting them in the database
+/// would add a seed step to every environment and a migration to every copy
+/// edit, in exchange for nothing anyone can use yet.
+///
+/// So these tables store the only marketplace facts that are genuinely
+/// per-user: what someone saved, and what they installed. Both reference the
+/// catalogue by `slug`.
+///
+/// When third-party publishing arrives, an `items` table joins alongside and
+/// `slug` stays the key. That is why it is a string here rather than a foreign
+/// key to something that does not exist.
+model MarketplaceFavorite {
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// Catalogue slug. Not a foreign key — see above.
+  itemSlug String
+
+  createdAt DateTime @default(now())
+
+  @@id([userId, itemSlug])
+  @@index([userId, createdAt])
+  @@map("marketplace_favorites")
+}
+
+/// An item a user has added to their workspace.
+///
+/// "Download" in the interface. Nothing is transferred — installing makes the
+/// item's contents available in the studio — but *download* is the word people
+/// expect on a marketplace, and inventing a different one to be technically
+/// precise would just make the button harder to find.
+model MarketplaceInstall {
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  itemSlug String
+  kind     MarketplaceKind
+
+  /// What the catalogue said when this was installed.
+  ///
+  /// A copy, deliberately. Editing a pack in the repository must not silently
+  /// change work somebody has already built on — a prompt that shifts under
+  /// them is worse than one that is out of date. The interface can compare the
+  /// snapshot against the current catalogue and offer an update.
+  snapshot Json
+
+  installedAt DateTime @default(now())
+
+  @@id([userId, itemSlug])
+  @@index([userId, kind])
+  @@map("marketplace_installs")
+}
+
+/// A line in a job's history.
+///
+/// Persisted rather than logged to stdout because these are the answer to "what
+/// happened to my generation" — a question asked by a user, days later, about a
+/// job nobody was watching. `console.log` cannot answer that.
+///
+/// Deliberately append-only and deliberately not the audit log: this is
+/// operational detail about one job, not a record of who did what.
+model GenerationLog {
+  id String @id @default(cuid())
+
+  generationId String
+  generation   Generation @relation(fields: [generationId], references: [id], onDelete: Cascade)
+
+  /// info | warn | error. A string, not an enum: adding a level should not
+  /// need a migration, and nothing branches on it in the database.
+  level   String
+  message String @db.Text
+
+  /// Structured detail — provider id, attempt number, error code. Kept separate
+  /// from the message so it stays queryable.
+  context Json?
+
+  createdAt DateTime @default(now())
+
+  /// Reading a job's history, oldest first. The only access pattern.
+  @@index([generationId, createdAt])
+  @@map("generation_logs")
 }
 
 // --------------------------------------------------------------------------

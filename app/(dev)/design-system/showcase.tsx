@@ -160,21 +160,29 @@ export function TypographySection() {
       title="Typography"
       description="Size and semantics are separate props. `as` sets the element for the document outline; `size` sets the appearance. Coupling them forces heading levels to be misused to get a size, which quietly breaks screen-reader navigation."
     >
+      {/* Every specimen is `as="p"`.
+
+          It previously used real `h1`–`h5` to show that `as` and `size` are
+          independent, which gave this page two `<h1>`s and an outline claiming
+          a "Display" section that does not exist — in the one section arguing
+          that heading levels must not be chosen for their size. A specimen is
+          an illustration of a typeface, not a place in the document, and
+          rendering it as a paragraph *is* the demonstration. */}
       <Demo label="Scale">
         <Stack gap="md">
-          <Heading as="h1" size="display">
+          <Heading as="p" size="display">
             Display
           </Heading>
-          <Heading as="h2" size="h1">
+          <Heading as="p" size="h1">
             Heading 1
           </Heading>
-          <Heading as="h3" size="h2">
+          <Heading as="p" size="h2">
             Heading 2
           </Heading>
-          <Heading as="h4" size="h3">
+          <Heading as="p" size="h3">
             Heading 3
           </Heading>
-          <Heading as="h5" size="h4">
+          <Heading as="p" size="h4">
             Heading 4
           </Heading>
           <Text size="lg">Body large — for lead paragraphs.</Text>

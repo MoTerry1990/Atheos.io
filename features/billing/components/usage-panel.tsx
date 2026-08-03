@@ -1,0 +1,169 @@
+"use client";
+
+import { Activity } from "lucide-react";
+
+import { ProgressBar } from "@/components/ui/loading";
+import type { UsageReport } from "@/features/billing/lib/api";
+import { cn } from "@/lib/utils";
+
+/**
+ * What the credits went on.
+ *
+ * ## The allowance bar is a fraction, and it says which
+ *
+ * "1,840 of 3,000 used" rather than a percentage. A bar with no denominator
+ * tells somebody they are two thirds through something without saying two
+ * thirds of what — and the denominator is the number they are deciding whether
+ * to increase.
+ *
+ * ## Two breakdowns, because they answer different questions
+ *
+ * By modality answers "is video eating my plan". By model answers "which one".
+ * The first is the decision about what to stop doing; the second is the
+ * decision about what to swap.
+ *
+ * The bars are proportional to the largest row, not to the total. With a long
+ * tail, scaling to the total makes every row after the first two invisible.
+ */
+
+const MODALITY_LABELS: Record<string, string> = {
+  IMAGE: "Images",
+  VIDEO: "Video",
+  AUDIO: "Audio",
+};
+
+export function UsagePanel({
+  usage,
+  allowance,
+  balance,
+}: {
+  usage: UsageReport;
+  /** Credits the current plan grants per period. */
+  allowance: number;
+  balance: number;
+}) {
+  const used = usage.creditsSpent;
+  const maxModality = Math.max(
+    1,
+    ...usage.byModality.map((row) => row.credits),
+  );
+  const maxModel = Math.max(1, ...usage.byModel.map((row) => row.credits));
+
+  const start = new Date(usage.periodStart);
+  const end = new Date(usage.periodEnd);
+
+  return (
+    <section className="space-y-5" aria-labelledby="usage-heading">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2
+          id="usage-heading"
+          className="flex items-center gap-2 text-sm font-medium"
+        >
+          <Activity className="size-4 text-muted-foreground" aria-hidden />
+          Usage
+        </h2>
+        <p className="text-2xs text-muted-foreground">
+          {start.toLocaleDateString()} – {end.toLocaleDateString()}
+        </p>
+      </div>
+
+      <div className="space-y-1.5">
+        <ProgressBar
+          value={allowance > 0 ? Math.min(100, (used / allowance) * 100) : 0}
+          label="Credits used this period"
+        />
+        <p className="flex flex-wrap justify-between gap-2 text-xs text-muted-foreground tabular-nums">
+          <span>
+            <span className="font-medium text-foreground">
+              {used.toLocaleString("en-US")}
+            </span>{" "}
+            of {allowance.toLocaleString("en-US")} credits used
+          </span>
+          <span>{balance.toLocaleString("en-US")} remaining</span>
+        </p>
+        {/* Balance and allowance are different numbers and people conflate
+            them. Rollover and credit packs both make the balance exceed the
+            allowance, which looks like a bug unless it is explained. */}
+        {balance > allowance ? (
+          <p className="text-2xs text-muted-foreground">
+            Your balance is above this period&rsquo;s allowance — rollover and
+            credit packs both add to it.
+          </p>
+        ) : null}
+      </div>
+
+      {usage.generations === 0 ? (
+        <p className="rounded-lg border border-dashed border-border p-4 text-center text-xs text-muted-foreground">
+          Nothing generated this period.
+        </p>
+      ) : (
+        <div className="grid gap-6 sm:grid-cols-2">
+          <Breakdown
+            title="By type"
+            rows={usage.byModality.map((row) => ({
+              key: row.modality,
+              label: MODALITY_LABELS[row.modality] ?? row.modality,
+              credits: row.credits,
+              count: row.generations,
+            }))}
+            max={maxModality}
+          />
+          <Breakdown
+            title="By model"
+            rows={usage.byModel.map((row) => ({
+              key: row.model,
+              label: row.model,
+              credits: row.credits,
+              count: row.generations,
+            }))}
+            max={maxModel}
+          />
+        </div>
+      )}
+    </section>
+  );
+}
+
+function Breakdown({
+  title,
+  rows,
+  max,
+}: {
+  title: string;
+  rows: { key: string; label: string; credits: number; count: number }[];
+  max: number;
+}) {
+  if (rows.length === 0) return null;
+
+  return (
+    <div className="space-y-2">
+      <h3 className="text-2xs font-medium tracking-wider text-muted-foreground uppercase">
+        {title}
+      </h3>
+      <ul className="space-y-2">
+        {rows.map((row) => (
+          <li key={row.key} className="space-y-1">
+            <div className="flex items-baseline justify-between gap-2 text-xs">
+              <span className="min-w-0 truncate font-mono">{row.label}</span>
+              <span className="shrink-0 text-muted-foreground tabular-nums">
+                {row.credits.toLocaleString("en-US")}
+              </span>
+            </div>
+            <div
+              className="h-1.5 overflow-hidden rounded-full bg-secondary"
+              role="presentation"
+            >
+              <div
+                className={cn("h-full rounded-full bg-primary/70")}
+                style={{ width: `${Math.max(2, (row.credits / max) * 100)}%` }}
+              />
+            </div>
+            <p className="text-2xs text-muted-foreground tabular-nums">
+              {row.count} generation{row.count === 1 ? "" : "s"}
+            </p>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}

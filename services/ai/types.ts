@@ -42,11 +42,25 @@ export type GenerationOperation =
   | "image-to-image"
   | "upscale"
   | "remove-background"
-  | "variations";
+  | "variations"
+  | "text-to-video"
+  | "image-to-video";
 
 /** Operations that require at least one input image. */
 export const OPERATIONS_REQUIRING_INPUT: ReadonlySet<GenerationOperation> =
-  new Set(["image-to-image", "upscale", "remove-background", "variations"]);
+  new Set([
+    "image-to-image",
+    "upscale",
+    "remove-background",
+    "variations",
+    "image-to-video",
+  ]);
+
+/** Operations that produce video rather than a still. */
+export const VIDEO_OPERATIONS: ReadonlySet<GenerationOperation> = new Set([
+  "text-to-video",
+  "image-to-video",
+]);
 
 /** Operations that ignore the prompt entirely. */
 export const OPERATIONS_WITHOUT_PROMPT: ReadonlySet<GenerationOperation> =
@@ -59,8 +73,25 @@ export interface ModelCapabilities {
   /** Aspect ratios expressed as "16:9". Empty means arbitrary dimensions. */
   aspectRatios: readonly string[];
   maxOutputs: number;
-  /** Absent for image models. */
+  /**
+   * Clip lengths the model accepts, in seconds. Absent for image models.
+   *
+   * A list rather than a maximum: video models accept specific durations, not
+   * a range. Offering a slider from 1 to 10 on a model that only does 5 or 10
+   * means most positions are silently rounded, and the user is charged for a
+   * clip they did not ask for.
+   */
+  durations?: readonly number[];
+  /** Legacy convenience — the longest supported clip. */
   maxDurationSeconds?: number;
+  /**
+   * Camera movements the model understands, as prompt-ready phrases.
+   *
+   * Distinct from the image composer's camera *controls* (shot, angle, lens),
+   * which describe a fixed frame. These describe how the frame moves, and only
+   * video models have an opinion about them.
+   */
+  cameraMotions?: readonly string[];
   /**
    * Which operations this model can perform. A model that only upscales
    * declares exactly that, and the studio will not offer it for a prompt.
@@ -105,6 +136,12 @@ export interface GenerationRequest {
   inputStrength?: number;
   /** Upscale factor. Only meaningful for `upscale`. */
   scale?: number;
+  /** Clip length in seconds. Video operations only. */
+  durationSeconds?: number;
+  /** Frames per second, where the model exposes it. */
+  fps?: number;
+  /** Camera movement phrase, from the model's declared `cameraMotions`. */
+  cameraMotion?: string;
   /** Anything a specific model takes that the common shape does not express.
    *  Deliberately narrow — if a field appears here for three providers it
    *  belongs in the interface above. */
@@ -122,6 +159,8 @@ export interface GenerationOutput {
   width?: number;
   height?: number;
   seed?: number;
+  /** Clip length, for video outputs. */
+  durationMs?: number;
 }
 
 /**

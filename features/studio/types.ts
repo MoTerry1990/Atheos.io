@@ -38,6 +38,17 @@ export interface ReferenceImage {
   sizeBytes: number;
   /** 0–1. How strongly the reference should influence the result. */
   strength: number;
+  /**
+   * Where the *provider* can fetch this image.
+   *
+   * Distinct from `url`, which is an object URL and means nothing outside this
+   * tab. Populated once the upload to our storage completes; until then the
+   * reference exists but cannot be submitted, which is what `status` is for.
+   */
+  remoteUrl?: string;
+  status: "uploading" | "ready" | "failed";
+  /** Why the upload failed, ready to show. Null while it has not. */
+  error?: string;
 }
 
 /** Camera language, appended to the prompt at submit time. */
@@ -75,6 +86,16 @@ export interface StudioParams {
   seedLocked: boolean;
   outputs: number;
   references: ReferenceImage[];
+  /** Clip length in seconds. Ignored by image models. */
+  durationSeconds: number;
+  /**
+   * How the camera moves, from the model's declared vocabulary.
+   *
+   * Null means "no instruction" rather than "hold still" — the model has its
+   * own idea of how a shot should move, and overriding it with "static camera"
+   * by default would quietly make every clip worse.
+   */
+  cameraMotion: string | null;
 }
 
 export type JobStatus =
@@ -87,6 +108,17 @@ export interface JobOutput {
    * `lib/job-mapper`. Empty only while storage is unconfigured.
    */
   url?: string;
+  /**
+   * What was actually stored.
+   *
+   * The preview branches on this rather than on the job's modality: a video
+   * model can return a poster frame, and the mock returns an SVG for a clip.
+   * Mounting a `<video>` over a file that is not one gives a black box with a
+   * broken control bar, so the file's own type is the only safe signal.
+   */
+  mimeType: string;
+  /** Clip length for video outputs, null for stills. */
+  durationMs: number | null;
   /** Fallback tint, shown while the image loads or if the CDN is unreachable. */
   hue: number;
   seed: number;

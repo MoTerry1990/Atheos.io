@@ -1,11 +1,12 @@
 "use client";
 
-import { ImagePlus, X } from "lucide-react";
+import { AlertCircle, ImagePlus, Loader2, X } from "lucide-react";
 import Image from "next/image";
 import { useRef, useState } from "react";
 
 import { Slider } from "@/components/ui/slider";
 import { Control } from "@/features/studio/components/model-picker";
+import { ApiError, uploadReference } from "@/features/studio/lib/api";
 import { useStudioStore } from "@/store/studio-store";
 import { useSelectedModel } from "@/features/studio/lib/use-model";
 import { formatBytes } from "@/utils/format";
@@ -15,12 +16,22 @@ import { cn } from "@/lib/utils";
 /**
  * Reference images.
  *
- * ## Nothing is uploaded yet
+ * ## Uploaded on drop, not on submit
  *
- * Files stay in the browser as object URLs. There is no provider to send them
- * to until Sprint 6, and uploading to storage now would mean paying to keep
- * files nothing can consume. The store strips references from persistence for
- * the same reason an object URL is meaningless in a later session.
+ * A provider fetches the source image itself, so it needs a URL on the public
+ * internet — an object URL means nothing outside this tab. Sprint 6 left
+ * references local because nothing consumed them; image-to-image and
+ * image-to-video both do, so they now go to our storage the moment they are
+ * added.
+ *
+ * Uploading on drop rather than at submit is what keeps the Generate button
+ * fast. Uploading 10MB *after* the button is pressed would put a long silent
+ * pause between the click and anything happening, and the failure would arrive
+ * at the worst possible moment.
+ *
+ * The preview still uses the object URL. Rendering the remote copy would make
+ * the thumbnail depend on a round trip through the CDN for an image already in
+ * memory.
  *
  * ## Per-reference strength
  *
@@ -45,6 +56,7 @@ export function ReferenceUpload() {
   const addReference = useStudioStore((state) => state.addReference);
   const removeReference = useStudioStore((state) => state.removeReference);
   const setStrength = useStudioStore((state) => state.setReferenceStrength);
+  const settleReference = useStudioStore((state) => state.settleReference);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
@@ -81,13 +93,28 @@ export function ReferenceUpload() {
         continue;
       }
 
+      const id = `ref_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+
       addReference({
-        id: `ref_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        id,
         name: file.name,
         url: URL.createObjectURL(file),
         sizeBytes: file.size,
         strength: 0.6,
+        status: "uploading",
       });
+
+      // Deliberately not awaited: dropping four files should start four
+      // uploads, not queue them. Each settles into the store independently, and
+      // the Generate button waits for all of them.
+      uploadReference(file)
+        .then((result) => settleReference(id, { remoteUrl: result.url }))
+        .catch((cause) =>
+          settleReference(id, {
+            error:
+              cause instanceof ApiError ? cause.message : "The upload failed.",
+          }),
+        );
     }
   }
 
@@ -118,9 +145,40 @@ export function ReferenceUpload() {
                 </div>
 
                 <div className="min-w-0 flex-1 space-y-1.5">
-                  <p className="truncate text-xs font-medium">
-                    {reference.name}
+                  <p className="flex items-center gap-1.5 truncate text-xs font-medium">
+                    {reference.status === "uploading" ? (
+                      <Loader2
+                        className="size-3 shrink-0 animate-spin text-muted-foreground"
+                        aria-hidden
+                      />
+                    ) : null}
+                    {reference.status === "failed" ? (
+                      <AlertCircle
+                        className="size-3 shrink-0 text-destructive"
+                        aria-hidden
+                      />
+                    ) : null}
+                    <span className="truncate">{reference.name}</span>
                   </p>
+
+                  {/* Said out loud rather than left to a spinner: until this
+                      finishes the image cannot be sent, and a user who presses
+                      Generate deserves to know why it is waiting. */}
+                  {reference.status !== "ready" ? (
+                    <p
+                      className={cn(
+                        "text-2xs",
+                        reference.status === "failed"
+                          ? "text-destructive"
+                          : "text-muted-foreground",
+                      )}
+                    >
+                      {reference.status === "failed"
+                        ? (reference.error ?? "Upload failed.")
+                        : "Uploading…"}
+                    </p>
+                  ) : null}
+
                   <div className="flex items-center gap-2">
                     <Slider
                       value={[reference.strength]}

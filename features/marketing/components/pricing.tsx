@@ -145,6 +145,12 @@ export function Pricing() {
                     {tier.credits}
                   </p>
 
+                  {/* Straight to sign-up, carrying the chosen plan.
+                      `redirect_url` is what Clerk uses after authentication, so
+                      somebody who picks Studio here lands on billing with
+                      Studio selected rather than on a dashboard, having to find
+                      the plan they already chose. The free tier needs no plan
+                      at all — signing up *is* the free tier. */}
                   <Button
                     variant={tier.featured ? "gradient" : "outline"}
                     size="lg"
@@ -152,7 +158,17 @@ export function Pricing() {
                     className="mt-6"
                     asChild
                   >
-                    <a href="#faq">{tier.cta}</a>
+                    <a
+                      href={
+                        price === 0
+                          ? "/sign-up"
+                          : `/sign-up?redirect_url=${encodeURIComponent(
+                              `/settings/billing?plan=${tier.id}&interval=${yearly ? "YEAR" : "MONTH"}`,
+                            )}`
+                      }
+                    >
+                      {tier.cta}
+                    </a>
                   </Button>
 
                   <ul className="mt-8 space-y-3">

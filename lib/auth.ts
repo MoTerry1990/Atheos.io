@@ -101,3 +101,53 @@ export async function requireUser(): Promise<UserModel> {
 
   return user;
 }
+
+/**
+ * The 401 thrown by `requireApiUser`.
+ *
+ * Structurally a `DomainError` (`message` / `status` / `code`), so every area's
+ * error responder maps it to a 401 without knowing it exists — see
+ * `lib/api-response.ts` for why that interface is structural.
+ */
+export class AuthError extends Error {
+  readonly status = 401;
+  readonly code = "unauthenticated";
+
+  constructor(message = "You need to be signed in to do that.") {
+    super(message);
+    this.name = "AuthError";
+  }
+}
+
+/**
+ * Our database row, or throw — the route-handler counterpart to `requireUser`.
+ *
+ * ## Why this replaced six copies
+ *
+ * `services/projects.ts`, `collections.ts`, `generation.ts`,
+ * `billing/checkout.ts`, `community/index.ts` and `marketplace/index.ts` each
+ * defined a private `requireApiUser()`. All six were byte-identical apart from
+ * the error class they constructed. That is six places to harden the most
+ * security-critical check in the codebase, and five of them would be missed.
+ *
+ * The differing error type turned out not to matter: `errorResponse` matches
+ * domain errors structurally, so one `AuthError` produces exactly the same 401
+ * through every responder that the six bespoke errors did.
+ *
+ * ## Why it stays in the service layer rather than moving to the route
+ *
+ * `lib/api-guard.ts` also resolves the caller, and it would be easy to conclude
+ * the service check is now redundant. It is not, and removing it would undo the
+ * rule this file exists to state: **protection lives with the resource.** A
+ * guard protects the one route it wraps. A service function is reachable from
+ * route handlers, Server Actions and other services, and the check must hold
+ * for all of them — including the next caller nobody has written yet.
+ *
+ * The guard is a cheap outer gate that also gives rate limiting a user id to
+ * key on. This is the gate that counts.
+ */
+export async function requireApiUser(): Promise<UserModel> {
+  const user = await getCurrentUser();
+  if (!user) throw new AuthError();
+  return user;
+}
