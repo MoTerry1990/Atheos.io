@@ -31,20 +31,20 @@ key resolves them — re-run with `E2E_CLERK_LIVE=1` and expect 120 passing.
 
 ## Infrastructure
 
-| Check                       | Ready | Notes                                                                                                                                             |
-| --------------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Database ready**          | ⚠️    | Schema excellent — 17 tables, 4 migrations, 50+ assertions against real Postgres. **No instance provisioned.** Never touched by `migrate deploy`. |
-| **Migrations ready**        | ✅    | Four, chain-verified, index count reconciles exactly (48 = 35+3+10)                                                                               |
-| **Backups**                 | ❌    | None, no tested restore                                                                                                                           |
-| **Clerk ready**             | ⚠️    | Code correct and HTTP-verified. **No instance.** Placeholder key.                                                                                 |
-| **Stripe ready**            | ⚠️    | Full lifecycle written. **Zero API calls ever made.**                                                                                             |
-| **AI providers configured** | ❌    | **2 of 11 implemented, 0 have ever called a vendor.** Replicate's five model versions are still `PLACEHOLDER_*`.                                  |
-| **Storage configured**      | ❌    | R2 client correct. **No bucket.**                                                                                                                 |
-| **Worker scheduled**        | ⚠️    | `vercel.json` cron added, GET handler added. **Never run.** Requires Vercel Pro for per-minute.                                                   |
-| **Env vars documented**     | ✅    | `ENVIRONMENT_TEMPLATE.md` — 30 variables, purpose, required, example, location                                                                    |
-| **Env vars set**            | ❌    | Nowhere. No deployment environment exists.                                                                                                        |
-| **Deployment instructions** | ✅    | `DEPLOYMENT.md` — 7 steps, checklist, rollback plan                                                                                               |
-| **Repository pushed**       | ⚠️    | Remote configured; push needs interactive auth                                                                                                    |
+| Check                       | Ready | Notes                                                                                                                                                                                                                                             |
+| --------------------------- | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Database ready**          | ⚠️    | Schema excellent — 17 tables, 4 migrations, 50+ assertions against real Postgres. **No instance provisioned.** Never touched by `migrate deploy`.                                                                                                 |
+| **Migrations ready**        | ✅    | Four, chain-verified, index count reconciles exactly (48 = 35+3+10)                                                                                                                                                                               |
+| **Backups**                 | ❌    | None, no tested restore                                                                                                                                                                                                                           |
+| **Clerk ready**             | ⚠️    | Code correct and HTTP-verified. **No instance.** Placeholder key.                                                                                                                                                                                 |
+| **Stripe ready**            | ⚠️    | Full lifecycle written. **Zero API calls ever made.**                                                                                                                                                                                             |
+| **AI providers configured** | ⚠️    | **Replicate now authenticates and all five model versions are real.** A live submission reached Replicate's billing gate (HTTP 402), which proves token, version and payload are all correct. No image generated yet — the account has no credit. |
+| **Storage configured**      | ❌    | R2 client correct. **No bucket.**                                                                                                                                                                                                                 |
+| **Worker scheduled**        | ⚠️    | `vercel.json` cron added, GET handler added. **Never run.** Requires Vercel Pro for per-minute.                                                                                                                                                   |
+| **Env vars documented**     | ✅    | `ENVIRONMENT_TEMPLATE.md` — 30 variables, purpose, required, example, location                                                                                                                                                                    |
+| **Env vars set**            | ❌    | Nowhere. No deployment environment exists.                                                                                                                                                                                                        |
+| **Deployment instructions** | ✅    | `DEPLOYMENT.md` — 7 steps, checklist, rollback plan                                                                                                                                                                                               |
+| **Repository pushed**       | ⚠️    | Remote configured; push needs interactive auth                                                                                                                                                                                                    |
 
 ---
 

@@ -55,7 +55,7 @@ const MODELS: (ProviderModel & { version: string })[] = [
     displayName: "FLUX Schnell",
     modality: "IMAGE",
     creditCost: 4,
-    version: "PLACEHOLDER_flux_schnell_version",
+    version: "c846a69991daf4c0e5d016514849d14ee5b2e6846ce6b9d6f21369e564cfe51e",
     capabilities: {
       supportsNegativePrompt: false,
       supportsImageInput: false,
@@ -71,7 +71,7 @@ const MODELS: (ProviderModel & { version: string })[] = [
     displayName: "FLUX Dev",
     modality: "IMAGE",
     creditCost: 12,
-    version: "PLACEHOLDER_flux_dev_version",
+    version: "6e4a938f85952bdabcc15aa329178c4d681c52bf25a0342403287dc26944661d",
     capabilities: {
       supportsNegativePrompt: false,
       supportsImageInput: true,
@@ -87,7 +87,7 @@ const MODELS: (ProviderModel & { version: string })[] = [
     displayName: "Real-ESRGAN",
     modality: "IMAGE",
     creditCost: 3,
-    version: "PLACEHOLDER_real_esrgan_version",
+    version: "b3ef194191d13140337468c916c2c5b96dd0cb06dffc032a022a31807f6a5ea8",
     capabilities: {
       // An upscaler takes no prompt at all. Declaring that here is what stops
       // the studio offering it as a generation model.
@@ -108,7 +108,7 @@ const MODELS: (ProviderModel & { version: string })[] = [
     // ratio. Pricing a clip like an image is how a platform loses money on
     // every use of its most impressive feature.
     creditCost: 90,
-    version: "PLACEHOLDER_video_gen_version",
+    version: "1ffaab95d8f67adf487548468b03e795ad0410089c655c560e492add1b7beaf0",
     capabilities: {
       supportsNegativePrompt: true,
       supportsImageInput: true,
@@ -129,7 +129,7 @@ const MODELS: (ProviderModel & { version: string })[] = [
     displayName: "Background Remover",
     modality: "IMAGE",
     creditCost: 2,
-    version: "PLACEHOLDER_remove_bg_version",
+    version: "95fcc2a26d3899cd6c2691c900465aaeff466285a65c14638cc5f36f34befaf1",
     capabilities: {
       supportsNegativePrompt: false,
       supportsImageInput: true,
