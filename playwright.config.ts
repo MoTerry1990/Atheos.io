@@ -54,6 +54,12 @@ export default defineConfig({
     : {
         command: "npx next build && npx next start -p 3210",
         url: "http://localhost:3210/api/marketplace",
+        // The `(dev)` preview routes 404 in a production build unless this is
+        // set — see `app/(dev)/layout.tsx`. Sprint 25 turned them off for
+        // production, and this suite asserts against all eight of them, so the
+        // harness opts in explicitly. It applies to the build as well as the
+        // server, which matters: the guard runs at prerender time.
+        env: { ENABLE_DEV_PREVIEWS: "1" },
         reuseExistingServer: !process.env.CI,
         // Raised from 120s: the timeout now has to cover the build as well as
         // the server coming up.

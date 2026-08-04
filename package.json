@@ -2,6 +2,9 @@
   "name": "atheos",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=20.9.0"
+  },
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "prisma generate && next build",
@@ -86,21 +89,5 @@
     "prisma@7.9.1": true,
     "@prisma/engines@7.9.1": true,
     "msgpackr-extract@3.0.4": true
-  },
-  "lint-staged": {
-    "*.{ts,tsx}": [
-      "eslint --fix --max-warnings=0",
-      "prettier --write"
-    ],
-    "*.{js,jsx,mjs,cjs}": [
-      "eslint --fix",
-      "prettier --write"
-    ],
-    "*.{json,md,css,yml,yaml}": [
-      "prettier --write"
-    ],
-    "*.prisma": [
-      "prisma format"
-    ]
   }
 }

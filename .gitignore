@@ -58,3 +58,8 @@ coverage
 # and neither belongs in the repository.
 /test-results/
 /playwright-report/
+
+# The configuration template is documentation, not a secret. The broad
+# `.env*` rule above would otherwise exclude it and leave anyone cloning this
+# repository with no list of what to set.
+!.env.example

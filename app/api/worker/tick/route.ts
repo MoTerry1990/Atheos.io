@@ -84,3 +84,30 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Tick failed." }, { status: 500 });
   }
 }
+
+/**
+ * The same tick, over GET, because that is the only verb Vercel Cron sends.
+ *
+ * Sprint 20 built the endpoint as POST-only, which is the right default for
+ * something that performs work. It also made the endpoint unschedulable on the
+ * platform this deploys to: Vercel Cron issues a **GET** with
+ * `Authorization: Bearer $CRON_SECRET` and offers no way to change either.
+ * A worker that nothing can schedule is a worker that does not run, which is
+ * why "nothing schedules the tick" has been an open High finding since
+ * Sprint 20.
+ *
+ * This is a deliberate exception to "GET must be safe", and it is safe enough
+ * in the ways that matter: the endpoint is authenticated by a shared secret
+ * compared in constant time, it is not linked from anywhere, it is `no-store`
+ * by the API cache header, and `runTick` is idempotent under concurrency — two
+ * overlapping ticks claim disjoint jobs via `FOR UPDATE SKIP LOCKED`, so a
+ * retried or duplicated GET cannot double-process a job. The realistic hazard
+ * with a non-idempotent GET is a prefetcher or crawler triggering it; neither
+ * has the secret, and both get the same 404 as everyone else.
+ *
+ * Set `CRON_SECRET` in Vercel to the same value as `WORKER_TRIGGER_SECRET` —
+ * Vercel signs the cron request with the former, this route checks the latter.
+ */
+export async function GET(request: NextRequest) {
+  return POST(request);
+}

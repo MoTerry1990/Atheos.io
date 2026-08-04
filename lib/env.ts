@@ -90,6 +90,18 @@ export const env = createEnv({
     // trust, and sending it teaches them to accept unsigned ones.
     WEBHOOK_SIGNING_SECRET: z.string().min(16).optional(),
 
+    // ---- Internal preview routes ----------------------------------------
+    //
+    // `"1"` serves the `(dev)` route group in a production build. Off by
+    // default, so production 404s all eight preview routes — `/admin-preview`
+    // renders the admin interface with the gate bypassed, and `noindex` is a
+    // request to a crawler rather than an access control.
+    //
+    // Set it on preview deployments and in the Playwright run, which asserts
+    // against every one of these routes. Never set it on the production
+    // deployment.
+    ENABLE_DEV_PREVIEWS: z.enum(["0", "1"]).optional(),
+
     // ---- Administration -------------------------------------------------
     // Comma-separated Clerk user ids with admin access.
     //
@@ -169,6 +181,8 @@ export const env = createEnv({
 
     WORKER_TRIGGER_SECRET: process.env.WORKER_TRIGGER_SECRET,
     WEBHOOK_SIGNING_SECRET: process.env.WEBHOOK_SIGNING_SECRET,
+
+    ENABLE_DEV_PREVIEWS: process.env.ENABLE_DEV_PREVIEWS,
 
     ADMIN_USER_IDS: process.env.ADMIN_USER_IDS,
 
