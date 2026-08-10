@@ -1,0 +1,117 @@
+name: CI
+
+# Every push and every pull request. A suite that runs only when somebody
+# remembers is a suite that stops passing quietly — which is exactly how three
+# checks in this repository came to be green while examining nothing (see
+# RC1_REPORT.md).
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# A new push to the same branch cancels the run already in flight. Nobody needs
+# the result for a commit that has been superseded.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Structurally valid placeholders, not secrets.
+  #
+  # `lib/env.ts` validates at build time and fails on a missing required
+  # variable — deliberately, and it is one of the better things in this
+  # codebase. CI still has to build, so it needs *something* that parses.
+  #
+  # `SKIP_ENV_VALIDATION` would be the lazy way out. It is not used here,
+  # because skipping validation means CI never exercises the env layer at all,
+  # and the first time anyone would learn that a new required variable is
+  # missing would be a failed production deploy. Real-shaped placeholders keep
+  # the check honest.
+  #
+  # None of these reach a real service. The database is never connected, so the
+  # tests that need one are the ones already excluded from this run.
+  DATABASE_URL: "postgresql://ci:ci@localhost:6543/ci?pgbouncer=true"
+  DIRECT_URL: "postgresql://ci:ci@localhost:5432/ci"
+  CLERK_SECRET_KEY: "sk_test_ci"
+  NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: "pk_test_ci"
+  STRIPE_SECRET_KEY: "sk_test_ci"
+  NEXT_PUBLIC_APP_URL: "http://localhost:3000"
+
+jobs:
+  # Fast feedback. Typecheck, lint, format and unit tests are pure functions of
+  # the source and finish in a couple of minutes; a broken build should not have
+  # to wait behind a browser download to tell you.
+  verify:
+    name: Typecheck · Lint · Format · Unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # `npm ci` rather than `npm install`: it installs exactly what the
+      # lockfile says and fails if the lockfile disagrees with package.json.
+      # `install` would quietly resolve a different tree than the one that was
+      # tested locally.
+      - run: npm ci
+
+      # The Prisma client is generated code and is git-ignored, so nothing
+      # typechecks until it exists.
+      - run: npx prisma generate
+
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm test
+
+      # Advisory rather than blocking. A transitive advisory published
+      # overnight should not stop an unrelated pull request from merging, but
+      # somebody should see it. Promote to blocking once the dependency tree is
+      # something you actively maintain.
+      - name: Audit production dependencies
+        run: npm audit --omit=dev
+        continue-on-error: true
+
+  # Separate job so it runs in parallel with the fast one rather than after it.
+  e2e:
+    name: End-to-end
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+      - run: npx prisma generate
+
+      - run: npx playwright install --with-deps chromium
+
+      # `playwright.config.ts` builds and starts the production server itself,
+      # and sets ENABLE_DEV_PREVIEWS for its own run so the `(dev)` preview
+      # routes it asserts against are served. Production never sets it.
+      #
+      # Expect 104 passed and 16 skipped. The skips are `/` and `/explore`,
+      # which Clerk's development handshake makes unloadable in a real browser
+      # with a placeholder key. They run under E2E_CLERK_LIVE=1 once a real
+      # Clerk key exists — at which point this should be 120 passed, 0 skipped.
+      - run: npx playwright test
+        env:
+          CI: "true"
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
