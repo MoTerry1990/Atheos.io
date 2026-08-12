@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 
 import { prisma } from "@/lib/prisma";
 import { pollWithHealth } from "@/services/ai/manager";
+import { settleSuccess } from "@/services/generation";
 import { nextAttempt } from "@/services/ai/retry";
 import type { ProviderError } from "@/services/ai/types";
 import {
@@ -12,7 +13,6 @@ import {
   log,
   markFailed,
   markRetrying,
-  markSucceeded,
   queueDepth,
 } from "@/services/worker/queue";
 import {
@@ -152,11 +152,57 @@ async function advance(
     }
 
     if (providerJob.state === "succeeded") {
-      await markSucceeded(job.id, workerId);
+      /**
+       * Settle properly, rather than only flipping the status.
+       *
+       * This used to call `markSucceeded`, which sets `status: "SUCCEEDED"` and
+       * nothing else. The provider's output was never downloaded, never written
+       * to R2, no `assets` row was created and no cost was recorded — so a job
+       * the worker advanced reported success with nothing attached, and the
+       * cost engine saw a completed generation it could not price.
+       *
+       * It went unnoticed for six sprints because the worker had never actually
+       * run against a provider. `settleSuccess` is the same function the
+       * client-driven poll uses, so both paths now mean the same thing by
+       * "succeeded", and it releases the lease in the same transaction.
+       */
+      const outputs = providerJob.outputs ?? [];
+
+      if (outputs.length === 0) {
+        // A provider reporting success with no outputs is a failure we would
+        // otherwise record as a success — the user is charged for nothing.
+        await handleFailure(
+          job.id,
+          workerId,
+          job.attemptCount,
+          {
+            code: "unknown",
+            retryable: false,
+            message: "The provider reported success but returned no output.",
+          },
+          result,
+        );
+        return;
+      }
+
+      // `collectionId` lives in the parameters the submit step stored verbatim.
+      // The worker's claim does not carry it, so it is read here rather than
+      // widening `ClaimedJob` for one optional field.
+      const row = await prisma.generation.findUnique({
+        where: { id: job.id },
+        select: { parameters: true },
+      });
+      const parameters = row?.parameters as { collectionId?: string } | null;
+
+      await settleSuccess(job.id, job.userId, outputs, {
+        collectionId: parameters?.collectionId,
+      });
+
       await log(job.id, "info", "succeeded", {
         workerId,
         provider: job.provider,
         attempt: job.attemptCount,
+        outputs: outputs.length,
       });
       result.completed += 1;
       return;

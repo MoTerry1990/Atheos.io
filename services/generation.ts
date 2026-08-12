@@ -356,7 +356,21 @@ function assetKindFor(mimeType: string): AssetKind {
 }
 
 /** Copy outputs into storage, record the assets, mark the job succeeded. */
-async function settleSuccess(
+/**
+ * Store the outputs, record the assets, price the job and mark it succeeded.
+ *
+ * Exported because **the worker needs it too**, and until Sprint 26 it did not
+ * have it. `services/worker/runner.ts` called `markSucceeded`, which only sets
+ * `status: "SUCCEEDED"` — it never downloaded the provider's output, never
+ * wrote it to R2, never created the `assets` rows and never recorded the cost.
+ * A job advanced by the worker therefore reported success with nothing attached
+ * and no cost accounted for. Nobody noticed because the worker had never run.
+ *
+ * One implementation, two callers: the client-driven poll and the worker.
+ * Duplicating settlement would mean two places that could disagree about what
+ * "succeeded" means, on the path that spends money.
+ */
+export async function settleSuccess(
   generationId: string,
   userId: string,
   // The provider contract's own output type rather than a structural copy of
@@ -468,6 +482,18 @@ async function settleSuccess(
         // "no images" and "not an image job" stay distinguishable in a SUM.
         imageCount: images || null,
         videoSeconds: videoSeconds || null,
+        // Release the worker lease in the same write that marks the job done.
+        //
+        // Only the worker ever sets these; on the client-driven path they are
+        // already null and this is a no-op. Doing it here rather than in a
+        // second update is what makes settlement atomic: a crash between
+        // "SUCCEEDED" and "lease released" would leave a finished job that
+        // `claimJobs` still considers locked, and it would sit until the lease
+        // expired five minutes later for no reason.
+        progress: 100,
+        lockedAt: null,
+        lockedBy: null,
+        nextAttemptAt: null,
       },
     });
   });

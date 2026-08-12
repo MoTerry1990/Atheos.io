@@ -148,22 +148,17 @@ export async function heartbeat(
   });
 }
 
-export async function markSucceeded(
-  jobId: string,
-  workerId: string,
-): Promise<void> {
-  await prisma.generation.updateMany({
-    where: { id: jobId, lockedBy: workerId },
-    data: {
-      status: "SUCCEEDED",
-      progress: 100,
-      completedAt: new Date(),
-      lockedAt: null,
-      lockedBy: null,
-      nextAttemptAt: null,
-    },
-  });
-}
+// `markSucceeded` was removed in Sprint 26.
+//
+// It set `status: "SUCCEEDED"` and nothing else — no stored output, no `assets`
+// row, no cost. The worker called it, so any job the worker advanced reported
+// success with nothing attached. Settlement now goes through `settleSuccess` in
+// `services/generation.ts`, which is the same function the client-driven poll
+// uses, so both paths mean the same thing by "succeeded".
+//
+// Deleted rather than deprecated: a function that marks a job done without
+// doing the work is a trap, and leaving it exported invites exactly the bug it
+// caused.
 
 /**
  * Schedule another attempt.
