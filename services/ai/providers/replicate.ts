@@ -108,12 +108,12 @@ const MODELS: (ProviderModel & { version: string })[] = [
     // ratio. Pricing a clip like an image is how a platform loses money on
     // every use of its most impressive feature.
     creditCost: 90,
-    version: "1ffaab95d8f67adf487548468b03e795ad0410089c655c560e492add1b7beaf0",
+    version: "c483b1f7b892065bc58ebadb6381abf557f6b1f517d2ff0febb3fb635cf49b4d",
     capabilities: {
       supportsNegativePrompt: true,
       supportsImageInput: true,
       supportsSeed: true,
-      aspectRatios: ["16:9", "9:16", "1:1"],
+      aspectRatios: ["16:9", "9:16"],
       // One clip per run. Video is slow and expensive enough that batching
       // four is a bill nobody asked for.
       maxOutputs: 1,
@@ -161,28 +161,14 @@ function findModel(modelId: string) {
  * nowhere else.
  */
 /**
- * A supported video size for the requested aspect ratio.
+ * Frame count for a requested duration.
  *
- * The model accepts exactly four: 1280*720, 720*1280, 1920*1080, 1080*1920.
- * Anything else fails the whole generation with an opaque `E002` that names no
- * field — which is what happened on the first real video attempt, because the
- * adapter sent `aspect_ratio` (correct for the image models, meaningless here).
- *
- * Landscape is the default: an unspecified ratio almost always means "normal".
+ * The model expresses length in frames, not seconds, at a fixed 16fps. 81
+ * frames is its default and lands near five seconds; ten seconds is double
+ * that, minus one so the count stays odd — these samplers expect 4n+1.
  */
-function videoSize(aspectRatio: string | undefined): string {
-  switch (aspectRatio) {
-    case "9:16":
-      return "1080*1920";
-    case "1:1":
-      // No square size exists. Portrait is the closer crop of the two, and
-      // silently widening a square request would be the more surprising
-      // outcome.
-      return "1080*1920";
-    case "16:9":
-    default:
-      return "1920*1080";
-  }
+function videoFrames(durationSeconds: number | undefined): number {
+  return durationSeconds && durationSeconds >= 10 ? 161 : 81;
 }
 
 function buildInput(
@@ -205,18 +191,12 @@ function buildInput(
           ? { negative_prompt: request.negativePrompt }
           : {}),
         ...(source ? { image: source } : {}),
-        duration: request.durationSeconds ?? 5,
-        // `size`, not `aspect_ratio`.
-        //
-        // The video model takes explicit pixel dimensions from a fixed set and
-        // rejects anything else with an opaque `ModelError (E002)` that names
-        // no field — the whole generation fails and the user gets a refund and
-        // no explanation. Sending `aspect_ratio` (correct for the image models)
-        // is exactly what happened on the first real video attempt.
-        //
-        // Mapping the ratio to a supported size keeps the studio's own
-        // vocabulary — a user picks 16:9, not "1920*1080".
-        size: videoSize(request.aspectRatio),
+        // Length is frames at a fixed frame rate, not seconds.
+        num_frames: videoFrames(request.durationSeconds),
+        // Only 16:9 and 9:16 exist. A 1:1 request becomes portrait, which is
+        // the closer crop of the two.
+        aspect_ratio: request.aspectRatio === "9:16" ? "9:16" : "16:9",
+        resolution: "720p",
         ...(request.seed !== undefined ? { seed: request.seed } : {}),
       };
 
