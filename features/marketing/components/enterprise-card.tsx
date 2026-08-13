@@ -1,6 +1,8 @@
 import { ArrowUpRight } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { getCopy } from "@/features/marketing/i18n/dictionaries";
+import type { Locale } from "@/features/marketing/i18n/locales";
 import { Reveal, Section } from "@/features/marketing/components/section";
 
 /**
@@ -24,17 +26,9 @@ import { Reveal, Section } from "@/features/marketing/components/section";
  * When those capabilities exist this becomes a priced tier like the others.
  */
 
-const NEEDS = [
-  "More than 20,000 credits a month",
-  "Several people working from one balance",
-  "Single sign-on for your team",
-  "Invoicing rather than a card on file",
-  "A data-processing agreement",
-  "A specific model, or your own provider keys",
-  "Support with a response time attached",
-] as const;
+export function EnterpriseCard({ locale }: { locale: Locale }) {
+  const { enterprise } = getCopy(locale);
 
-export function EnterpriseCard() {
   return (
     <Section id="enterprise">
       <Reveal>
@@ -42,39 +36,33 @@ export function EnterpriseCard() {
           <div className="grid gap-8 md:grid-cols-[1.2fr_1fr] md:items-start">
             <div>
               <p className="text-xs font-medium tracking-wider text-muted-foreground uppercase">
-                Business and enterprise
+                {enterprise.eyebrow}
               </p>
 
               <h2 className="mt-3 text-2xl font-semibold tracking-tight text-balance sm:text-3xl">
-                Need seats, SSO or an invoice?
+                {enterprise.title}
               </h2>
 
               <p className="mt-4 max-w-prose text-sm leading-relaxed text-muted-foreground">
-                Agency covers the volume — 20,000 credits a month, on a card, no
-                conversation required. What it does not cover is the other half
-                of an enterprise purchase: several people on one balance, single
-                sign-on, procurement, a model we do not offer yet.
+                {enterprise.body[0]}
               </p>
 
               <p className="mt-4 max-w-prose text-sm leading-relaxed text-muted-foreground">
-                Those are being built, and we would rather scope them against a
-                real requirement than guess. Tell us the constraints and we will
-                tell you what it costs and when — or say plainly if we are not
-                the right fit yet.
+                {enterprise.body[1]}
               </p>
 
               <Button asChild size="lg" className="mt-6">
                 <a href="mailto:hello@atheos.io?subject=Atheos%20for%20teams">
-                  Talk to us
+                  {enterprise.cta}
                   <ArrowUpRight />
                 </a>
               </Button>
             </div>
 
             <div className="rounded-xl border border-border bg-surface-sunken p-5">
-              <p className="text-sm font-medium">Worth a conversation if</p>
+              <p className="text-sm font-medium">{enterprise.needsTitle}</p>
               <ul className="mt-3 space-y-2.5">
-                {NEEDS.map((need) => (
+                {enterprise.needs.map((need) => (
                   <li
                     key={need}
                     className="flex gap-2.5 text-sm leading-relaxed text-muted-foreground"

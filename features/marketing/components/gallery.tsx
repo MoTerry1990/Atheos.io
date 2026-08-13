@@ -1,5 +1,7 @@
 import { Artwork } from "@/features/marketing/components/artwork";
 import { GALLERY } from "@/features/marketing/content";
+import { getCopy } from "@/features/marketing/i18n/dictionaries";
+import type { Locale } from "@/features/marketing/i18n/locales";
 import {
   Reveal,
   Section,
@@ -24,20 +26,22 @@ import {
  * `break-inside-avoid` is load-bearing: without it a CSS-columns layout splits
  * a card across a column boundary and renders half of it in each.
  */
-export function Gallery() {
+export function Gallery({ locale }: { locale: Locale }) {
+  const copy = getCopy(locale);
+
   return (
     <Section id="gallery">
       <SectionHeading
-        eyebrow="Gallery"
-        title="A look at the surface"
-        description="The visual language Atheos is built in — colour on black, light treated as something that is emitted rather than painted."
+        eyebrow={copy.sections.gallery.eyebrow}
+        title={copy.sections.gallery.title}
+        description={copy.sections.gallery.description}
       />
 
       <Reveal delay={0.05} className="mt-12">
         <div className="columns-2 gap-3 sm:gap-4 md:columns-3 lg:columns-4">
           {GALLERY.map((tile, index) => (
             <figure
-              key={tile.prompt}
+              key={copy.gallery[index] ?? index}
               className="group mb-3 break-inside-avoid sm:mb-4"
             >
               <div className="relative overflow-hidden rounded-xl ring-1 ring-white/10">
@@ -59,7 +63,7 @@ export function Gallery() {
                     it is available to a screen reader and to search engines
                     regardless of pointer capability. */}
                 <figcaption className="absolute inset-x-0 bottom-0 translate-y-full bg-gradient-to-t from-black/85 to-transparent p-3 text-xs text-white/90 transition-transform duration-300 group-focus-within:translate-y-0 group-hover:translate-y-0 motion-reduce:translate-y-0">
-                  {tile.prompt}
+                  {copy.gallery[index]}
                 </figcaption>
               </div>
             </figure>

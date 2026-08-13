@@ -1,7 +1,13 @@
 import { Sparkles } from "lucide-react";
 import Link from "next/link";
 
-import { FOOTER_LINKS, FOOTER_NOTE, SITE } from "@/features/marketing/content";
+import { SITE } from "@/features/marketing/content";
+import { getCopy } from "@/features/marketing/i18n/dictionaries";
+import {
+  localise,
+  pathFor,
+  type Locale,
+} from "@/features/marketing/i18n/locales";
 
 /**
  * Footer.
@@ -13,7 +19,9 @@ import { FOOTER_LINKS, FOOTER_NOTE, SITE } from "@/features/marketing/content";
  * Link columns collapse to two on mobile rather than one — four single-column
  * stacks is a very long footer on a phone, and these are all short labels.
  */
-export function SiteFooter() {
+export function SiteFooter({ locale }: { locale: Locale }) {
+  const copy = getCopy(locale);
+
   const year = new Date().getFullYear();
 
   return (
@@ -22,7 +30,7 @@ export function SiteFooter() {
         <div className="grid gap-10 lg:grid-cols-[1.5fr_2fr]">
           <div>
             <Link
-              href="/"
+              href={pathFor("home", locale)}
               className="flex w-fit items-center gap-2 font-semibold tracking-tight"
             >
               <span className="flex size-8 items-center justify-center rounded-lg bg-gradient-brand">
@@ -36,7 +44,7 @@ export function SiteFooter() {
             </Link>
 
             <p className="mt-4 max-w-xs text-sm text-muted-foreground">
-              {SITE.description}
+              {copy.site.description}
             </p>
           </div>
 
@@ -44,7 +52,7 @@ export function SiteFooter() {
             aria-label="Footer"
             className="grid grid-cols-2 gap-8 sm:grid-cols-4"
           >
-            {FOOTER_LINKS.map((group) => (
+            {copy.footer.groups.map((group) => (
               <div key={group.title}>
                 <h2 className="mb-4 text-2xs font-medium tracking-wider uppercase">
                   {group.title}
@@ -57,7 +65,7 @@ export function SiteFooter() {
                   {group.links.map((link) => (
                     <li key={link.label}>
                       <a
-                        href={link.href}
+                        href={localise(link.href, locale)}
                         className="inline-block py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
                       >
                         {link.label}
@@ -72,9 +80,9 @@ export function SiteFooter() {
 
         <div className="mt-12 flex flex-col gap-3 border-t border-border pt-8 sm:flex-row sm:items-center sm:justify-between">
           <p className="text-xs text-muted-foreground">
-            © {year} {SITE.name}. All rights reserved.
+            © {year} {SITE.name}. {copy.footer.rights}
           </p>
-          <p className="text-xs text-muted-foreground">{FOOTER_NOTE}</p>
+          <p className="text-xs text-muted-foreground">{copy.footer.note}</p>
         </div>
       </div>
     </footer>

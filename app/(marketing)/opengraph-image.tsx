@@ -1,6 +1,12 @@
 import { ImageResponse } from "next/og";
 
 import { SITE } from "@/features/marketing/content";
+import { getCopy } from "@/features/marketing/i18n/dictionaries";
+
+// These surfaces are English-only today: the auth screens and the OG image
+// are not locale-routed. Reading the dictionary rather than inlining the
+// strings means they follow when they are.
+const copy = getCopy("en");
 
 /**
  * Social share image, generated at build time.
@@ -22,7 +28,7 @@ import { SITE } from "@/features/marketing/content";
  *
  * 1200×630 is the size Open Graph and Twitter both crop from.
  */
-export const alt = `${SITE.name} — ${SITE.tagline}`;
+export const alt = `${SITE.name} — ${copy.site.tagline}`;
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -87,7 +93,7 @@ export default function OpenGraphImage() {
           maxWidth: 900,
         }}
       >
-        {SITE.tagline}
+        {copy.site.tagline}
       </div>
 
       <div

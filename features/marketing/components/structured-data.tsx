@@ -1,4 +1,6 @@
-import { FAQ, PRICING, SITE } from "@/features/marketing/content";
+import { PRICING, SITE } from "@/features/marketing/content";
+import { getCopy } from "@/features/marketing/i18n/dictionaries";
+import { HTML_LANG, type Locale } from "@/features/marketing/i18n/locales";
 import { env } from "@/lib/env";
 
 /**
@@ -21,8 +23,9 @@ import { env } from "@/lib/env";
  * user-supplied text ever reaches this file, the `<` characters must be escaped
  * first — the string is injected into a `<script>` element verbatim.
  */
-export function StructuredData() {
+export function StructuredData({ locale }: { locale: Locale }) {
   const baseUrl = env.NEXT_PUBLIC_APP_URL;
+  const copy = getCopy(locale);
 
   const paidTiers = PRICING.filter((tier) => tier.monthly > 0);
   const lowest = Math.min(...paidTiers.map((tier) => tier.monthly));
@@ -36,7 +39,7 @@ export function StructuredData() {
         "@id": `${baseUrl}/#organization`,
         name: SITE.name,
         url: baseUrl,
-        description: SITE.description,
+        description: copy.site.description,
         logo: `${baseUrl}/opengraph-image`,
       },
       {
@@ -44,9 +47,9 @@ export function StructuredData() {
         "@id": `${baseUrl}/#website`,
         url: baseUrl,
         name: SITE.name,
-        description: SITE.description,
+        description: copy.site.description,
         publisher: { "@id": `${baseUrl}/#organization` },
-        inLanguage: "en",
+        inLanguage: HTML_LANG[locale],
       },
       {
         "@type": "SoftwareApplication",
@@ -54,7 +57,7 @@ export function StructuredData() {
         name: SITE.name,
         applicationCategory: "MultimediaApplication",
         operatingSystem: "Web",
-        description: SITE.description,
+        description: copy.site.description,
         url: baseUrl,
         offers: {
           "@type": "AggregateOffer",
@@ -70,7 +73,7 @@ export function StructuredData() {
       {
         "@type": "FAQPage",
         "@id": `${baseUrl}/#faq`,
-        mainEntity: FAQ.map((entry) => ({
+        mainEntity: copy.faq.map((entry) => ({
           "@type": "Question",
           name: entry.question,
           acceptedAnswer: {

@@ -1,10 +1,13 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
-import { SiteFooter } from "@/features/marketing/components/site-footer";
-import { SiteHeader } from "@/features/marketing/components/site-header";
-import { StructuredData } from "@/features/marketing/components/structured-data";
 import { SITE } from "@/features/marketing/content";
+import { getCopy } from "@/features/marketing/i18n/dictionaries";
+
+// These surfaces are English-only today: the auth screens and the OG image
+// are not locale-routed. Reading the dictionary rather than inlining the
+// strings means they follow when they are.
+const copy = getCopy("en");
 import { env } from "@/lib/env";
 
 /**
@@ -16,13 +19,22 @@ import { env } from "@/lib/env";
  * marketing route group opts back in. Defaulting to noindex and opting in is
  * the right way round: forgetting to add noindex leaks a private page, whereas
  * forgetting to add index costs nothing but a day of ranking.
+ *
+ * ## The header and footer are not here
+ *
+ * They need the locale, and a layout cannot tell `/` from `/es` — both sit
+ * beneath it. Each page renders `MarketingShell` instead, which owns the
+ * chrome and the locale provider together so a page cannot have one without
+ * the other. What stays here is metadata that is genuinely locale-independent:
+ * the robots policy, the keywords and the card type. Titles, descriptions and
+ * `hreflang` are set per page.
  */
 export const metadata: Metadata = {
   // No `title` here on purpose. A `title.default` in this layout would be fed
   // through the root layout's `%s · Atheos` template, producing the duplicated
   // "Atheos — … · Atheos". The page sets its own title with `absolute`, which
   // bypasses the template entirely.
-  description: SITE.description,
+  description: copy.site.description,
   keywords: [
     "AI image generation",
     "AI video generation",
@@ -32,11 +44,6 @@ export const metadata: Metadata = {
     "AI creative workspace",
     "generative AI platform",
   ],
-  alternates: {
-    // Prevents duplicate-content dilution if the page is ever reachable with
-    // tracking parameters or from a second hostname.
-    canonical: "/",
-  },
   robots: {
     index: true,
     follow: true,
@@ -50,30 +57,19 @@ export const metadata: Metadata = {
   openGraph: {
     type: "website",
     siteName: SITE.name,
-    title: `${SITE.name} — ${SITE.tagline}`,
-    description: SITE.description,
+    title: `${SITE.name} — ${copy.site.tagline}`,
+    description: copy.site.description,
     url: env.NEXT_PUBLIC_APP_URL,
     locale: "en_US",
   },
   twitter: {
     card: "summary_large_image",
-    title: `${SITE.name} — ${SITE.tagline}`,
-    description: SITE.description,
+    title: `${SITE.name} — ${copy.site.tagline}`,
+    description: copy.site.description,
   },
   category: "technology",
 };
 
 export default function MarketingLayout({ children }: { children: ReactNode }) {
-  return (
-    <div className="flex min-h-dvh flex-col">
-      <StructuredData />
-      <SiteHeader />
-
-      {/* No top padding: the hero deliberately sits underneath the transparent
-          header and provides its own clearance. */}
-      <main className="flex-1">{children}</main>
-
-      <SiteFooter />
-    </div>
-  );
+  return children;
 }

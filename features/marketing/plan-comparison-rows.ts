@@ -8,6 +8,16 @@ import { PLAN_DEFINITIONS } from "@/services/billing/catalogue";
  * reviewer can read end to end without scrolling past markup.
  */
 
+/**
+ * A cell whose text is a word rather than a measurement.
+ *
+ * "720p" and "12s" are the same in every language; "Community" and "All six"
+ * are not. Those carry a `$`-prefixed key resolved against
+ * `comparison.values` at render time, so the matrix stays one table rather
+ * than one per locale.
+ */
+export type ValueKey = "$community" | "$email" | "$allSix";
+
 export interface Row {
   label: string;
   /** By tier id, in the order plans are defined. */
@@ -58,7 +68,7 @@ export const COMPARISON_ROWS: readonly Row[] = [
   { label: "Reference images", values: [false, false, true, true, true] },
   {
     label: "Video aspect ratios",
-    values: ["16:9, 9:16", "16:9, 9:16", "All six", "All six", "All six"],
+    values: ["16:9, 9:16", "16:9, 9:16", "$allSix", "$allSix", "$allSix"],
     note: "The extra four come with Motion Pro",
   },
   { label: "Upscale to 4K", values: [true, true, true, true, true] },
@@ -88,6 +98,6 @@ export const COMPARISON_ROWS: readonly Row[] = [
   { label: "Commercial rights", values: [true, true, true, true, true] },
   {
     label: "Support",
-    values: ["Community", "Community", "Community", "Email", "Email"],
+    values: ["$community", "$community", "$community", "$email", "$email"],
   },
 ];

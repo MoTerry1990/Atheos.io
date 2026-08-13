@@ -5,7 +5,7 @@ import { ArrowRight, Play } from "lucide-react";
 
 import { AnimatedBackground } from "@/features/marketing/components/animated-background";
 import { Button } from "@/components/ui/button";
-import { HERO } from "@/features/marketing/content";
+import { useCopy } from "@/features/marketing/i18n";
 import { duration, easing } from "@/components/ui/motion";
 
 /**
@@ -40,6 +40,8 @@ const item = {
 };
 
 export function Hero() {
+  const { hero } = useCopy();
+
   return (
     <section className="relative isolate overflow-hidden pt-32 pb-20 sm:pt-40 sm:pb-28">
       <AnimatedBackground />
@@ -57,7 +59,7 @@ export function Hero() {
               className="group inline-flex items-center gap-2 rounded-full border border-border/60 bg-background/50 px-3 py-1 text-xs font-medium text-muted-foreground backdrop-blur-sm transition-colors hover:border-primary/40 hover:text-foreground"
             >
               <span className="size-1.5 rounded-full bg-primary" aria-hidden />
-              {HERO.announcement}
+              {hero.announcement}
               <ArrowRight
                 className="size-3 transition-transform group-hover:translate-x-0.5"
                 aria-hidden
@@ -73,13 +75,13 @@ export function Hero() {
                 "Every AI model.One interface.", which is what a screen reader
                 announces and what a crawler indexes. */}
             <motion.span variants={item} className="block">
-              {HERO.headline[0]}{" "}
+              {hero.headline[0]}{" "}
             </motion.span>
             <motion.span
               variants={item}
               className="block text-gradient-brand pb-2"
             >
-              {HERO.headline[1]}
+              {hero.headline[1]}
             </motion.span>
           </h1>
 
@@ -87,7 +89,7 @@ export function Hero() {
             variants={item}
             className="mx-auto mt-6 max-w-2xl text-base text-balance text-muted-foreground sm:text-lg"
           >
-            {HERO.subheadline}
+            {hero.subheadline}
           </motion.p>
 
           <motion.div
@@ -102,8 +104,8 @@ export function Hero() {
               className="w-full sm:w-auto"
               asChild
             >
-              <a href={HERO.primaryCta.href}>
-                {HERO.primaryCta.label}
+              <a href={hero.primaryCta.href}>
+                {hero.primaryCta.label}
                 <ArrowRight />
               </a>
             </Button>
@@ -113,9 +115,9 @@ export function Hero() {
               className="w-full sm:w-auto"
               asChild
             >
-              <a href={HERO.secondaryCta.href}>
+              <a href={hero.secondaryCta.href}>
                 <Play />
-                {HERO.secondaryCta.label}
+                {hero.secondaryCta.label}
               </a>
             </Button>
           </motion.div>
@@ -124,7 +126,7 @@ export function Hero() {
             variants={item}
             className="mx-auto mt-14 grid max-w-lg grid-cols-3 gap-4"
           >
-            {HERO.stats.map((stat) => (
+            {hero.stats.map((stat) => (
               <div key={stat.label} className="text-center">
                 <dt className="sr-only">{stat.label}</dt>
                 <dd>

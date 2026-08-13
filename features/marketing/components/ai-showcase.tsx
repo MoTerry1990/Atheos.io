@@ -11,6 +11,7 @@ import {
   SectionHeading,
 } from "@/features/marketing/components/section";
 import { SHOWCASE } from "@/features/marketing/content";
+import { useCopy } from "@/features/marketing/i18n";
 import { duration, easing } from "@/components/ui/motion";
 import { cn } from "@/lib/utils";
 
@@ -32,15 +33,25 @@ import { cn } from "@/lib/utils";
  * operable by keyboard and announced correctly.
  */
 export function AIShowcase() {
+  const copy = useCopy();
   const [active, setActive] = useState(SHOWCASE[0].id);
-  const panel = SHOWCASE.find((tab) => tab.id === active) ?? SHOWCASE[0];
+
+  // Index rather than the object, because the artwork (icon, hue) lives in
+  // `SHOWCASE` and the words live in the dictionary. They are joined here and
+  // a test asserts the two arrays stay the same length.
+  const index = Math.max(
+    0,
+    SHOWCASE.findIndex((tab) => tab.id === active),
+  );
+  const panel = SHOWCASE[index];
+  const panelCopy = copy.showcase[index];
 
   return (
     <Section id="showcase">
       <SectionHeading
-        eyebrow="The product"
-        title="Three modalities. One pipeline."
-        description="Image, video and audio share the same jobs, the same library and the same credits. Nothing here is a second product bolted on beside the first."
+        eyebrow={copy.sections.showcase.eyebrow}
+        title={copy.sections.showcase.title}
+        description={copy.sections.showcase.description}
       />
 
       <Reveal delay={0.05} className="mt-12">
@@ -49,7 +60,7 @@ export function AIShowcase() {
           aria-label="Modalities"
           className="mx-auto flex w-fit gap-1 rounded-xl border border-border bg-surface-sunken p-1"
         >
-          {SHOWCASE.map((tab) => {
+          {SHOWCASE.map((tab, tabIndex) => {
             const selected = tab.id === active;
             return (
               <button
@@ -80,7 +91,9 @@ export function AIShowcase() {
                   strokeWidth={1.75}
                   aria-hidden
                 />
-                <span className="relative">{tab.label}</span>
+                <span className="relative">
+                  {copy.showcase[tabIndex]?.label}
+                </span>
               </button>
             );
           })}
@@ -102,14 +115,14 @@ export function AIShowcase() {
           >
             <div>
               <h3 className="text-2xl font-semibold tracking-tight text-balance sm:text-3xl">
-                {panel.headline}
+                {panelCopy?.headline}
               </h3>
               <p className="mt-4 text-base text-muted-foreground">
-                {panel.body}
+                {panelCopy?.body}
               </p>
 
               <ul className="mt-8 space-y-3">
-                {panel.bullets.map((bullet) => (
+                {(panelCopy?.bullets ?? []).map((bullet) => (
                   <li key={bullet} className="flex items-start gap-3">
                     <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
                       <Check className="size-3" strokeWidth={2.5} aria-hidden />

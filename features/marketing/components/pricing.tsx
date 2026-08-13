@@ -6,7 +6,8 @@ import { useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { PRICING, PRICING_NOTE } from "@/features/marketing/content";
+import { PRICING } from "@/features/marketing/content";
+import { useCopy } from "@/features/marketing/i18n";
 import { formatMoney } from "@/services/billing/catalogue";
 import {
   Reveal,
@@ -39,14 +40,15 @@ import { cn } from "@/lib/utils";
  * about the beta.
  */
 export function Pricing() {
+  const { pricing, plans } = useCopy();
   const [yearly, setYearly] = useState(false);
 
   return (
     <Section id="pricing">
       <SectionHeading
-        eyebrow="Pricing"
-        title="Pay for generations, not seats"
-        description="One balance across every model and modality. No per-provider subscriptions to reconcile at the end of the month."
+        eyebrow={pricing.eyebrow}
+        title={pricing.title}
+        description={pricing.description}
       />
 
       <Reveal delay={0.05} className="mt-10">
@@ -56,8 +58,8 @@ export function Pricing() {
           className="mx-auto flex w-fit gap-1 rounded-full border border-border bg-surface-sunken p-1"
         >
           {[
-            { id: "monthly", label: "Monthly", value: false },
-            { id: "yearly", label: "Yearly", value: true },
+            { id: "monthly", label: pricing.monthly, value: false },
+            { id: "yearly", label: pricing.yearly, value: true },
           ].map((option) => {
             const selected = yearly === option.value;
             return (
@@ -85,7 +87,7 @@ export function Pricing() {
                 <span className="relative">{option.label}</span>
                 {option.value ? (
                   <span className="relative ml-1.5 text-xs text-primary">
-                    −20%
+                    {pricing.yearlySave}
                   </span>
                 ) : null}
               </button>
@@ -97,6 +99,9 @@ export function Pricing() {
       <div className="mt-12 grid items-start gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         {PRICING.map((tier, index) => {
           const price = yearly ? tier.yearly : tier.monthly;
+          // Names, blurbs and bullets are translated; every number comes from
+          // the billing catalogue, which has exactly one version.
+          const plan = plans[tier.tier];
 
           return (
             <Reveal
@@ -123,15 +128,15 @@ export function Pricing() {
                       size="sm"
                       className="absolute -top-3 left-1/2 -translate-x-1/2"
                     >
-                      Most popular
+                      {pricing.mostPopular}
                     </Badge>
                   </>
                 ) : null}
 
                 <div className="relative flex h-full flex-col">
-                  <h3 className="text-lg font-semibold">{tier.name}</h3>
+                  <h3 className="text-lg font-semibold">{plan.name}</h3>
                   <p className="mt-1.5 text-sm text-muted-foreground">
-                    {tier.description}
+                    {plan.description}
                   </p>
 
                   <div className="mt-6 flex items-baseline gap-1">
@@ -139,7 +144,7 @@ export function Pricing() {
                       {formatMoney(price)}
                     </span>
                     <span className="text-sm text-muted-foreground">
-                      {price === 0 ? "forever" : "/ month"}
+                      {price === 0 ? pricing.forever : pricing.perMonth}
                     </span>
                   </div>
 
@@ -151,9 +156,9 @@ export function Pricing() {
                   <p className="mt-1.5 min-h-4 text-xs text-muted-foreground">
                     {yearly && price > 0 ? (
                       <>
-                        {formatMoney(tier.yearlyTotal)} billed yearly
+                        {formatMoney(tier.yearlyTotal)} {pricing.billedYearly}
                         <span className="text-primary">
-                          {" · save "}
+                          {` · ${pricing.save} `}
                           {formatMoney(tier.monthly * 12 - tier.yearlyTotal)}
                         </span>
                       </>
@@ -161,7 +166,7 @@ export function Pricing() {
                   </p>
 
                   <p className="mt-1.5 text-xs font-medium text-primary">
-                    {tier.credits}
+                    {pricing.creditsMonthly(tier.credits)}
                   </p>
 
                   {/* Straight to sign-up, carrying the chosen plan.
@@ -186,12 +191,14 @@ export function Pricing() {
                             )}`
                       }
                     >
-                      {tier.cta}
+                      {price === 0
+                        ? pricing.ctaFree
+                        : pricing.ctaChoose(plan.name)}
                     </a>
                   </Button>
 
                   <ul className="mt-8 space-y-3">
-                    {tier.features.map((feature) => (
+                    {plan.features.map((feature) => (
                       <li key={feature} className="flex items-start gap-3">
                         <Check
                           className="mt-0.5 size-4 shrink-0 text-primary"
@@ -211,7 +218,7 @@ export function Pricing() {
 
       <Reveal delay={0.1}>
         <p className="mx-auto mt-10 max-w-2xl text-center text-xs text-balance text-muted-foreground">
-          {PRICING_NOTE}
+          {pricing.note}
         </p>
       </Reveal>
     </Section>

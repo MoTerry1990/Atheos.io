@@ -3,6 +3,12 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 
 import { SITE } from "@/features/marketing/content";
+import { getCopy } from "@/features/marketing/i18n/dictionaries";
+
+// These surfaces are English-only today: the auth screens and the OG image
+// are not locale-routed. Reading the dictionary rather than inlining the
+// strings means they follow when they are.
+const copy = getCopy("en");
 
 /**
  * The frame every auth screen sits in.
@@ -86,10 +92,10 @@ export function AuthShell({
 
         <div className="absolute inset-x-0 bottom-0 p-12">
           <p className="max-w-md text-xl font-medium tracking-tight text-balance">
-            {SITE.tagline}
+            {copy.site.tagline}
           </p>
           <p className="mt-2 max-w-md text-sm text-muted-foreground">
-            {SITE.description}
+            {copy.site.description}
           </p>
         </div>
       </div>

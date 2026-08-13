@@ -1,4 +1,6 @@
-import { PACK_DEFINITIONS } from "@/services/billing/catalogue";
+import { PACK_DEFINITIONS, formatMoney } from "@/services/billing/catalogue";
+import { getCopy } from "@/features/marketing/i18n/dictionaries";
+import type { Locale } from "@/features/marketing/i18n/locales";
 import {
   Reveal,
   Section,
@@ -25,40 +27,40 @@ function outcomes(credits: number) {
   return { videos, images };
 }
 
-export function CreditPacks() {
+export function CreditPacks({ locale }: { locale: Locale }) {
+  const { packs } = getCopy(locale);
+
   return (
     <Section id="credits">
       <SectionHeading
-        eyebrow="Top-ups"
-        title="Or buy credits when you need them"
-        description="One-off packs, no subscription. They never expire and they stack on top of a plan's monthly allowance."
+        eyebrow={packs.eyebrow}
+        title={packs.title}
+        description={packs.description}
       />
 
       <Reveal delay={0.05} className="mt-10">
         <div className="mx-auto max-w-3xl overflow-hidden rounded-xl border border-border">
           <table className="w-full text-sm">
-            <caption className="sr-only">
-              One-off credit packs, showing price and what each pack generates
-            </caption>
+            <caption className="sr-only">{packs.description}</caption>
             <thead className="bg-surface-sunken">
               <tr>
                 <th scope="col" className="px-4 py-3 text-left font-medium">
-                  Pack
+                  {packs.pack}
                 </th>
                 <th scope="col" className="px-4 py-3 text-right font-medium">
-                  Price
+                  {packs.price}
                 </th>
                 <th
                   scope="col"
                   className="hidden px-4 py-3 text-right font-medium sm:table-cell"
                 >
-                  Videos
+                  {packs.videos}
                 </th>
                 <th
                   scope="col"
                   className="hidden px-4 py-3 text-right font-medium sm:table-cell"
                 >
-                  Images
+                  {packs.images}
                 </th>
               </tr>
             </thead>
@@ -71,10 +73,10 @@ export function CreditPacks() {
                       scope="row"
                       className="px-4 py-3 text-left font-medium whitespace-nowrap"
                     >
-                      {pack.name}
+                      {packs.credits(pack.credits.toLocaleString("en-US"))}
                     </th>
                     <td className="px-4 py-3 text-right tabular-nums">
-                      ${(pack.amount / 100).toFixed(2)}
+                      {formatMoney(pack.amount)}
                     </td>
                     <td className="hidden px-4 py-3 text-right text-muted-foreground tabular-nums sm:table-cell">
                       {videos}
@@ -90,9 +92,7 @@ export function CreditPacks() {
         </div>
 
         <p className="mx-auto mt-4 max-w-2xl text-center text-xs text-muted-foreground">
-          Video counts assume the standard model at five seconds. Longer clips
-          and the higher-quality model cost more — the studio shows the exact
-          price before you generate, never after.
+          {packs.note}
         </p>
       </Reveal>
     </Section>

@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { Plus } from "lucide-react";
 import { useState } from "react";
 
-import { FAQ } from "@/features/marketing/content";
+import { useCopy } from "@/features/marketing/i18n";
 import {
   Reveal,
   Section,
@@ -36,18 +36,20 @@ import { cn } from "@/lib/utils";
  * clip long answers or ease at the wrong rate.
  */
 export function Faq() {
+  const copy = useCopy();
+
   const [open, setOpen] = useState<number | null>(0);
 
   return (
     <Section id="faq">
       <SectionHeading
-        eyebrow="FAQ"
-        title="The questions worth answering"
-        description="Including the ones with answers we would rather not have to give yet."
+        eyebrow={copy.sections.faq.eyebrow}
+        title={copy.sections.faq.title}
+        description={copy.sections.faq.description}
       />
 
       <div className="mx-auto mt-12 max-w-3xl">
-        {FAQ.map((entry, index) => {
+        {copy.faq.map((entry, index) => {
           const expanded = open === index;
 
           return (

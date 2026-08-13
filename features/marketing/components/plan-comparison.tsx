@@ -1,6 +1,8 @@
 import { Check, Minus } from "lucide-react";
 
 import { PLAN_DEFINITIONS, formatMoney } from "@/services/billing/catalogue";
+import { getCopy } from "@/features/marketing/i18n/dictionaries";
+import type { Locale } from "@/features/marketing/i18n/locales";
 import { COMPARISON_ROWS } from "@/features/marketing/plan-comparison-rows";
 import {
   Reveal,
@@ -23,12 +25,22 @@ import {
  * the reader to check whether the rest is real.
  */
 
-function Cell({ value }: { value: boolean | string }) {
+function Cell({
+  value,
+  labels,
+}: {
+  value: boolean | string;
+  labels: {
+    included: string;
+    notIncluded: string;
+    values: Record<string, string>;
+  };
+}) {
   if (value === true) {
     return (
       <>
         <Check className="mx-auto size-4 text-primary" aria-hidden />
-        <span className="sr-only">Included</span>
+        <span className="sr-only">{labels.included}</span>
       </>
     );
   }
@@ -39,34 +51,38 @@ function Cell({ value }: { value: boolean | string }) {
           className="mx-auto size-4 text-muted-foreground/50"
           aria-hidden
         />
-        <span className="sr-only">Not included</span>
+        <span className="sr-only">{labels.notIncluded}</span>
       </>
     );
   }
-  return <span className="tabular-nums">{value}</span>;
+  // `$`-prefixed values are dictionary keys — see ValueKey.
+  const text = value.startsWith("$")
+    ? (labels.values[value.slice(1)] ?? value)
+    : value;
+
+  return <span className="tabular-nums">{text}</span>;
 }
 
-export function PlanComparison() {
+export function PlanComparison({ locale }: { locale: Locale }) {
+  const { comparison, plans } = getCopy(locale);
+
   return (
     <Section id="compare">
       <SectionHeading
-        eyebrow="Compare"
-        title="What each plan includes"
-        description="Every row is something the product does today."
+        eyebrow={comparison.eyebrow}
+        title={comparison.title}
+        description={comparison.description}
       />
 
       <Reveal delay={0.05} className="mt-10">
         {/* Scrolls on its own rather than pushing the page sideways. */}
         <div className="overflow-x-auto rounded-xl border border-border">
           <table className="w-full min-w-2xl text-sm">
-            <caption className="sr-only">
-              Feature comparison across the Free, Starter, Creator, Studio and
-              Agency plans
-            </caption>
+            <caption className="sr-only">{comparison.caption}</caption>
             <thead className="bg-surface-sunken">
               <tr>
                 <th scope="col" className="px-4 py-3 text-left font-medium">
-                  Feature
+                  {comparison.feature}
                 </th>
                 {PLAN_DEFINITIONS.map((plan) => (
                   <th
@@ -74,24 +90,24 @@ export function PlanComparison() {
                     scope="col"
                     className="px-4 py-3 text-center font-medium whitespace-nowrap"
                   >
-                    {plan.name}
+                    {plans[plan.tier].name}
                     <span className="block text-xs font-normal text-muted-foreground">
                       {plan.monthly === 0
-                        ? "Free"
-                        : `${formatMoney(plan.monthly)}/mo`}
+                        ? comparison.free
+                        : `${formatMoney(plan.monthly)}${comparison.perMonth}`}
                     </span>
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {COMPARISON_ROWS.map((row) => (
+              {COMPARISON_ROWS.map((row, rowIndex) => (
                 <tr key={row.label} className="border-t border-border">
                   <th scope="row" className="px-4 py-3 text-left font-normal">
-                    {row.label}
-                    {row.note ? (
+                    {comparison.rows[rowIndex]?.label}
+                    {comparison.rows[rowIndex]?.note ? (
                       <span className="block text-xs text-muted-foreground">
-                        {row.note}
+                        {comparison.rows[rowIndex]?.note}
                       </span>
                     ) : null}
                   </th>
@@ -100,7 +116,7 @@ export function PlanComparison() {
                       key={`${row.label}-${PLAN_DEFINITIONS[index]?.tier ?? index}`}
                       className="px-4 py-3 text-center text-muted-foreground"
                     >
-                      <Cell value={value} />
+                      <Cell value={value} labels={comparison} />
                     </td>
                   ))}
                 </tr>

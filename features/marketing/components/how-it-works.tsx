@@ -1,4 +1,6 @@
 import { STEPS } from "@/features/marketing/content";
+import { getCopy } from "@/features/marketing/i18n/dictionaries";
+import type { Locale } from "@/features/marketing/i18n/locales";
 import {
   Reveal,
   Section,
@@ -16,13 +18,15 @@ import {
  * border on each item, so it does not appear below the final step where there
  * is nothing left to connect to.
  */
-export function HowItWorks() {
+export function HowItWorks({ locale }: { locale: Locale }) {
+  const copy = getCopy(locale);
+
   return (
     <Section id="how-it-works" className="border-y bg-surface-sunken/40">
       <SectionHeading
-        eyebrow="How it works"
-        title="Four steps, no ceremony"
-        description="From an idea to something in your library, with the parts that usually go wrong handled for you."
+        eyebrow={copy.sections.howItWorks.eyebrow}
+        title={copy.sections.howItWorks.title}
+        description={copy.sections.howItWorks.description}
       />
 
       <ol className="relative mx-auto mt-14 max-w-3xl">
@@ -47,10 +51,10 @@ export function HowItWorks() {
 
                 <div className="pt-1.5 sm:pt-3">
                   <h3 className="text-lg font-semibold tracking-tight">
-                    {step.title}
+                    {copy.steps[index]?.title}
                   </h3>
                   <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-                    {step.body}
+                    {copy.steps[index]?.body}
                   </p>
                 </div>
               </div>

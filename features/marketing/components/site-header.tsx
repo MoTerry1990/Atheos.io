@@ -12,7 +12,10 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
-import { NAV_LINKS, SITE } from "@/features/marketing/content";
+import { SITE } from "@/features/marketing/content";
+import { useCopy, useHref, useLocale } from "@/features/marketing/i18n";
+import { LanguageSwitcher } from "@/features/marketing/components/language-switcher";
+import { pathFor } from "@/features/marketing/i18n/locales";
 import { cn } from "@/lib/utils";
 
 /**
@@ -28,6 +31,10 @@ import { cn } from "@/lib/utils";
  * usual reason a landing page stutters while scrolling.
  */
 export function SiteHeader() {
+  const copy = useCopy();
+  const locale = useLocale();
+  const href = useHref();
+
   const [scrolled, setScrolled] = useState(false);
   const [open, setOpen] = useState(false);
 
@@ -52,7 +59,7 @@ export function SiteHeader() {
         className="mx-auto flex h-16 w-full max-w-7xl items-center gap-6 px-4 sm:px-6 lg:px-8"
       >
         <Link
-          href="/"
+          href={pathFor("home", locale)}
           className="flex shrink-0 items-center gap-2 font-semibold tracking-tight"
         >
           <span className="flex size-8 items-center justify-center rounded-lg bg-gradient-brand">
@@ -66,10 +73,10 @@ export function SiteHeader() {
         </Link>
 
         <ul className="hidden flex-1 items-center gap-1 lg:flex">
-          {NAV_LINKS.map((link) => (
+          {copy.nav.map((link) => (
             <li key={link.href}>
               <a
-                href={link.href}
+                href={href(link.href)}
                 className="rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
               >
                 {link.label}
@@ -79,6 +86,12 @@ export function SiteHeader() {
         </ul>
 
         <div className="ml-auto flex items-center gap-2 lg:ml-0">
+          {/* Hidden on the narrowest screens: at that width the header is
+              already the wordmark plus two buttons plus a menu trigger, and a
+              fourth control pushes the sign-up CTA off the row. It stays
+              reachable in the mobile sheet below. */}
+          <LanguageSwitcher className="hidden sm:flex" />
+
           {/* Sign-in is a link, not a route — authentication is Sprint 3. */}
           <Button
             variant="ghost"
@@ -86,10 +99,10 @@ export function SiteHeader() {
             className="hidden sm:inline-flex"
             asChild
           >
-            <a href="#pricing">Sign in</a>
+            <a href="#pricing">{copy.auth.signIn}</a>
           </Button>
           <Button variant="gradient" size="sm" asChild>
-            <a href="#pricing">Get started</a>
+            <a href="#pricing">{copy.auth.signUp}</a>
           </Button>
 
           <Sheet open={open} onOpenChange={setOpen}>
@@ -110,10 +123,10 @@ export function SiteHeader() {
               </SheetDescription>
 
               <ul className="mt-8 space-y-1 px-2">
-                {NAV_LINKS.map((link) => (
+                {copy.nav.map((link) => (
                   <li key={link.href}>
                     <a
-                      href={link.href}
+                      href={href(link.href)}
                       // Closing on navigation matters more here than in an app
                       // shell: these are anchors, so the page does not remount
                       // and nothing else would dismiss the sheet.
@@ -125,6 +138,15 @@ export function SiteHeader() {
                   </li>
                 ))}
               </ul>
+
+              {/* The switcher is hidden in the header below `sm`; this is where
+                  it lives at that width. */}
+              <div className="mt-6 border-t border-border px-5 pt-5 sm:hidden">
+                <p className="text-xs font-medium text-muted-foreground">
+                  {copy.language.label}
+                </p>
+                <LanguageSwitcher className="mt-2 w-fit" />
+              </div>
             </SheetContent>
           </Sheet>
         </div>

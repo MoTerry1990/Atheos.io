@@ -1,4 +1,6 @@
 import { TRUSTED_BY } from "@/features/marketing/content";
+import { getCopy } from "@/features/marketing/i18n/dictionaries";
+import type { Locale } from "@/features/marketing/i18n/locales";
 
 /**
  * Infrastructure marquee.
@@ -21,7 +23,9 @@ import { TRUSTED_BY } from "@/features/marketing/content";
  * duplicate copy is `aria-hidden`, otherwise a screen reader reads the whole
  * list twice.
  */
-export function TrustedBy() {
+export function TrustedBy({ locale }: { locale: Locale }) {
+  const copy = getCopy(locale);
+
   return (
     <section aria-labelledby="trusted-by-label" className="border-y py-12">
       <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
@@ -29,13 +33,13 @@ export function TrustedBy() {
           id="trusted-by-label"
           className="mb-8 text-center text-2xs font-medium tracking-wider text-muted-foreground uppercase"
         >
-          {TRUSTED_BY.label}
+          {copy.trustedBy.label}
         </p>
       </div>
 
       <div className="relative flex overflow-hidden mask-fade-x">
         <ul className="flex shrink-0 marquee-track items-center gap-12 pr-12 sm:gap-16 sm:pr-16">
-          {TRUSTED_BY.items.map((item) => (
+          {TRUSTED_BY.map((item) => (
             <li
               key={item}
               className="shrink-0 text-lg font-medium tracking-tight whitespace-nowrap text-muted-foreground/70 transition-colors hover:text-foreground sm:text-xl"
@@ -51,7 +55,7 @@ export function TrustedBy() {
           aria-hidden
           className="flex shrink-0 marquee-track items-center gap-12 pr-12 sm:gap-16 sm:pr-16"
         >
-          {TRUSTED_BY.items.map((item) => (
+          {TRUSTED_BY.map((item) => (
             <li
               key={item}
               className="shrink-0 text-lg font-medium tracking-tight whitespace-nowrap text-muted-foreground/70 sm:text-xl"
