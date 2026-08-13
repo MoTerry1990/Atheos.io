@@ -42,6 +42,10 @@ export interface CreditPack extends PackDefinition {
 
 const PRICE_IDS: Partial<Record<PlanTier, { month?: string; year?: string }>> =
   {
+    BASIC: {
+      month: env.STRIPE_PRICE_BASIC_MONTHLY,
+      year: env.STRIPE_PRICE_BASIC_YEARLY,
+    },
     STUDIO: {
       month: env.STRIPE_PRICE_STUDIO_MONTHLY,
       year: env.STRIPE_PRICE_STUDIO_YEARLY,
@@ -50,13 +54,16 @@ const PRICE_IDS: Partial<Record<PlanTier, { month?: string; year?: string }>> =
       month: env.STRIPE_PRICE_SCALE_MONTHLY,
       year: env.STRIPE_PRICE_SCALE_YEARLY,
     },
+    AGENCY: {
+      month: env.STRIPE_PRICE_AGENCY_MONTHLY,
+      year: env.STRIPE_PRICE_AGENCY_YEARLY,
+    },
     // STARTER has none deliberately: the free tier is the *absence* of a
     // subscription, not a zero-amount one. A $0 Stripe subscription still asks
     // for a card, which is exactly the friction a free tier exists to avoid.
   };
 
 const PACK_PRICE_IDS: Record<string, string | undefined> = {
-  pack_350: env.STRIPE_PRICE_PACK_350,
   pack_1000: env.STRIPE_PRICE_PACK_1000,
   pack_5000: env.STRIPE_PRICE_PACK_5000,
   pack_20000: env.STRIPE_PRICE_PACK_20000,

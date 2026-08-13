@@ -256,7 +256,7 @@ export function createFixtureApi(now: number, scenario: Scenario): BillingApi {
         );
       }
 
-      const rank = { STARTER: 0, STUDIO: 1, SCALE: 2 };
+      const rank = { STARTER: 0, BASIC: 1, STUDIO: 2, SCALE: 3, AGENCY: 4 };
       const upgrading = rank[tier] > rank[state.tier];
 
       if (upgrading) {

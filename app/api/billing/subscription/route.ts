@@ -31,7 +31,7 @@ import { getEntitlement } from "@/services/billing/subscription";
 const schema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("change"),
-    tier: z.enum(["STARTER", "STUDIO", "SCALE"]),
+    tier: z.enum(["STARTER", "BASIC", "STUDIO", "SCALE", "AGENCY"]),
     interval: z.enum(["MONTH", "YEAR"]).default("MONTH"),
   }),
   z.object({ action: z.literal("cancel") }),

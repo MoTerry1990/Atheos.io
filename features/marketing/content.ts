@@ -318,8 +318,19 @@ export interface PricingTier {
   id: string;
   name: string;
   description: string;
+  /** Per month, billed monthly. **Minor units** — format at the point of use. */
   monthly: number;
+  /** Per month, billed yearly. **Minor units.** */
   yearly: number;
+  /**
+   * What the card actually charges on a yearly plan, for the whole year.
+   *
+   * Carried explicitly rather than left to the card to multiply. The number a
+   * yearly buyer is agreeing to is the one that leaves their account, and a
+   * page that shows only the divided-by-twelve figure is technically true and
+   * practically a surprise at the checkout screen.
+   */
+  yearlyTotal: number;
   credits: string;
   features: readonly string[];
   cta: string;
@@ -345,8 +356,9 @@ export const PRICING: readonly PricingTier[] = PLAN_DEFINITIONS.map((plan) => ({
   id: plan.tier.toLowerCase(),
   name: plan.name,
   description: plan.description,
-  monthly: plan.monthly / 100,
-  yearly: plan.yearly / 100,
+  monthly: plan.monthly,
+  yearly: plan.yearly,
+  yearlyTotal: plan.yearly * 12,
   credits: `${plan.monthlyCredits.toLocaleString("en-US")} credits monthly`,
   features: plan.features,
   cta: plan.monthly === 0 ? "Start free" : `Choose ${plan.name}`,

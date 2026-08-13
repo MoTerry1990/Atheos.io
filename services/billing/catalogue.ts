@@ -80,6 +80,25 @@ export const PLAN_DEFINITIONS: readonly PlanDefinition[] = [
     ],
   },
   {
+    tier: "BASIC",
+    name: "Starter",
+    description: "For the occasional project, without a monthly commitment.",
+    monthly: 500,
+    yearly: 400,
+    // 350 credits is roughly three videos or eighty-seven images. Priced to be
+    // an easy yes rather than to be profitable per seat: at ~$0.001 a credit it
+    // costs us about $0.39 to serve, and Stripe takes $0.45 of the $5.
+    monthlyCredits: 350,
+    features: [
+      "3 videos or 87 images a month",
+      "720p video, fast model",
+      "Background removal and 4K upscaling",
+      "Full asset library and projects",
+      "Automatic refund when a provider fails",
+      "Commercial rights to everything you make",
+    ],
+  },
+  {
     tier: "STUDIO",
     name: "Creator",
     description: "For one person publishing on a schedule.",
@@ -113,6 +132,28 @@ export const PLAN_DEFINITIONS: readonly PlanDefinition[] = [
       "Email support",
     ],
   },
+  {
+    tier: "AGENCY",
+    name: "Agency",
+    description: "For studios and agencies producing at volume.",
+    monthly: 19900,
+    yearly: 15900,
+    monthlyCredits: 20000,
+    // Deliberately a *volume* tier and nothing more. Team seats, SSO, invoicing
+    // and a support SLA are what usually justify a price like this, and none of
+    // them are built — so none of them are listed. Everything below is a
+    // capability the product has today, at six times the Studio allowance.
+    // People who need the seats-and-procurement version get the contact card
+    // further down the page instead, which is honest about being a conversation.
+    features: [
+      "222 videos or 5,000 images a month",
+      "Everything in Studio",
+      "Unused credits roll over for a month",
+      "Bulk generation and export",
+      "Full usage and cost breakdown per generation",
+      "Email support",
+    ],
+  },
 ] as const;
 
 /**
@@ -132,10 +173,11 @@ export interface PackDefinition {
 }
 
 export const PACK_DEFINITIONS: readonly PackDefinition[] = [
-  // The cheapest way in. Deliberately a one-off rather than a subscription:
-  // it catches the person who has used their free video and is not ready to
-  // commit to a monthly plan. People who buy it twice tend to subscribe.
-  { id: "pack_350", name: "350 credits", credits: 350, amount: 500 },
+  // There is deliberately no 350-credit pack. It existed briefly and was
+  // removed when Starter became a $5 subscription with the same allowance:
+  // two products at the same price for the same credits, on the same page, is
+  // a decision the reader has to make and cannot make well. The entry point is
+  // the plan; packs start above it, where they answer a different question.
   { id: "pack_1000", name: "1,000 credits", credits: 1000, amount: 1200 },
   { id: "pack_5000", name: "5,000 credits", credits: 5000, amount: 5000 },
   { id: "pack_20000", name: "20,000 credits", credits: 20_000, amount: 18_000 },
@@ -151,7 +193,13 @@ export function planDefinitionFor(tier: PlanTier): PlanDefinition {
 }
 
 /** Ordering, so "is this an upgrade" is a comparison rather than a table. */
-const RANK: Record<PlanTier, number> = { STARTER: 0, STUDIO: 1, SCALE: 2 };
+const RANK: Record<PlanTier, number> = {
+  STARTER: 0,
+  BASIC: 1,
+  STUDIO: 2,
+  SCALE: 3,
+  AGENCY: 4,
+};
 
 export function isUpgrade(from: PlanTier, to: PlanTier): boolean {
   return RANK[to] > RANK[from];

@@ -1,6 +1,7 @@
 import { Check, Minus } from "lucide-react";
 
-import { PLAN_DEFINITIONS } from "@/services/billing/catalogue";
+import { PLAN_DEFINITIONS, formatMoney } from "@/services/billing/catalogue";
+import { COMPARISON_ROWS } from "@/features/marketing/plan-comparison-rows";
 import {
   Reveal,
   Section,
@@ -21,61 +22,6 @@ import {
  * as a feature table reads as a list of things that are missing, and invites
  * the reader to check whether the rest is real.
  */
-
-interface Row {
-  label: string;
-  /** By tier id, in the order plans are defined. */
-  values: readonly (boolean | string)[];
-  note?: string;
-}
-
-const ROWS: readonly Row[] = [
-  {
-    label: "Monthly credits",
-    values: PLAN_DEFINITIONS.map((p) =>
-      p.monthlyCredits.toLocaleString("en-US"),
-    ),
-  },
-  {
-    label: "Videos per month",
-    values: PLAN_DEFINITIONS.map((p) =>
-      String(Math.floor(p.monthlyCredits / 90)),
-    ),
-    note: "At five seconds on the standard model",
-  },
-  {
-    label: "Images per month",
-    values: PLAN_DEFINITIONS.map((p) =>
-      String(Math.floor(p.monthlyCredits / 4)),
-    ),
-  },
-  { label: "Image generation", values: [true, true, true] },
-  { label: "Video generation", values: [true, true, true] },
-  { label: "Video resolution", values: ["720p", "1080p", "1080p"] },
-  { label: "Maximum clip length", values: ["7.5s", "12s", "12s"] },
-  {
-    label: "Motion Pro — higher-quality model",
-    values: [false, true, true],
-    note: "Slower to render, noticeably better output",
-  },
-  { label: "Image-to-video", values: [false, true, true] },
-  { label: "Reference images", values: [false, true, true] },
-  { label: "Aspect ratios", values: ["16:9, 9:16", "All six", "All six"] },
-  { label: "Upscale to 4K", values: [true, true, true] },
-  { label: "Background removal", values: [true, true, true] },
-  { label: "Projects and collections", values: [true, true, true] },
-  { label: "Prompt packs from the marketplace", values: [true, true, true] },
-  { label: "Publish to the community gallery", values: [false, false, true] },
-  { label: "Bulk generation and export", values: [false, false, true] },
-  { label: "Usage and cost breakdown", values: [false, false, true] },
-  {
-    label: "Automatic refund on provider failure",
-    values: [true, true, true],
-    note: "Credits return the moment a generation fails",
-  },
-  { label: "Commercial rights", values: [true, true, true] },
-  { label: "Support", values: ["Community", "Community", "Email"] },
-];
 
 function Cell({ value }: { value: boolean | string }) {
   if (value === true) {
@@ -114,7 +60,8 @@ export function PlanComparison() {
         <div className="overflow-x-auto rounded-xl border border-border">
           <table className="w-full min-w-2xl text-sm">
             <caption className="sr-only">
-              Feature comparison across the Free, Creator and Studio plans
+              Feature comparison across the Free, Starter, Creator, Studio and
+              Agency plans
             </caption>
             <thead className="bg-surface-sunken">
               <tr>
@@ -131,14 +78,14 @@ export function PlanComparison() {
                     <span className="block text-xs font-normal text-muted-foreground">
                       {plan.monthly === 0
                         ? "Free"
-                        : `$${(plan.monthly / 100).toFixed(2)}/mo`}
+                        : `${formatMoney(plan.monthly)}/mo`}
                     </span>
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {ROWS.map((row) => (
+              {COMPARISON_ROWS.map((row) => (
                 <tr key={row.label} className="border-t border-border">
                   <th scope="row" className="px-4 py-3 text-left font-normal">
                     {row.label}

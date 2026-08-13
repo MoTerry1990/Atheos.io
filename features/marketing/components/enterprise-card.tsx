@@ -6,12 +6,16 @@ import { Reveal, Section } from "@/features/marketing/components/section";
 /**
  * The enterprise track.
  *
- * ## Why this has no price
+ * ## Why this has no price, when Agency does
  *
- * Not as a negotiating tactic. The things that make a plan "enterprise" —
+ * Agency is a **volume** tier: 20,000 credits a month, at a price, on a card.
+ * Every line on it is a capability the product has today, so it can be bought
+ * without a conversation.
+ *
+ * This is the other thing people mean by "enterprise", and it is not volume —
  * team seats, SSO, an invoice instead of a card, a signed DPA, a support
- * commitment with hours attached — are **not built**. Printing $199 next to a
- * list of them would be selling a plan that cannot be delivered.
+ * commitment with hours attached. Those are **not built**. Printing a price
+ * beside a list of them would be selling a plan that cannot be delivered.
  *
  * A conversation is the honest shape while that is true. It is also the more
  * useful one: the first few people who ask will describe what they actually
@@ -21,8 +25,9 @@ import { Reveal, Section } from "@/features/marketing/components/section";
  */
 
 const NEEDS = [
-  "More than 3,000 generations a month",
+  "More than 20,000 credits a month",
   "Several people working from one balance",
+  "Single sign-on for your team",
   "Invoicing rather than a card on file",
   "A data-processing agreement",
   "A specific model, or your own provider keys",
@@ -41,19 +46,21 @@ export function EnterpriseCard() {
               </p>
 
               <h2 className="mt-3 text-2xl font-semibold tracking-tight text-balance sm:text-3xl">
-                Running this at volume, or with a team?
+                Need seats, SSO or an invoice?
               </h2>
 
               <p className="mt-4 max-w-prose text-sm leading-relaxed text-muted-foreground">
-                Studio covers one person publishing daily. Past that — several
-                people on one balance, procurement, or a model we do not offer
-                yet — the right plan depends on what you are actually doing, so
-                we would rather ask than guess.
+                Agency covers the volume — 20,000 credits a month, on a card, no
+                conversation required. What it does not cover is the other half
+                of an enterprise purchase: several people on one balance, single
+                sign-on, procurement, a model we do not offer yet.
               </p>
 
               <p className="mt-4 max-w-prose text-sm leading-relaxed text-muted-foreground">
-                Tell us the volume and the constraints and we will tell you what
-                it costs, or say plainly if we are not the right fit yet.
+                Those are being built, and we would rather scope them against a
+                real requirement than guess. Tell us the constraints and we will
+                tell you what it costs and when — or say plainly if we are not
+                the right fit yet.
               </p>
 
               <Button asChild size="lg" className="mt-6">

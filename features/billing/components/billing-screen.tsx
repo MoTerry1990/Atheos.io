@@ -172,7 +172,10 @@ export function BillingScreen({
       setPendingTier(tier);
       const result = await withBusy(
         () =>
-          api.startSubscriptionCheckout(tier as "STUDIO" | "SCALE", interval),
+          api.startSubscriptionCheckout(
+            tier as "BASIC" | "STUDIO" | "SCALE" | "AGENCY",
+            interval,
+          ),
         "Could not start checkout",
       );
       setPendingTier(null);

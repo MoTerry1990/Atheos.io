@@ -25,7 +25,7 @@ import {
 const schema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("subscription"),
-    tier: z.enum(["STUDIO", "SCALE"]),
+    tier: z.enum(["BASIC", "STUDIO", "SCALE", "AGENCY"]),
     interval: z.enum(["MONTH", "YEAR"]),
   }),
   z.object({

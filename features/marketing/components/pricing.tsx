@@ -7,6 +7,7 @@ import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PRICING, PRICING_NOTE } from "@/features/marketing/content";
+import { formatMoney } from "@/services/billing/catalogue";
 import {
   Reveal,
   Section,
@@ -93,7 +94,7 @@ export function Pricing() {
         </div>
       </Reveal>
 
-      <div className="mt-12 grid items-start gap-6 lg:grid-cols-3">
+      <div className="mt-12 grid items-start gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
         {PRICING.map((tier, index) => {
           const price = yearly ? tier.yearly : tier.monthly;
 
@@ -135,12 +136,30 @@ export function Pricing() {
 
                   <div className="mt-6 flex items-baseline gap-1">
                     <span className="text-4xl font-semibold tracking-tight tabular-nums">
-                      ${price}
+                      {formatMoney(price)}
                     </span>
                     <span className="text-sm text-muted-foreground">
                       {price === 0 ? "forever" : "/ month"}
                     </span>
                   </div>
+
+                  {/* The yearly figure above is per month. This is the amount
+                      that is actually charged, once, for the year — and the
+                      saving against paying monthly, in money rather than in a
+                      percentage nobody converts in their head. Reserved height
+                      on the monthly view so the cards do not jump on toggle. */}
+                  <p className="mt-1.5 min-h-4 text-xs text-muted-foreground">
+                    {yearly && price > 0 ? (
+                      <>
+                        {formatMoney(tier.yearlyTotal)} billed yearly
+                        <span className="text-primary">
+                          {" · save "}
+                          {formatMoney(tier.monthly * 12 - tier.yearlyTotal)}
+                        </span>
+                      </>
+                    ) : null}
+                  </p>
+
                   <p className="mt-1.5 text-xs font-medium text-primary">
                     {tier.credits}
                   </p>

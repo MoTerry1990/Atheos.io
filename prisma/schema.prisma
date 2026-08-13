@@ -142,10 +142,24 @@ enum SubscriptionStatus {
 /// that changes when marketing changes a number; entitlements must not. The
 /// mapping from price id to tier lives in `services/billing/plans.ts` and is
 /// resolved once, on the way in from a webhook.
+/// The enum name is the stable identifier; the *display* name lives in
+/// `services/billing/catalogue.ts` and has drifted from it. Sprint 25 renamed
+/// the customer-facing labels without renaming the values, because a stored
+/// entitlement must not change meaning when marketing renames a plan:
+///
+///   STARTER -> "Free"     $0
+///   BASIC   -> "Starter"  $5
+///   STUDIO  -> "Creator"  $15.99
+///   SCALE   -> "Studio"   $35.99
+///   AGENCY  -> "Agency"   $199
+///
+/// Read the catalogue, never the enum, when showing a plan to a person.
 enum PlanTier {
   STARTER
+  BASIC
   STUDIO
   SCALE
+  AGENCY
 }
 
 model Subscription {

@@ -69,11 +69,17 @@ export const env = createEnv({
     // because the app must build and run without billing configured; a plan
     // whose id is missing is not offered, and asking for it fails with a
     // message naming the variable. See services/billing/plans.ts.
+    //
+    // Named after the PlanTier enum value, not the display name — BASIC is
+    // "Starter" and STUDIO is "Creator". See prisma/schema.prisma.
+    STRIPE_PRICE_BASIC_MONTHLY: z.string().min(1).optional(),
+    STRIPE_PRICE_BASIC_YEARLY: z.string().min(1).optional(),
     STRIPE_PRICE_STUDIO_MONTHLY: z.string().min(1).optional(),
     STRIPE_PRICE_STUDIO_YEARLY: z.string().min(1).optional(),
     STRIPE_PRICE_SCALE_MONTHLY: z.string().min(1).optional(),
     STRIPE_PRICE_SCALE_YEARLY: z.string().min(1).optional(),
-    STRIPE_PRICE_PACK_350: z.string().min(1).optional(),
+    STRIPE_PRICE_AGENCY_MONTHLY: z.string().min(1).optional(),
+    STRIPE_PRICE_AGENCY_YEARLY: z.string().min(1).optional(),
     STRIPE_PRICE_PACK_1000: z.string().min(1).optional(),
     STRIPE_PRICE_PACK_5000: z.string().min(1).optional(),
     STRIPE_PRICE_PACK_20000: z.string().min(1).optional(),
@@ -172,11 +178,14 @@ export const env = createEnv({
 
     STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY,
     STRIPE_WEBHOOK_SECRET: process.env.STRIPE_WEBHOOK_SECRET,
+    STRIPE_PRICE_BASIC_MONTHLY: process.env.STRIPE_PRICE_BASIC_MONTHLY,
+    STRIPE_PRICE_BASIC_YEARLY: process.env.STRIPE_PRICE_BASIC_YEARLY,
     STRIPE_PRICE_STUDIO_MONTHLY: process.env.STRIPE_PRICE_STUDIO_MONTHLY,
     STRIPE_PRICE_STUDIO_YEARLY: process.env.STRIPE_PRICE_STUDIO_YEARLY,
     STRIPE_PRICE_SCALE_MONTHLY: process.env.STRIPE_PRICE_SCALE_MONTHLY,
     STRIPE_PRICE_SCALE_YEARLY: process.env.STRIPE_PRICE_SCALE_YEARLY,
-    STRIPE_PRICE_PACK_350: process.env.STRIPE_PRICE_PACK_350,
+    STRIPE_PRICE_AGENCY_MONTHLY: process.env.STRIPE_PRICE_AGENCY_MONTHLY,
+    STRIPE_PRICE_AGENCY_YEARLY: process.env.STRIPE_PRICE_AGENCY_YEARLY,
     STRIPE_PRICE_PACK_1000: process.env.STRIPE_PRICE_PACK_1000,
     STRIPE_PRICE_PACK_5000: process.env.STRIPE_PRICE_PACK_5000,
     STRIPE_PRICE_PACK_20000: process.env.STRIPE_PRICE_PACK_20000,
