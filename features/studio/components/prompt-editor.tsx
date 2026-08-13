@@ -1,7 +1,9 @@
 "use client";
 
-import { Eye, EyeOff, Sparkles, WandSparkles } from "lucide-react";
+import { Eye, EyeOff, Sparkles, Undo2, WandSparkles } from "lucide-react";
 import { useState } from "react";
+
+import { enhancePrompt } from "@/features/studio/lib/api";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -16,6 +18,7 @@ import { Control } from "@/features/studio/components/model-picker";
 import { PROMPT_TEMPLATES } from "@/features/studio/data/presets";
 import { assemblePrompt, useStudioStore } from "@/store/studio-store";
 import { useSelectedModel } from "@/features/studio/lib/use-model";
+import { cn } from "@/lib/utils";
 
 /**
  * Prompt editor, template picker and negative prompt.
@@ -53,6 +56,66 @@ export function PromptEditor() {
   const assembled = assemblePrompt(params, installed.styles);
   const hasAdditions = assembled !== prompt.trim() && assembled.length > 0;
 
+  const [enhancing, setEnhancing] = useState(false);
+  /** The pre-enhancement text, or null when there is nothing to undo. */
+  const [previous, setPrevious] = useState<string | null>(null);
+  const [notice, setNotice] = useState("");
+
+  /**
+   * Replace the prompt with a fuller version of itself.
+   *
+   * The endpoint never rejects — it returns the original with `changed: false`
+   * when the model is down or throttled — so the only failure handled here is
+   * the network itself, and it says so plainly rather than silently doing
+   * nothing. A button that appears to work and does not is worse than an error.
+   */
+  async function enhance() {
+    const original = prompt.trim();
+    setEnhancing(true);
+    setNotice("");
+
+    try {
+      const result = await enhancePrompt(
+        original,
+        model.capabilities.durations ? "video" : "image",
+      );
+
+      if (!result.changed) {
+        setNotice(
+          "Could not enhance that just now — your prompt is unchanged.",
+        );
+        return;
+      }
+
+      setPrevious(original);
+      setParam("prompt", result.prompt);
+      setNotice("Prompt enhanced. Edit it freely, or undo.");
+    } catch {
+      setNotice("Could not reach the enhancer — your prompt is unchanged.");
+    } finally {
+      setEnhancing(false);
+    }
+  }
+
+  function undoEnhance() {
+    if (previous === null) return;
+    setParam("prompt", previous);
+    setPrevious(null);
+    setNotice("");
+  }
+
+  /**
+   * Typing invalidates the undo.
+   *
+   * After a manual edit, "undo" would throw away the user's own words rather
+   * than the enhancement — which is the opposite of what the button promises.
+   */
+  function handlePromptChange(value: string) {
+    setParam("prompt", value);
+    if (previous !== null) setPrevious(null);
+    if (notice) setNotice("");
+  }
+
   // Built-ins first, then anything downloaded. Grouped by category, which for
   // an installed pack *is* the pack name — so a prompt someone downloaded is
   // always traceable to the thing they can uninstall.
@@ -69,7 +132,7 @@ export function PromptEditor() {
         <div className="space-y-2">
           <Textarea
             value={prompt}
-            onChange={(event) => setParam("prompt", event.target.value)}
+            onChange={(event) => handlePromptChange(event.target.value)}
             placeholder="Describe what you want to see — subject, setting, light, mood."
             rows={5}
             className="resize-y"
@@ -116,6 +179,32 @@ export function PromptEditor() {
               </DropdownMenuContent>
             </DropdownMenu>
 
+            {/* Free, and rate-limited rather than priced — see
+                services/ai/enhance.ts. Disabled below three characters because
+                there is nothing to expand, which is also the state it is in
+                when the field is empty. */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={enhance}
+              disabled={enhancing || prompt.trim().length < 3}
+            >
+              <Sparkles className={enhancing ? "animate-pulse" : undefined} />
+              {enhancing ? "Enhancing…" : "Enhance"}
+            </Button>
+
+            {/* The one affordance this feature cannot ship without. Enhancing
+                overwrites text the user wrote; without a way back, a click they
+                did not mean costs them their prompt. Cleared as soon as they
+                type, because at that point "undo" would discard their edit
+                rather than the enhancement. */}
+            {previous !== null ? (
+              <Button variant="ghost" size="sm" onClick={undoEnhance}>
+                <Undo2 />
+                Undo
+              </Button>
+            ) : null}
+
             {hasAdditions ? (
               <Button
                 variant="ghost"
@@ -128,6 +217,20 @@ export function PromptEditor() {
               </Button>
             ) : null}
           </div>
+
+          {/* Always present so `aria-live` has a node to watch — a region that
+              appears at the same moment its text does is not reliably
+              announced. Enhancing changes the textarea's value without moving
+              focus, which a screen reader would otherwise not report at all. */}
+          <p
+            aria-live="polite"
+            className={cn(
+              "text-xs text-muted-foreground",
+              notice ? "" : "sr-only",
+            )}
+          >
+            {notice}
+          </p>
 
           {showAssembled && hasAdditions ? (
             <div className="space-y-1.5 rounded-lg border border-border bg-surface-sunken p-3">

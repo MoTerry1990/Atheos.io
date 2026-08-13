@@ -55,6 +55,21 @@ export function uploadReference(
   return upload("/api/uploads", body, signal);
 }
 
+/**
+ * Expand a short idea into a fuller prompt.
+ *
+ * Always resolves — the endpoint returns the original text with
+ * `changed: false` when the model is unavailable, rather than an error status,
+ * because a failed assist must not put an error banner over a prompt the user
+ * can still submit.
+ */
+export function enhancePrompt(prompt: string, modality: "image" | "video") {
+  return request<{ prompt: string; changed: boolean }>("/api/ai/enhance", {
+    method: "POST",
+    body: JSON.stringify({ prompt, modality }),
+  });
+}
+
 export function pollGeneration(id: string) {
   return request<{ generation: GenerationDTO }>(`/api/generations/${id}`);
 }

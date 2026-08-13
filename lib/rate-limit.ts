@@ -168,6 +168,14 @@ export const POLICIES = {
    */
   generate: { name: "generate", limit: 12, windowMs: 60_000 },
 
+  /**
+   * Prompt enhancement. Free to the user, so the limit is the only thing
+   * standing between us and somebody using the studio as a free LLM. Twenty a
+   * minute is far more than a person editing one prompt at a time needs, and
+   * far less than a script wants.
+   */
+  enhance: { name: "enhance", limit: 20, windowMs: 60_000 },
+
   /** Uploads. Bandwidth and storage, both paid by us. */
   upload: { name: "upload", limit: 20, windowMs: 60_000 },
 
