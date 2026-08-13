@@ -1,6 +1,6 @@
 import { ArrowUpRight } from "lucide-react";
 
-import { Artwork } from "@/features/marketing/components/artwork";
+import { GeneratedImage } from "@/features/marketing/components/generated-image";
 import { Badge } from "@/components/ui/badge";
 import { TEMPLATES } from "@/features/marketing/content";
 import { getCopy } from "@/features/marketing/i18n/dictionaries";
@@ -46,11 +46,12 @@ export function Templates({ locale }: { locale: Locale }) {
               href="#pricing"
               className="group block h-full overflow-hidden rounded-2xl border border-border bg-card transition-all duration-300 hover:-translate-y-1 hover:border-primary/30 focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:outline-none motion-reduce:hover:translate-y-0"
             >
-              <div className="relative">
-                <Artwork
-                  hue={template.hue}
-                  seed={template.hue}
-                  className="aspect-[4/3] w-full"
+              <div className="relative aspect-[4/3] w-full overflow-hidden">
+                <GeneratedImage
+                  src={`template-${index + 1}`}
+                  prompt={copy.templates[index]?.body ?? ""}
+                  sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+                  className="transition-transform duration-500 group-hover:scale-105 motion-reduce:group-hover:scale-100"
                 />
                 <Badge
                   variant="default"

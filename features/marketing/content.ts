@@ -98,15 +98,21 @@ export interface Feature {
   icon: LucideIcon;
   /** Spans two columns on wide screens. */
   wide?: boolean;
+  /**
+   * A generation under `public/marketing`, without the extension.
+   *
+   * Only the wide cards have one — see the note in `features.tsx`.
+   */
+  image?: string;
 }
 
 export const FEATURES: readonly Feature[] = [
-  { icon: Layers, wide: true },
+  { icon: Layers, wide: true, image: "feature-library" },
   { icon: Coins },
   { icon: GitBranch },
   { icon: Boxes },
   { icon: Lock },
-  { icon: Wand2, wide: true },
+  { icon: Wand2, wide: true, image: "feature-craft" },
 ] as const;
 
 /* -------------------------------------------------------------------------- */
@@ -150,11 +156,17 @@ export const TEMPLATES: readonly Template[] = [
 /**
  * Gallery tiles.
  *
- * The artwork is generated in the browser from these seeds rather than shipped
- * as image files. That is a deliberate constraint: showing AI-generated images
- * we have not actually generated — or stock photos dressed up as output —
- * would misrepresent the product. The prompt caption on each tile is in the
- * dictionaries, at the matching index.
+ * These were procedural SVG blobs for twenty-five sprints, because showing
+ * AI-generated images we had not actually generated would have misrepresented
+ * the product. That constraint is now satisfied the right way round: every
+ * tile is a real generation, committed under `public/marketing/gallery-N.webp`
+ * and produced by `scripts/generate-marketing-assets.ts` on the same pinned
+ * model versions the product runs.
+ *
+ * The `seed` is the one passed to the model, so a tile can be reproduced
+ * exactly. The `hue` survives as the placeholder tint behind the image while
+ * it loads. The caption — which is the prompt — is in the dictionaries at the
+ * matching index.
  */
 export const GALLERY = [
   { hue: 303, seed: 11 },

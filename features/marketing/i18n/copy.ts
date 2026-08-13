@@ -28,6 +28,8 @@ export interface SectionCopy {
   eyebrow: string;
   title: string;
   description: string;
+  /** An extra line beneath the section, where one is needed. */
+  note?: string;
 }
 
 export interface MarketingCopy {

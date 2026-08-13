@@ -4,6 +4,7 @@ import { motion } from "motion/react";
 import { ArrowRight, Play } from "lucide-react";
 
 import { AnimatedBackground } from "@/features/marketing/components/animated-background";
+import { HeroVideo } from "@/features/marketing/components/hero-video";
 import { Button } from "@/components/ui/button";
 import { useCopy } from "@/features/marketing/i18n";
 import { duration, easing } from "@/components/ui/motion";
@@ -44,6 +45,11 @@ export function Hero() {
 
   return (
     <section className="relative isolate overflow-hidden pt-32 pb-20 sm:pt-40 sm:pb-28">
+      {/* Video first, then the procedural background on top of it at low
+          opacity. The two together read as one surface; the drifting orbs give
+          the still poster something to do on the browsers that block autoplay,
+          and they mask the loop point on the ones that do not. */}
+      <HeroVideo />
       <AnimatedBackground />
 
       <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">

@@ -1,5 +1,6 @@
-import { Artwork } from "@/features/marketing/components/artwork";
+import { GeneratedImage } from "@/features/marketing/components/generated-image";
 import { GALLERY } from "@/features/marketing/content";
+import { cn } from "@/lib/utils";
 import { getCopy } from "@/features/marketing/i18n/dictionaries";
 import type { Locale } from "@/features/marketing/i18n/locales";
 import {
@@ -44,19 +45,24 @@ export function Gallery({ locale }: { locale: Locale }) {
               key={copy.gallery[index] ?? index}
               className="group mb-3 break-inside-avoid sm:mb-4"
             >
-              <div className="relative overflow-hidden rounded-xl ring-1 ring-white/10">
-                <Artwork
-                  hue={tile.hue}
-                  seed={tile.seed}
-                  rich
+              <div
+                className={cn(
+                  "relative overflow-hidden rounded-xl ring-1 ring-white/10",
                   // Alternating aspect ratios give the masonry its rhythm.
-                  className={
-                    index % 3 === 0
-                      ? "aspect-[3/4] w-full"
-                      : index % 3 === 1
-                        ? "aspect-square w-full"
-                        : "aspect-[4/5] w-full"
-                  }
+                  // The generation is square; cropping to the tile is what
+                  // makes the column read as a wall rather than a grid.
+                  index % 3 === 0
+                    ? "aspect-[3/4] w-full"
+                    : index % 3 === 1
+                      ? "aspect-square w-full"
+                      : "aspect-[4/5] w-full",
+                )}
+              >
+                <GeneratedImage
+                  src={`gallery-${index + 1}`}
+                  prompt={copy.gallery[index] ?? ""}
+                  sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+                  className="transition-transform duration-500 group-hover:scale-105 motion-reduce:group-hover:scale-100"
                 />
 
                 {/* The prompt, revealed on hover. Always present in the DOM, so
@@ -73,9 +79,7 @@ export function Gallery({ locale }: { locale: Locale }) {
 
       <Reveal delay={0.1}>
         <p className="mt-8 text-center text-xs text-muted-foreground">
-          Artwork on this page is procedurally generated for illustration.
-          Atheos is in private beta — we would rather show nothing than show
-          output we have not produced.
+          {copy.sections.gallery.note}
         </p>
       </Reveal>
     </Section>

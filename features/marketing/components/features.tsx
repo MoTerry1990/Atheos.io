@@ -1,4 +1,5 @@
 import { FEATURES } from "@/features/marketing/content";
+import { GeneratedImage } from "@/features/marketing/components/generated-image";
 import { getCopy } from "@/features/marketing/i18n/dictionaries";
 import type { Locale } from "@/features/marketing/i18n/locales";
 import {
@@ -52,6 +53,29 @@ export function Features({ locale }: { locale: Locale }) {
                 className="pointer-events-none absolute inset-0 bg-gradient-brand-subtle opacity-0 transition-opacity duration-300 group-hover:opacity-100"
               />
 
+              {/* Only the wide cards carry an image. Six of them would read as
+                  a stock-photo grid and bury the words; two, on the cards that
+                  are twice the width and were otherwise mostly empty, give the
+                  section a rhythm. Faded into the card so it is atmosphere
+                  behind the text rather than a picture the text sits under. */}
+              {entry.wide && entry.image ? (
+                <div
+                  aria-hidden
+                  className="pointer-events-none absolute inset-y-0 right-0 w-2/3 opacity-35 transition-opacity duration-300 group-hover:opacity-50"
+                >
+                  <div className="relative size-full">
+                    <GeneratedImage
+                      src={entry.image}
+                      prompt={copy.features[index]?.title ?? ""}
+                      sizes="(max-width: 1024px) 100vw, 45vw"
+                    />
+                  </div>
+                  {/* Left-to-right fade, so the headline never sits on top of
+                      detail it has to fight for contrast. */}
+                  <div className="absolute inset-0 bg-gradient-to-r from-card via-card/70 to-transparent" />
+                </div>
+              ) : null}
+
               <div className="relative">
                 <span className="mb-5 inline-flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary">
                   <entry.icon
@@ -64,7 +88,7 @@ export function Features({ locale }: { locale: Locale }) {
                 <h3 className="text-base font-semibold">
                   {copy.features[index]?.title}
                 </h3>
-                <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                <p className="mt-2 max-w-md text-sm leading-relaxed text-muted-foreground">
                   {copy.features[index]?.body}
                 </p>
               </div>

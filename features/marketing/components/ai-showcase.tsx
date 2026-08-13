@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { Check } from "lucide-react";
 import { useState } from "react";
 
-import { Artwork } from "@/features/marketing/components/artwork";
+import { GeneratedImage } from "@/features/marketing/components/generated-image";
 import {
   Reveal,
   Section,
@@ -136,12 +136,13 @@ export function AIShowcase() {
             {/* Order flips on mobile so the artwork does not push the copy
                 below the fold on a phone. */}
             <div className="order-first lg:order-last">
-              <Artwork
-                hue={panel.hue}
-                seed={panel.hue}
-                rich
-                className="aspect-[4/3] w-full ring-1 ring-white/10"
-              />
+              <div className="relative aspect-[4/3] w-full overflow-hidden rounded-xl ring-1 ring-white/10">
+                <GeneratedImage
+                  src={`showcase-${panel.id}`}
+                  prompt={panelCopy?.headline ?? ""}
+                  sizes="(max-width: 1024px) 100vw, 50vw"
+                />
+              </div>
             </div>
           </motion.div>
         </AnimatePresence>

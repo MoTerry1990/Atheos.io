@@ -58,6 +58,7 @@ export const ES: MarketingCopy = {
       title: "Un vistazo a la superficie",
       description:
         "El lenguaje visual de Atheos: color sobre negro y la luz tratada como algo que se emite, no que se pinta.",
+      note: "Todas las imágenes de esta página las generó Atheos, con los mismos modelos que usted recibe. Pase el cursor sobre una para leer el prompt que la produjo.",
     },
     faq: {
       eyebrow: "Preguntas",
