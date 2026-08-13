@@ -163,12 +163,19 @@ function findModel(modelId: string) {
 /**
  * Frame count for a requested duration.
  *
- * The model expresses length in frames, not seconds, at a fixed 16fps. 81
- * frames is its default and lands near five seconds; ten seconds is double
- * that, minus one so the count stays odd — these samplers expect 4n+1.
+ * The model expresses length in frames at 16fps and accepts **81 to 121** —
+ * roughly 5 to 7.5 seconds. That is the hard ceiling.
+ *
+ * A first version of this sent 161 frames for the studio's "10s" option, which
+ * the model rejects outright. The studio offers 5s and 10s; 10s is served as
+ * the longest clip the model can actually make rather than failing, because a
+ * slightly short video is a better outcome than an error and a refund.
+ *
+ * `capabilities.durations` is the honest place to fix this properly — see the
+ * note there.
  */
 function videoFrames(durationSeconds: number | undefined): number {
-  return durationSeconds && durationSeconds >= 10 ? 161 : 81;
+  return durationSeconds && durationSeconds >= 10 ? 121 : 81;
 }
 
 function buildInput(
