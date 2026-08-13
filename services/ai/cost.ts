@@ -71,19 +71,28 @@ const COST_BASIS: Record<string, ModelCostBasis> = {
   "replicate/flux-dev": { perOutputMicroUsd: 25_000, checked: "2026-08" },
   "replicate/real-esrgan": { perOutputMicroUsd: 2_300, checked: "2026-08" },
   "replicate/remove-bg": { perOutputMicroUsd: 1_500, checked: "2026-08" },
+  // Both video rates are **measured**, not published — derived from a real
+  // Replicate invoice on 2026-08-13: $0.75 across four clips, one upscale and
+  // four images, apportioned by each model's share of GPU time.
+  //
+  // The earlier figure here was 90_000/sec, which made a five-second clip
+  // $0.45. The real cost is roughly a fifth of that. Guessing high is the
+  // safer direction to be wrong in, and it was still wrong enough to have
+  // priced the product badly.
+  //
+  // Per second of *output*, not of render. Seedance takes 5-7x longer to
+  // render than the fast model and does not cost 5-7x more, because Replicate
+  // bills its official models by output rather than by GPU time. That
+  // distinction is the whole reason Motion Pro is viable.
   "replicate/video-gen": {
     perOutputMicroUsd: 0,
-    perSecondMicroUsd: 90_000,
-    checked: "2026-08",
+    perSecondMicroUsd: 20_000, // ~$0.10 per 5s clip
+    checked: "2026-08-13 (measured)",
   },
-  // Seedance renders 5-7x longer than the fast model. Provisional: doubled
-  // from the fast model's rate as a placeholder, because nobody has checked a
-  // Replicate invoice yet. If Replicate bills GPU time rather than output
-  // seconds this is badly under-stated. See NEXT_SESSION.md.
   "replicate/video-pro": {
     perOutputMicroUsd: 0,
-    perSecondMicroUsd: 180_000,
-    checked: "unverified",
+    perSecondMicroUsd: 54_000, // ~$0.27 per 5s clip
+    checked: "2026-08-13 (measured)",
   },
   "openai/gpt-image-1": { perOutputMicroUsd: 40_000, checked: "2026-08" },
 
