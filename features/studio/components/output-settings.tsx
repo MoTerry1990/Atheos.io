@@ -5,6 +5,7 @@ import { Dice5, Lock, LockOpen, RectangleHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { InputField } from "@/components/ui/field";
 import { Slider } from "@/components/ui/slider";
+import { Chip, ChipGroup } from "@/features/studio/components/chip";
 import { Control } from "@/features/studio/components/model-picker";
 import {
   dimensionsFor,
@@ -51,11 +52,18 @@ function AspectRatioPicker() {
               aria-pressed={active}
               title={ASPECT_RATIO_LABELS[ratio] ?? ratio}
               className={cn(
-                "flex min-w-[4.25rem] flex-col items-center gap-1.5 rounded-lg border px-2 py-2 transition-colors",
+                "flex min-w-[4.25rem] flex-col items-center gap-1.5 rounded-lg border px-2 py-2",
+                "transition-[color,background-color,border-color,box-shadow,transform] duration-150 ease-out",
                 "focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:outline-none",
                 active
-                  ? "border-primary/40 bg-primary/10"
-                  : "border-border hover:border-border/80",
+                  ? "border-primary/50 bg-primary/12 glow-brand-sm"
+                  : cn(
+                      // Same foreground tint as Chip — see the note there on
+                      // why the absolute surface tokens are wrong here.
+                      "border-border bg-foreground/[0.05]",
+                      "hover:-translate-y-px hover:border-foreground/20 hover:bg-foreground/10",
+                      "hover:elevation-raised active:translate-y-0 active:elevation-flat",
+                    ),
               )}
             >
               <span
@@ -97,28 +105,19 @@ function SizePicker() {
 
   return (
     <Control label="Size" hint={`${width} × ${height}`}>
-      <div className="flex flex-wrap gap-1.5">
-        {options.map((option) => {
-          const active = params.resolution === option;
-          return (
-            <button
-              key={option}
-              type="button"
-              onClick={() => setParam("resolution", option)}
-              aria-pressed={active}
-              className={cn(
-                "rounded-md border px-2.5 py-1 text-xs tabular-nums transition-colors",
-                "focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:outline-none",
-                active
-                  ? "border-primary/40 bg-primary/10 text-foreground"
-                  : "border-border text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {option}px
-            </button>
-          );
-        })}
-      </div>
+      <ChipGroup>
+        {options.map((option) => (
+          <Chip
+            key={option}
+            shape="square"
+            numeric
+            active={params.resolution === option}
+            onClick={() => setParam("resolution", option)}
+          >
+            {option}px
+          </Chip>
+        ))}
+      </ChipGroup>
     </Control>
   );
 }
@@ -238,28 +237,22 @@ function OutputCount() {
       label="Outputs"
       hint={`${params.outputs} × ${model.creditCost} credits`}
     >
-      <div className="flex gap-1.5">
-        {Array.from({ length: max }, (_, index) => index + 1).map((count) => {
-          const active = params.outputs === count;
-          return (
-            <button
-              key={count}
-              type="button"
-              onClick={() => setParam("outputs", count)}
-              aria-pressed={active}
-              className={cn(
-                "size-9 rounded-md border text-sm tabular-nums transition-colors",
-                "focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:outline-none",
-                active
-                  ? "border-primary/40 bg-primary/10 text-foreground"
-                  : "border-border text-muted-foreground hover:text-foreground",
-              )}
-            >
-              {count}
-            </button>
-          );
-        })}
-      </div>
+      <ChipGroup>
+        {Array.from({ length: max }, (_, index) => index + 1).map((count) => (
+          <Chip
+            key={count}
+            shape="square"
+            numeric
+            active={params.outputs === count}
+            onClick={() => setParam("outputs", count)}
+            // Square by construction, so the row reads as a stepper rather
+            // than as five differently-sized pills.
+            className="w-9 justify-center px-0"
+          >
+            {count}
+          </Chip>
+        ))}
+      </ChipGroup>
     </Control>
   );
 }

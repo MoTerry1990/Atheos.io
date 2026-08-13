@@ -1,12 +1,12 @@
 "use client";
 
-import { Film, Video } from "lucide-react";
+import { Video } from "lucide-react";
 
+import { Chip, ChipGroup } from "@/features/studio/components/chip";
 import { Control } from "@/features/studio/components/model-picker";
 import { useSelectedModel } from "@/features/studio/lib/use-model";
 import { creditsFor } from "@/services/ai/pricing";
 import { useStudioStore } from "@/store/studio-store";
-import { cn } from "@/lib/utils";
 
 /**
  * Duration and camera motion.
@@ -31,6 +31,18 @@ import { cn } from "@/lib/utils";
  * questions and merging them would put "wide shot" and "pan left" in the same
  * single-select, where choosing one would clear the other for no reason.
  */
+/**
+ * Capitalised for display only.
+ *
+ * The catalogue stores these lowercase because the raw value is appended to
+ * the prompt, where "Slow Push In" would read as an odd shout. A chip cloud of
+ * uncapitalised fragments looks like placeholder data, so the transform is
+ * applied at the point of display and nowhere else.
+ */
+function sentenceCase(value: string): string {
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
 export function VideoSettings() {
   const model = useSelectedModel();
   const durationSeconds = useStudioStore(
@@ -45,7 +57,7 @@ export function VideoSettings() {
   const motions = model.capabilities.cameraMotions ?? [];
 
   return (
-    <div className="space-y-5 rounded-xl border border-border bg-card/50 p-4">
+    <div className="space-y-5 rounded-xl border border-border bg-card/60 p-5">
       <p className="flex items-center gap-2 text-sm font-medium">
         <Video className="size-4 text-muted-foreground" aria-hidden />
         Video
@@ -59,28 +71,18 @@ export function VideoSettings() {
           // at the Generate button is finding out too late.
           hint={`${creditsFor(model, 1, durationSeconds)} credits`}
         >
-          <div className="flex flex-wrap gap-1.5">
-            {durations.map((seconds) => {
-              const active = durationSeconds === seconds;
-              return (
-                <button
-                  key={seconds}
-                  type="button"
-                  onClick={() => setParam("durationSeconds", seconds)}
-                  aria-pressed={active}
-                  className={cn(
-                    "rounded-md border px-3 py-1.5 text-xs tabular-nums transition-colors",
-                    "focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:outline-none",
-                    active
-                      ? "border-primary/40 bg-primary/10 text-foreground"
-                      : "border-border text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  {seconds}s
-                </button>
-              );
-            })}
-          </div>
+          <ChipGroup>
+            {durations.map((seconds) => (
+              <Chip
+                key={seconds}
+                numeric
+                active={durationSeconds === seconds}
+                onClick={() => setParam("durationSeconds", seconds)}
+              >
+                {seconds}s
+              </Chip>
+            ))}
+          </ChipGroup>
         </Control>
       ) : null}
 
@@ -89,38 +91,28 @@ export function VideoSettings() {
           label="Camera motion"
           hint={cameraMotion ? undefined : "Optional"}
         >
-          <div className="flex flex-wrap gap-1.5">
+          <ChipGroup>
             {motions.map((motion) => {
               const active = cameraMotion === motion;
               return (
-                <button
+                <Chip
                   key={motion}
-                  type="button"
+                  active={active}
+                  clearable
                   // Clicking the active value clears it. The model has its own
                   // idea of how the shot should move when we say nothing, and
                   // there has to be a way back to that.
                   onClick={() =>
                     setParam("cameraMotion", active ? null : motion)
                   }
-                  aria-pressed={active}
-                  className={cn(
-                    "flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors",
-                    "focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:outline-none",
-                    active
-                      ? "border-primary/40 bg-primary/10 text-foreground"
-                      : "border-border text-muted-foreground hover:text-foreground",
-                  )}
                 >
-                  {active ? (
-                    <Film className="size-3 shrink-0" aria-hidden />
-                  ) : null}
-                  {motion}
-                </button>
+                  {sentenceCase(motion)}
+                </Chip>
               );
             })}
-          </div>
+          </ChipGroup>
 
-          <p className="text-2xs text-muted-foreground">
+          <p className="text-xs leading-relaxed text-muted-foreground">
             Added to the prompt when the clip is generated. Video models read
             motion as description, not as a setting.
           </p>

@@ -2,11 +2,13 @@ import "server-only";
 
 import type Stripe from "stripe";
 
+import { env } from "@/lib/env";
 import { prisma } from "@/lib/prisma";
 import { resolvePriceId } from "@/services/billing/plans";
 import type {
   BillingInterval,
   PlanTier,
+  Role,
   SubscriptionStatus,
 } from "@/lib/generated/prisma/enums";
 
@@ -63,6 +65,37 @@ export interface Entitlement {
 }
 
 /**
+ * What an owner account gets.
+ *
+ * The top tier, so that any capability gated on rank is open. It carries no
+ * credits of its own — see the note in `getEntitlement`; credits are a
+ * separate ledger and are granted, not implied by a tier.
+ */
+const OWNER_TIER: PlanTier = "AGENCY";
+
+/**
+ * Whether this account belongs to whoever runs the install.
+ *
+ * Same two sources of truth as admin access, and for the same reason:
+ * `ADMIN_USER_IDS` cannot be changed by anyone who only has the database, and
+ * the role column is the recovery path when the environment list is wrong. See
+ * `services/admin/auth.ts`.
+ *
+ * Takes the row rather than reading the session, because this is asked about
+ * arbitrary users — an admin looking at somebody else's billing must see
+ * *their* entitlement, not the viewer's.
+ */
+function isOwnerAccount(user: { clerkId: string; role: Role }): boolean {
+  if (user.role === "ADMIN") return true;
+
+  return (env.ADMIN_USER_IDS ?? "")
+    .split(",")
+    .map((id) => id.trim())
+    .filter(Boolean)
+    .includes(user.clerkId);
+}
+
+/**
  * What this user is entitled to right now.
  *
  * Falls back to STARTER rather than throwing when there is no subscription: not
@@ -87,9 +120,34 @@ export async function getEntitlement(userId: string): Promise<Entitlement> {
     }),
     prisma.user.findUnique({
       where: { id: userId },
-      select: { stripeCustomerId: true },
+      select: { stripeCustomerId: true, clerkId: true, role: true },
     }),
   ]);
+
+  // The people who run Atheos are entitled to the whole product, without a
+  // Stripe subscription standing behind it. Checked before the subscription
+  // row is read, so it holds whether or not one exists.
+  //
+  // Deliberately **not** implemented by writing a fake Subscription: that row
+  // requires a unique `stripeCustomerId`, and inventing one means the real
+  // checkout later collides with a placeholder — a billing bug found at the
+  // worst moment. Entitlement is a question about a person, and this is the
+  // one function that answers it, so this is where the exception belongs.
+  if (user && isOwnerAccount(user)) {
+    return {
+      tier: OWNER_TIER,
+      interval: "MONTH",
+      status: subscription?.status ?? null,
+      active: true,
+      currentPeriodStart: null,
+      currentPeriodEnd: null,
+      cancelAtPeriodEnd: false,
+      scheduledTier: null,
+      stripeCustomerId:
+        subscription?.stripeCustomerId ?? user.stripeCustomerId ?? null,
+      stripeSubscriptionId: subscription?.stripeSubscriptionId ?? null,
+    };
+  }
 
   if (!subscription) {
     return {

@@ -1,6 +1,6 @@
 "use client";
 
-import { Camera, Palette, UserRound, X } from "lucide-react";
+import { Camera, Palette, UserRound } from "lucide-react";
 
 import {
   Accordion,
@@ -9,6 +9,7 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
+import { Chip, ChipGroup } from "@/features/studio/components/chip";
 import { Control } from "@/features/studio/components/model-picker";
 import {
   CAMERA_OPTIONS,
@@ -16,7 +17,6 @@ import {
   type CameraAxis,
 } from "@/features/studio/data/presets";
 import { useStudioStore } from "@/store/studio-store";
-import { cn } from "@/lib/utils";
 
 /**
  * Style presets and camera controls.
@@ -72,15 +72,14 @@ export function StyleAndCamera() {
         </AccordionTrigger>
 
         <AccordionContent>
-          <div className="flex flex-wrap gap-2 pt-1">
+          <ChipGroup className="pt-1">
             {allPresets.map((preset) => {
               const active = presetIds.includes(preset.id);
               return (
-                <button
+                <Chip
                   key={preset.id}
-                  type="button"
+                  active={active}
                   onClick={() => togglePreset(preset.id)}
-                  aria-pressed={active}
                   title={
                     "source" in preset && preset.source
                       ? `${preset.fragment}
@@ -88,27 +87,22 @@ export function StyleAndCamera() {
 From ${preset.source}`
                       : preset.fragment
                   }
-                  className={cn(
-                    "flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition-all",
-                    "focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:outline-none",
-                    active
-                      ? "border-primary/40 bg-primary/10 text-foreground"
-                      : "border-border text-muted-foreground hover:border-border/80 hover:text-foreground",
-                  )}
                 >
+                  {/* Each preset carries its own hue, so the palette reads as
+                      a set of looks rather than a wall of identical buttons. */}
                   <span
                     aria-hidden
-                    className="size-2 shrink-0 rounded-full"
+                    className="size-2 shrink-0 rounded-full transition-opacity"
                     style={{
                       backgroundColor: `oklch(0.7 0.18 ${preset.hue})`,
-                      opacity: active ? 1 : 0.5,
+                      opacity: active ? 1 : 0.55,
                     }}
                   />
                   {preset.name}
-                </button>
+                </Chip>
               );
             })}
-          </div>
+          </ChipGroup>
         </AccordionContent>
       </AccordionItem>
 
@@ -200,33 +194,24 @@ From ${preset.source}`
                   label={option.label}
                   hint={selected ? undefined : "Optional"}
                 >
-                  <div className="flex flex-wrap gap-1.5">
+                  <ChipGroup>
                     {option.values.map((value) => {
                       const active = selected === value;
                       return (
-                        <button
+                        <Chip
                           key={value}
-                          type="button"
+                          shape="square"
+                          active={active}
+                          clearable
                           // Clicking the active value clears the axis. Without
                           // this there is no way back to "unset".
                           onClick={() => setCamera(axis, active ? null : value)}
-                          aria-pressed={active}
-                          className={cn(
-                            "rounded-md border px-2 py-1 text-xs transition-colors",
-                            "focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:outline-none",
-                            active
-                              ? "border-primary/40 bg-primary/10 text-foreground"
-                              : "border-border text-muted-foreground hover:text-foreground",
-                          )}
                         >
                           {value}
-                          {active ? (
-                            <X className="ml-1 inline size-3" aria-hidden />
-                          ) : null}
-                        </button>
+                        </Chip>
                       );
                     })}
-                  </div>
+                  </ChipGroup>
                 </Control>
               );
             })}
