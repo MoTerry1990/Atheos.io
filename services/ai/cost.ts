@@ -76,6 +76,15 @@ const COST_BASIS: Record<string, ModelCostBasis> = {
     perSecondMicroUsd: 90_000,
     checked: "2026-08",
   },
+  // Seedance renders 5-7x longer than the fast model. Provisional: doubled
+  // from the fast model's rate as a placeholder, because nobody has checked a
+  // Replicate invoice yet. If Replicate bills GPU time rather than output
+  // seconds this is badly under-stated. See NEXT_SESSION.md.
+  "replicate/video-pro": {
+    perOutputMicroUsd: 0,
+    perSecondMicroUsd: 180_000,
+    checked: "unverified",
+  },
   "openai/gpt-image-1": { perOutputMicroUsd: 40_000, checked: "2026-08" },
 
   // The mock costs nothing. Recorded explicitly so it does not fall into the

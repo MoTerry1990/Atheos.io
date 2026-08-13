@@ -108,6 +108,10 @@ const MODELS: (ProviderModel & { version: string })[] = [
     // ratio. Pricing a clip like an image is how a platform loses money on
     // every use of its most impressive feature.
     creditCost: 90,
+    // wan-2.2-t2v-fast. Kept as the *fast* option after measuring the
+    // alternative: Seedance renders better video and takes 5-7x longer
+    // (568s at 720p, 877s at 1080p, against 118s here). For a sequence of ten
+    // clips that is 95 minutes versus 20.
     version: "c483b1f7b892065bc58ebadb6381abf557f6b1f517d2ff0febb3fb635cf49b4d",
     capabilities: {
       supportsNegativePrompt: true,
@@ -119,6 +123,31 @@ const MODELS: (ProviderModel & { version: string })[] = [
       maxOutputs: 1,
       durations: [5, 10],
       maxDurationSeconds: 10,
+      cameraMotions: CAMERA_MOTIONS,
+      operations: ["text-to-video", "image-to-video"],
+    },
+  },
+  {
+    id: "replicate/video-pro",
+    providerId: "replicate",
+    displayName: "Motion Pro",
+    modality: "VIDEO",
+    // Twice the fast model. Provisional: it renders 5-7x longer, and until the
+    // Replicate invoice is checked nobody knows whether that is billed as GPU
+    // time or as output seconds. If it is GPU time this is under-priced.
+    creditCost: 180,
+    // bytedance/seedance-1-lite, 3.6M runs.
+    version: "6e47dd83529ee0599c68f274f225635080e4fd218360a85e2a3a78396d388b73",
+    capabilities: {
+      // Seedance takes no negative prompt. Declaring it here is what stops the
+      // studio offering a field the model ignores.
+      supportsNegativePrompt: false,
+      supportsImageInput: true,
+      supportsSeed: true,
+      aspectRatios: ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"],
+      maxOutputs: 1,
+      durations: [5, 10, 12],
+      maxDurationSeconds: 12,
       cameraMotions: CAMERA_MOTIONS,
       operations: ["text-to-video", "image-to-video"],
     },
@@ -161,18 +190,11 @@ function findModel(modelId: string) {
  * nowhere else.
  */
 /**
- * Frame count for a requested duration.
+ * Frame count for a requested duration, for the wan model.
  *
- * The model expresses length in frames at 16fps and accepts **81 to 121** —
- * roughly 5 to 7.5 seconds. That is the hard ceiling.
- *
- * A first version of this sent 161 frames for the studio's "10s" option, which
- * the model rejects outright. The studio offers 5s and 10s; 10s is served as
- * the longest clip the model can actually make rather than failing, because a
- * slightly short video is a better outcome than an error and a refund.
- *
- * `capabilities.durations` is the honest place to fix this properly — see the
- * note there.
+ * It expresses length in frames at 16fps and accepts 81-121 — about 5 to 7.5
+ * seconds. Sending 161 for a "10s" request fails outright, which is a bug this
+ * file has already had once.
  */
 function videoFrames(durationSeconds: number | undefined): number {
   return durationSeconds && durationSeconds >= 10 ? 121 : 81;
@@ -198,12 +220,20 @@ function buildInput(
           ? { negative_prompt: request.negativePrompt }
           : {}),
         ...(source ? { image: source } : {}),
-        // Length is frames at a fixed frame rate, not seconds.
-        num_frames: videoFrames(request.durationSeconds),
-        // Only 16:9 and 9:16 exist. A 1:1 request becomes portrait, which is
-        // the closer crop of the two.
-        aspect_ratio: request.aspectRatio === "9:16" ? "9:16" : "16:9",
-        resolution: "720p",
+        ...(model.id === "replicate/video-pro"
+          ? {
+              // Seedance: seconds, 4-12, and its own resolution ladder.
+              duration: Math.min(12, Math.max(4, request.durationSeconds ?? 5)),
+              aspect_ratio: request.aspectRatio ?? "16:9",
+              resolution: "1080p",
+              fps: 24,
+            }
+          : {
+              // wan-2.2: length is frames at 16fps, 81-121.
+              num_frames: videoFrames(request.durationSeconds),
+              aspect_ratio: request.aspectRatio === "9:16" ? "9:16" : "16:9",
+              resolution: "720p",
+            }),
         ...(request.seed !== undefined ? { seed: request.seed } : {}),
       };
 
