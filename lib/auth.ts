@@ -5,6 +5,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { prisma } from "@/lib/prisma";
+import { provisionUser } from "@/services/users/provision";
 // Prisma 7 names generated model types with a `Model` suffix.
 import type { UserModel } from "@/lib/generated/prisma/models";
 
@@ -83,6 +84,49 @@ export async function getCurrentUser(): Promise<UserModel | null> {
 }
 
 /**
+ * Resolve our row for a signed-in Clerk user, creating it if it is missing.
+ *
+ * ## Why this exists
+ *
+ * This used to redirect to a holding page, on the reasoning that creating the
+ * row here "would race the webhook and risk two rows for one person". The
+ * schema had already ruled that out — `clerkId` is unique, and the signup grant
+ * is keyed on a unique idempotency key — so what the caution actually bought
+ * was a product that silently does nothing when the webhook is misconfigured.
+ * It was misconfigured in production for all of Sprint 25, and every sign-up
+ * landed on a holding page with no account and no credits.
+ *
+ * The webhook is still worth having: it is the only thing that observes later
+ * profile edits and deletions. It is no longer the only way in.
+ *
+ * Returns `null` when Clerk has no email for the account, which is the one case
+ * we genuinely cannot provision — `email` is unique and not nullable.
+ */
+async function resolveOrProvision(userId: string): Promise<UserModel | null> {
+  const existing = await prisma.user.findUnique({ where: { clerkId: userId } });
+  if (existing) return existing;
+
+  // Only reached once per account, so the extra Clerk API call costs nothing
+  // in the steady state.
+  const clerkUser = await currentUser();
+  const email =
+    clerkUser?.emailAddresses.find(
+      (address) => address.id === clerkUser.primaryEmailAddressId,
+    )?.emailAddress ?? clerkUser?.emailAddresses[0]?.emailAddress;
+
+  if (!clerkUser || !email) return null;
+
+  return provisionUser({
+    clerkId: userId,
+    email,
+    name:
+      [clerkUser.firstName, clerkUser.lastName].filter(Boolean).join(" ") ||
+      null,
+    imageUrl: clerkUser.imageUrl || null,
+  });
+}
+
+/**
  * Our database row, or redirect.
  *
  * Use in Server Components and Actions that cannot proceed without a user
@@ -91,13 +135,11 @@ export async function getCurrentUser(): Promise<UserModel | null> {
 export async function requireUser(): Promise<UserModel> {
   const userId = await requireUserId();
 
-  const user = await prisma.user.findUnique({ where: { clerkId: userId } });
+  const user = await resolveOrProvision(userId);
 
-  if (!user) {
-    // The webhook has not landed yet. A holding page is honest; creating the
-    // row here would race the webhook and risk two rows for one person.
-    redirect("/profile");
-  }
+  // Provisioning only fails when Clerk has no email address on the account.
+  // The profile page is where they can add one.
+  if (!user) redirect("/profile");
 
   return user;
 }
@@ -147,7 +189,18 @@ export class AuthError extends Error {
  * key on. This is the gate that counts.
  */
 export async function requireApiUser(): Promise<UserModel> {
-  const user = await getCurrentUser();
-  if (!user) throw new AuthError();
+  const userId = await getUserId();
+  if (!userId) throw new AuthError();
+
+  // Provisions on first call, same as `requireUser`. Without this the page
+  // would render for a webhook-less sign-up and every API call behind it would
+  // 401, which is a worse failure than not rendering at all.
+  const user = await resolveOrProvision(userId);
+  if (!user) {
+    throw new AuthError(
+      "Your account has no email address. Add one in your profile to continue.",
+    );
+  }
+
   return user;
 }

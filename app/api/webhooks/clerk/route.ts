@@ -7,6 +7,7 @@ import { guard } from "@/lib/api-guard";
 import { env } from "@/lib/env";
 import { isUniqueViolation } from "@/lib/prisma-errors";
 import { prisma } from "@/lib/prisma";
+import { provisionUser } from "@/services/users/provision";
 
 /**
  * Clerk → database user sync.
@@ -60,9 +61,6 @@ function fullName(data: UserJSON): string | null {
   return name || null;
 }
 
-/** Credits granted on sign-up. Matches the Starter tier on the pricing page. */
-const SIGNUP_CREDIT_GRANT = 200;
-
 async function handleUserCreated(data: UserJSON) {
   const email = primaryEmail(data);
   if (!email) {
@@ -72,42 +70,15 @@ async function handleUserCreated(data: UserJSON) {
     return;
   }
 
-  // The ledger entry and the cached balance must commit together, or the
-  // balance is a number nobody can explain. See docs/DECISIONS.md.
-  await prisma.$transaction(async (tx) => {
-    const user = await tx.user.upsert({
-      // Upsert, not create: Svix can deliver `user.created` twice with
-      // different event ids if Clerk itself retries.
-      where: { clerkId: data.id },
-      create: {
-        clerkId: data.id,
-        email,
-        name: fullName(data),
-        imageUrl: data.image_url || null,
-        creditBalance: SIGNUP_CREDIT_GRANT,
-      },
-      update: {
-        email,
-        name: fullName(data),
-        imageUrl: data.image_url || null,
-      },
-    });
-
-    const alreadyGranted = await tx.creditTransaction.findUnique({
-      where: { idempotencyKey: `signup-grant:${data.id}` },
-    });
-
-    if (!alreadyGranted) {
-      await tx.creditTransaction.create({
-        data: {
-          userId: user.id,
-          amount: SIGNUP_CREDIT_GRANT,
-          reason: "SIGNUP_GRANT",
-          balanceAfter: user.creditBalance,
-          idempotencyKey: `signup-grant:${data.id}`,
-        },
-      });
-    }
+  // Shared with the sign-in path in `lib/auth.ts`, so a sign-up completes
+  // whether or not this webhook is reachable. The grant amount, the upsert and
+  // the ledger entry all live in one place — this route used to carry its own
+  // SIGNUP_CREDIT_GRANT = 200 while the pricing page advertised 100.
+  await provisionUser({
+    clerkId: data.id,
+    email,
+    name: fullName(data),
+    imageUrl: data.image_url || null,
   });
 }
 

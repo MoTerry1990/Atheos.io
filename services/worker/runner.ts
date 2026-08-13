@@ -2,6 +2,8 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 
+import { grantFreeMonthlyCredits } from "@/services/billing/free-grant";
+
 import { prisma } from "@/lib/prisma";
 import { pollWithHealth } from "@/services/ai/manager";
 import { settleSuccess } from "@/services/generation";
@@ -69,6 +71,16 @@ export interface TickResult {
   retrying: number;
   webhooksDelivered: number;
   depth: { queued: number; running: number; retrying: number };
+  /**
+   * Free accounts topped up this tick.
+   *
+   * Nothing to do with the job queue — it rides along because the cron that
+   * calls this is the only scheduled execution the deployment has, and a
+   * second one on Vercel's Hobby plan is not available. Reported separately so
+   * a tick that grants nothing is still distinguishable from one that never
+   * tried.
+   */
+  freeGrants: { granted: number; skipped: number; alreadyGranted: number };
   durationMs: number;
 }
 
@@ -99,8 +111,22 @@ export async function runTick(): Promise<TickResult> {
     retrying: 0,
     webhooksDelivered: 0,
     depth: { queued: 0, running: 0, retrying: 0 },
+    freeGrants: { granted: 0, skipped: 0, alreadyGranted: 0 },
     durationMs: 0,
   };
+
+  // First, and outside the job loop's time budget: the monthly free allowance
+  // must not be skipped because the queue happened to be busy. It is a no-op on
+  // every run after the first of the month, so the cost of doing it early is a
+  // single indexed query.
+  //
+  // Failure here must not take the queue down with it — a missed top-up is
+  // recoverable tomorrow, a stalled worker is not.
+  try {
+    result.freeGrants = await grantFreeMonthlyCredits();
+  } catch (error) {
+    console.error("worker tick: free grant sweep failed", error);
+  }
 
   const jobs = await claimJobs(workerId, BATCH_SIZE);
   result.claimed = jobs.length;
