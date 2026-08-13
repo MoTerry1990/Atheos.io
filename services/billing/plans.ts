@@ -56,6 +56,7 @@ const PRICE_IDS: Partial<Record<PlanTier, { month?: string; year?: string }>> =
   };
 
 const PACK_PRICE_IDS: Record<string, string | undefined> = {
+  pack_350: env.STRIPE_PRICE_PACK_350,
   pack_1000: env.STRIPE_PRICE_PACK_1000,
   pack_5000: env.STRIPE_PRICE_PACK_5000,
   pack_20000: env.STRIPE_PRICE_PACK_20000,

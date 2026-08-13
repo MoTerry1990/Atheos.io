@@ -47,52 +47,70 @@ export interface PlanDefinition {
 
 export const CURRENCY = "usd";
 
+/**
+ * The plans.
+ *
+ * **Every feature line here must be true today.** Sequences, audio and the
+ * editor are specified and not built; naming them on a pricing page would be
+ * selling something that does not exist, and the first customer to look for it
+ * stops believing the rest of the list. They go in when they ship.
+ *
+ * Credit counts are translated into outcomes — "11 videos or 250 images" rather
+ * than "1,000 credits" — because a number of credits means nothing to somebody
+ * who has never used the product. The credits are still shown; they are just
+ * not the headline.
+ */
 export const PLAN_DEFINITIONS: readonly PlanDefinition[] = [
   {
     tier: "STARTER",
-    name: "Starter",
-    description: "Enough to find out whether this fits how you work.",
+    name: "Free",
+    description: "One video and a handful of images, to see if it fits.",
     monthly: 0,
     yearly: 0,
-    monthlyCredits: 200,
+    // 100 credits is exactly one video on the fast model, or 25 images. At
+    // measured provider rates that is ~$0.10 per signup — a cheap way to let
+    // somebody find out whether the output is good enough for them.
+    monthlyCredits: 100,
     features: [
-      "Image generation",
-      "Single asset library",
-      "Standard queue",
-      "Community support",
+      "1 video or 25 images",
+      "720p video, fast model",
+      "Image upscaling to 4K",
+      "Full asset library and projects",
+      "Commercial rights to everything you make",
     ],
   },
   {
     tier: "STUDIO",
-    name: "Studio",
-    description: "For people who generate every day and need it to be fast.",
-    monthly: 2400,
-    yearly: 1900,
-    monthlyCredits: 3000,
+    name: "Creator",
+    description: "For one person publishing on a schedule.",
+    monthly: 1599,
+    yearly: 1299,
+    monthlyCredits: 1000,
     features: [
-      "Image, video and audio",
-      "Side-by-side model comparison",
-      "Priority queue",
-      "Collections and tagging",
-      "Automatic refunds on provider failure",
-      "Email support",
+      "11 videos or 250 images a month",
+      "1080p video up to 12 seconds",
+      "Every aspect ratio — 16:9, 9:16, 1:1, 21:9",
+      "Both video models, including Motion Pro",
+      "Image-to-video and reference images",
+      "Background removal and 4K upscaling",
+      "Automatic refund when a provider fails",
     ],
     featured: true,
   },
   {
     tier: "SCALE",
-    name: "Scale",
-    description: "For teams putting generated work into production.",
-    monthly: 7900,
-    yearly: 6400,
-    monthlyCredits: 12_000,
+    name: "Studio",
+    description: "For channels shipping every day, and small teams.",
+    monthly: 3599,
+    yearly: 2899,
+    monthlyCredits: 3000,
     features: [
-      "Everything in Studio",
-      "Highest queue priority",
+      "33 videos or 750 images a month",
+      "Everything in Creator",
       "Bulk generation and export",
-      "Usage analytics and cost breakdown",
-      "Early access to new providers",
-      "Priority support",
+      "Usage and cost breakdown",
+      "Publish to the community gallery",
+      "Email support",
     ],
   },
 ] as const;
@@ -114,13 +132,17 @@ export interface PackDefinition {
 }
 
 export const PACK_DEFINITIONS: readonly PackDefinition[] = [
+  // The cheapest way in. Deliberately a one-off rather than a subscription:
+  // it catches the person who has used their free video and is not ready to
+  // commit to a monthly plan. People who buy it twice tend to subscribe.
+  { id: "pack_350", name: "350 credits", credits: 350, amount: 500 },
   { id: "pack_1000", name: "1,000 credits", credits: 1000, amount: 1200 },
   { id: "pack_5000", name: "5,000 credits", credits: 5000, amount: 5000 },
   { id: "pack_20000", name: "20,000 credits", credits: 20_000, amount: 18_000 },
 ] as const;
 
 /** Credits granted once, when an account is created. Matches Starter. */
-export const SIGNUP_GRANT = 200;
+export const SIGNUP_GRANT = 100;
 
 export function planDefinitionFor(tier: PlanTier): PlanDefinition {
   return (
