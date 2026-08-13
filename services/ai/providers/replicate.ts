@@ -160,6 +160,31 @@ function findModel(modelId: string) {
  * quirk — `go_fast`, `image` vs `img`, strength being inverted — lives here and
  * nowhere else.
  */
+/**
+ * A supported video size for the requested aspect ratio.
+ *
+ * The model accepts exactly four: 1280*720, 720*1280, 1920*1080, 1080*1920.
+ * Anything else fails the whole generation with an opaque `E002` that names no
+ * field — which is what happened on the first real video attempt, because the
+ * adapter sent `aspect_ratio` (correct for the image models, meaningless here).
+ *
+ * Landscape is the default: an unspecified ratio almost always means "normal".
+ */
+function videoSize(aspectRatio: string | undefined): string {
+  switch (aspectRatio) {
+    case "9:16":
+      return "1080*1920";
+    case "1:1":
+      // No square size exists. Portrait is the closer crop of the two, and
+      // silently widening a square request would be the more surprising
+      // outcome.
+      return "1080*1920";
+    case "16:9":
+    default:
+      return "1920*1080";
+  }
+}
+
 function buildInput(
   request: GenerationRequest,
   model: ProviderModel,
@@ -181,7 +206,17 @@ function buildInput(
           : {}),
         ...(source ? { image: source } : {}),
         duration: request.durationSeconds ?? 5,
-        ...(request.aspectRatio ? { aspect_ratio: request.aspectRatio } : {}),
+        // `size`, not `aspect_ratio`.
+        //
+        // The video model takes explicit pixel dimensions from a fixed set and
+        // rejects anything else with an opaque `ModelError (E002)` that names
+        // no field — the whole generation fails and the user gets a refund and
+        // no explanation. Sending `aspect_ratio` (correct for the image models)
+        // is exactly what happened on the first real video attempt.
+        //
+        // Mapping the ratio to a supported size keeps the studio's own
+        // vocabulary — a user picks 16:9, not "1920*1080".
+        size: videoSize(request.aspectRatio),
         ...(request.seed !== undefined ? { seed: request.seed } : {}),
       };
 

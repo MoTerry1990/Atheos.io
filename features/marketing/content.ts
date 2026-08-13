@@ -34,7 +34,11 @@ import { PLAN_DEFINITIONS } from "@/services/billing/catalogue";
  */
 
 export const SITE = {
-  name: "Atheos",
+  // The wordmark, shown in the sidebar, the page title and every OG image.
+  // `Atheos.io` rather than `Atheos` — the domain is the brand here, and the
+  // two being different is the kind of inconsistency people notice without
+  // being able to say why.
+  name: "Atheos.io",
   domain: "atheos.io",
   tagline: "One interface. Every AI model.",
   description:
