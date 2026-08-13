@@ -446,23 +446,55 @@ export async function settleSuccess(
       ({ asset }) => assetKindFor(asset.mimeType) === "IMAGE",
     ).length;
 
-    const videoSeconds = stored.reduce(
+    const generationRow = await tx.generation.findUnique({
+      where: { id: generationId },
+      select: { model: true, parameters: true },
+    });
+
+    /**
+     * Seconds of video produced.
+     *
+     * Preferred from the provider, which knows the truth. **Falls back to the
+     * duration the user asked for**, because most providers — Replicate among
+     * them — return a URL and nothing else.
+     *
+     * Without the fallback this was always 0, and since video is priced
+     * per second (`perSecondMicroUsd`) that made every clip cost
+     * `90_000 x 0 = 0`. The cost engine recorded video as **free**, which is
+     * the one number a margin report cannot survive being wrong about, and it
+     * was wrong in the flattering direction.
+     *
+     * The requested duration is a good fallback: it is what the model was
+     * asked for and what the user was charged for, so a mismatch between it
+     * and the delivered clip is a provider bug worth seeing rather than
+     * quietly absorbing.
+     */
+    const reportedSeconds = stored.reduce(
       (total, { output }) =>
         total + Math.round((output.durationMs ?? 0) / 1000),
       0,
     );
+
+    const requestedSeconds =
+      (generationRow?.parameters as { durationSeconds?: number } | null)
+        ?.durationSeconds ?? 0;
+
+    const videoSeconds =
+      reportedSeconds > 0
+        ? reportedSeconds
+        : // Only for video: an image job has no duration and must stay 0 so
+          // "no video" and "a zero-length video" remain distinguishable.
+          assetKindFor(stored[0]?.asset.mimeType ?? "") === "VIDEO"
+          ? requestedSeconds * stored.length
+          : 0;
 
     // The model is read from the row rather than threaded through the
     // signature: `settleSuccess` is called from two places and both already
     // have the generation id, so a parameter would be the same lookup written
     // twice. `findModel` returns null for a model that has since been retired,
     // in which case the cost is genuinely unknown and recorded as null.
-    const row = await tx.generation.findUnique({
-      where: { id: generationId },
-      select: { model: true },
-    });
 
-    const model = row ? findModel(row.model) : null;
+    const model = generationRow ? findModel(generationRow.model) : null;
 
     const cost = model
       ? estimateCost(model, stored.length, {
