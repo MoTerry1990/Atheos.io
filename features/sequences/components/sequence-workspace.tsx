@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { InputField } from "@/components/ui/field";
 import { Textarea } from "@/components/ui/textarea";
 import { request } from "@/lib/http";
+import { cn } from "@/lib/utils";
 import {
   stitchClips,
   type StitchProgress,
@@ -51,8 +52,53 @@ interface SequenceState {
   scenes: SceneState[];
 }
 
-const CLIP_SECONDS = 5;
-const CREDITS_PER_CLIP = 90;
+/**
+ * What a sequence can be built from.
+ *
+ * **No model generates 15 seconds in one clip.** Motion 1 tops out at 10 and
+ * Motion Pro at 12; that is the state of the art, not a limit we chose. Longer
+ * videos come from more shots, which is the whole reason sequences exist.
+ *
+ * `credits` is the model's per-clip cost multiplied by the duration, matching
+ * `creditsFor` on the server — the quote here and the debit there come from the
+ * same arithmetic, so they cannot disagree.
+ *
+ * One model per sequence, deliberately. The concat is a stream copy, and 720p
+ * and 1080p clips cannot be copied into one file — mixing them would force a
+ * re-encode of the whole video and turn a five-second assembly into minutes.
+ */
+const CLIP_OPTIONS = [
+  {
+    modelId: "replicate/video-gen",
+    label: "Motion 1 · 720p",
+    seconds: 5,
+    credits: 90,
+  },
+  {
+    modelId: "replicate/video-gen",
+    label: "Motion 1 · 720p",
+    seconds: 10,
+    credits: 180,
+  },
+  {
+    modelId: "replicate/video-pro",
+    label: "Motion Pro · 1080p",
+    seconds: 5,
+    credits: 180,
+  },
+  {
+    modelId: "replicate/video-pro",
+    label: "Motion Pro · 1080p",
+    seconds: 10,
+    credits: 360,
+  },
+  {
+    modelId: "replicate/video-pro",
+    label: "Motion Pro · 1080p",
+    seconds: 12,
+    credits: 432,
+  },
+] as const;
 /**
  * Same-origin, proxied to R2 by a rewrite.
  *
@@ -68,6 +114,9 @@ function assetUrl(key: string) {
 export function SequenceWorkspace() {
   const [title, setTitle] = useState("");
   const [scenes, setScenes] = useState<string[]>(["", ""]);
+  const [clip, setClip] = useState<(typeof CLIP_OPTIONS)[number]>(
+    CLIP_OPTIONS[0],
+  );
   const [sequence, setSequence] = useState<SequenceState | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -89,8 +138,8 @@ export function SequenceWorkspace() {
   );
 
   const filled = scenes.map((s) => s.trim()).filter(Boolean);
-  const totalCredits = filled.length * CREDITS_PER_CLIP;
-  const totalSeconds = filled.length * CLIP_SECONDS;
+  const totalCredits = filled.length * clip.credits;
+  const totalSeconds = filled.length * clip.seconds;
 
   /** Poll while anything is still rendering. */
   useEffect(() => {
@@ -119,9 +168,9 @@ export function SequenceWorkspace() {
           method: "POST",
           body: JSON.stringify({
             title: title.trim() || undefined,
-            modelId: "replicate/video-gen",
+            modelId: clip.modelId,
             scenes: filled,
-            clipSeconds: CLIP_SECONDS,
+            clipSeconds: clip.seconds,
             aspectRatio: "16:9",
           }),
         }),
@@ -189,6 +238,28 @@ export function SequenceWorkspace() {
             maxLength={120}
             aria-label="Sequence title"
           />
+
+          {/* Model and clip length together: they are one decision, because the
+              credit cost and the maximum length both follow from the model. */}
+          <div className="flex flex-wrap gap-2">
+            {CLIP_OPTIONS.map((option) => {
+              const selected =
+                option.modelId === clip.modelId &&
+                option.seconds === clip.seconds;
+              return (
+                <Button
+                  key={`${option.modelId}-${option.seconds}`}
+                  type="button"
+                  size="sm"
+                  variant={selected ? "default" : "outline"}
+                  onClick={() => setClip(option)}
+                  className={cn(!selected && "text-muted-foreground")}
+                >
+                  {option.seconds}s · {option.label}
+                </Button>
+              );
+            })}
+          </div>
 
           <div className="space-y-3">
             {scenes.map((scene, index) => (
