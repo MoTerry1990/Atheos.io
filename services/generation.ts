@@ -1,6 +1,7 @@
 import "server-only";
 
 import { requireApiUser } from "@/lib/auth";
+import { isAdmin } from "@/services/admin/auth";
 import { prisma } from "@/lib/prisma";
 import { estimateCost } from "@/services/ai/cost";
 import {
@@ -263,12 +264,38 @@ export async function submitGeneration(input: SubmitInput) {
     };
   } catch (error) {
     const providerFailure = error as ProviderError;
-    await failGeneration(
-      generation.id,
-      providerFailure?.message ?? "The generation could not be started.",
-    );
+
+    /**
+     * Say what actually happened, to the one person who can fix it.
+     *
+     * `insufficient_provider_credit` is a 402 from the vendor: **our** account
+     * has run dry, not the user's. The generic message calls that "temporarily
+     * unavailable", which reads as an outage on our side and is unactionable —
+     * and for a normal user it is the right thing to say, because the fix is
+     * not theirs to make and naming a vendor's billing state to a stranger is
+     * an operational detail they did not ask for.
+     *
+     * For an admin it is exactly the wrong message. The account owner is the
+     * only person who can top the provider up, and they can only do it if they
+     * are told that is the problem. This cost a round trip and half an hour of
+     * looking for a bug that was not there.
+     */
+    const isOwner = await isAdmin().catch(() => false);
+
+    const publicMessage =
+      providerFailure?.message ?? "The generation could not be started.";
+
+    const message =
+      isOwner && providerFailure?.code === "insufficient_provider_credit"
+        ? "The provider account is out of credit — top it up at replicate.com/account/billing. (Shown because you are an admin; other users see a generic message.)"
+        : publicMessage;
+
+    // The *stored* failure keeps the public wording: it is read back on the
+    // generation row by whoever opens it, admin or not.
+    await failGeneration(generation.id, publicMessage);
+
     throw new GenerationError(
-      providerFailure?.message ?? "The generation could not be started.",
+      message,
       502,
       providerFailure?.code ?? "provider_error",
     );
