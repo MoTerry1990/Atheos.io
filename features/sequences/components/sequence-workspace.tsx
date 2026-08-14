@@ -115,19 +115,21 @@ export function SequenceWorkspace() {
   const [title, setTitle] = useState("");
   const [scenes, setScenes] = useState<string[]>(["", ""]);
   /**
-   * Motion Pro at 10 seconds.
+   * Motion 1 at 7.5 seconds — the draft default.
    *
-   * The default was Motion 1, chosen for speed — it renders a clip in about two
-   * minutes against Seedance's ten. That was the wrong trade for this feature.
-   * A sequence is something somebody publishes, and 720p from the fast model
-   * looks like 720p from the fast model. Waiting is recoverable; a finished
-   * video that looks cheap is not.
+   * This was briefly Motion Pro, on the reasoning that a sequence is something
+   * somebody publishes and 720p looks like 720p. Measured usage settled it the
+   * other way: ten Seedance runs burned 1,947 seconds of GPU against 1,163 for
+   * nine wan runs, and video is essentially the entire provider bill — 26
+   * images cost fifteen seconds between them. Seedance roughly doubles the burn
+   * rate per clip, and it emptied the account in an evening of testing.
    *
-   * Motion 1 is still one click away for drafts, where the point is to see
-   * whether the shot list works before paying for the good version.
+   * So the default is the cheap model while the product is still being built.
+   * Prove the shot list at 135 credits and two minutes a clip; re-render on
+   * Motion Pro once the shots have earned it. Both stay one click apart.
    */
   const [clip, setClip] = useState<(typeof CLIP_OPTIONS)[number]>(
-    CLIP_OPTIONS[3],
+    CLIP_OPTIONS[1],
   );
   const [sequence, setSequence] = useState<SequenceState | null>(null);
   const [busy, setBusy] = useState(false);
