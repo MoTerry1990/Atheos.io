@@ -49,8 +49,51 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const baseUrl = env.NEXT_PUBLIC_APP_URL;
   const lastModified = new Date();
 
+  /**
+   * The English page and its Spanish twin, declared as alternates.
+   *
+   * `alternates.languages` is what tells a crawler these are translations of
+   * one page rather than two pages competing for the same terms. Without it
+   * Google picks one and suppresses the other, which for a bilingual site is
+   * the difference between reaching Peru and not.
+   *
+   * `x-default` names the version served to someone whose language we do not
+   * recognise — English, since that is what `/` serves.
+   */
+  function bilingual(
+    enPath: string,
+    esPath: string,
+    priority: number,
+    changeFrequency: "weekly" | "monthly",
+  ): MetadataRoute.Sitemap {
+    const en = `${baseUrl}${enPath}`;
+    const es = `${baseUrl}${esPath}`;
+    const languages = { en, es, "x-default": en };
+
+    return [
+      {
+        url: en,
+        lastModified,
+        changeFrequency,
+        priority,
+        alternates: { languages },
+      },
+      {
+        url: es,
+        lastModified,
+        changeFrequency,
+        priority,
+        alternates: { languages },
+      },
+    ];
+  }
+
   const staticRoutes: MetadataRoute.Sitemap = [
-    { url: baseUrl, lastModified, changeFrequency: "weekly", priority: 1 },
+    // Both the landing page and `/pricing` were missing until Sprint 26 —
+    // along with the whole Spanish site. The pricing page is the one a
+    // comparison search lands on, so its absence was the expensive one.
+    ...bilingual("", "/es", 1, "weekly"),
+    ...bilingual("/pricing", "/es/precios", 0.9, "monthly"),
     {
       url: `${baseUrl}/explore`,
       lastModified,

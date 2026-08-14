@@ -108,6 +108,7 @@ model User {
   creditTransactions CreditTransaction[]
   marketplaceSaves   MarketplaceFavorite[]
   marketplaceItems   MarketplaceInstall[]
+  apiKeys            ApiKey[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -964,4 +965,57 @@ model WebhookEvent {
 
   @@index([source, processedAt])
   @@map("webhook_events")
+}
+
+/// A credential an outside program uses to act as one user.
+///
+/// ## Only the hash is stored
+///
+/// `hash` is SHA-256 of the full key. The plaintext is shown once, at creation,
+/// and never again — a database read must not yield working credentials, and a
+/// support conversation must never be able to recover somebody's key. Losing it
+/// means issuing a new one, which is the correct trade.
+///
+/// SHA-256 rather than bcrypt or argon2 deliberately: this is a 256-bit random
+/// token, not a human-chosen password. There is no dictionary to attack and no
+/// rainbow table to build, so the slow-hash property buys nothing and would cost
+/// ~100ms on every API request.
+///
+/// ## `prefix` exists so a key is identifiable without being usable
+///
+/// The first characters — `atk_live_7f3a…` — are stored in clear so the settings
+/// screen can show *which* key was used or revoked. On its own it authenticates
+/// nothing.
+///
+/// ## Revoking, not deleting
+///
+/// `revokedAt` rather than a row delete, so `lastUsedAt` survives the
+/// revocation. "This key was still being used yesterday" is exactly the question
+/// asked immediately after a leak.
+model ApiKey {
+  id String @id @default(cuid())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// What the person called it. "Claude Desktop", "n8n", "my laptop".
+  name String
+
+  /// Displayable, non-secret. Never sufficient to authenticate.
+  prefix String
+
+  /// SHA-256 of the full key, hex. Unique so a lookup is one indexed read
+  /// rather than a scan-and-compare over every key in the table.
+  hash String @unique
+
+  /// Null until first use. Answers "is this key actually in use" before
+  /// somebody revokes one and breaks a workflow they forgot about.
+  lastUsedAt DateTime?
+
+  revokedAt DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@map("api_keys")
 }

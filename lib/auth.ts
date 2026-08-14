@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 
 import { prisma } from "@/lib/prisma";
 import { provisionUser } from "@/services/users/provision";
+import { resolveApiKey } from "@/services/api-keys";
 // Prisma 7 names generated model types with a `Model` suffix.
 import type { UserModel } from "@/lib/generated/prisma/models";
 
@@ -190,7 +191,29 @@ export class AuthError extends Error {
  */
 export async function requireApiUser(): Promise<UserModel> {
   const userId = await getUserId();
-  if (!userId) throw new AuthError();
+
+  if (!userId) {
+    /**
+     * No session. Try an API key before giving up.
+     *
+     * This is what makes every service reachable by a program — the MCP server
+     * Claude and ChatGPT talk to, a custom GPT action, somebody's script. None
+     * of them has a browser, so none can hold a Clerk cookie.
+     *
+     * Placed here rather than in each route on purpose: this function is the
+     * gate the whole service layer already passes through, so teaching *it*
+     * about keys is what makes the next service work programmatically without
+     * anybody remembering to wire it up.
+     *
+     * A key spends its owner's credits exactly as a session would. That is the
+     * intent, and the reason `revokeApiKey` exists.
+     */
+    const header = (await headers()).get("authorization");
+    const viaKey = await resolveApiKey(header);
+    if (viaKey) return viaKey;
+
+    throw new AuthError();
+  }
 
   // Provisions on first call, same as `requireUser`. Without this the page
   // would render for a webhook-less sign-up and every API call behind it would
