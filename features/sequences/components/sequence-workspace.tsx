@@ -11,6 +11,7 @@ import {
   stitchClips,
   type StitchProgress,
 } from "@/features/sequences/lib/stitch";
+import { SoundtrackPanel } from "@/features/sequences/components/soundtrack-panel";
 
 /**
  * Build a long video from many short clips.
@@ -67,6 +68,9 @@ export function SequenceWorkspace() {
 
   const [stitching, setStitching] = useState<StitchProgress | null>(null);
   const [output, setOutput] = useState<string | null>(null);
+  // The blob itself, because the soundtrack step re-muxes these bytes. An
+  // object URL cannot be read back into ffmpeg without fetching it again.
+  const [outputBlob, setOutputBlob] = useState<Blob | null>(null);
 
   // Revoked on unmount: an object URL for a 30 MB video that outlives the page
   // is 30 MB the tab never gets back.
@@ -143,11 +147,7 @@ export function SequenceWorkspace() {
 
     setError("");
     try {
-      const blob = await stitchClips(urls, setStitching);
-      if (outputRef.current) URL.revokeObjectURL(outputRef.current);
-      const url = URL.createObjectURL(blob);
-      outputRef.current = url;
-      setOutput(url);
+      show(await stitchClips(urls, setStitching));
     } catch (err) {
       setError(
         err instanceof Error
@@ -157,6 +157,15 @@ export function SequenceWorkspace() {
     } finally {
       setStitching(null);
     }
+  }
+
+  /** Replace the preview, releasing the URL the previous one held. */
+  function show(blob: Blob) {
+    if (outputRef.current) URL.revokeObjectURL(outputRef.current);
+    const url = URL.createObjectURL(blob);
+    outputRef.current = url;
+    setOutputBlob(blob);
+    setOutput(url);
   }
 
   const rendered =
@@ -314,6 +323,13 @@ export function SequenceWorkspace() {
               controls
               className="w-full rounded-xl border border-border"
             />
+          ) : null}
+
+          {/* Offered only once there is a video to lay it over. Music is the
+              thing people change their mind about, so it is a second step at
+              20 credits rather than part of a re-render at thousands. */}
+          {outputBlob ? (
+            <SoundtrackPanel video={outputBlob} onScored={show} />
           ) : null}
         </div>
       )}
