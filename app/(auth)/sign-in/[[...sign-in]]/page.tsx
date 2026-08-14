@@ -4,6 +4,8 @@ import { Suspense } from "react";
 
 import { AuthShell } from "@/features/auth/components/auth-shell";
 import { enabledOAuthProviders } from "@/services/auth/providers";
+import { getUserId } from "@/lib/auth";
+import { redirect } from "next/navigation";
 import { SignInForm } from "@/features/auth/components/sign-in-form";
 import { Spinner } from "@/components/ui/loading";
 
@@ -18,6 +20,12 @@ export const metadata: Metadata = { title: "Sign in" };
  * requires a Suspense boundary or the whole route opts out of static rendering.
  */
 export default async function SignInPage() {
+  // Already signed in. Clerk rejects a second sign-in attempt with "You are
+  // already signed in", which renders as a red error under a form the user
+  // cannot use — it reads as a broken account rather than as a redundant
+  // visit. Bounce them to the workspace instead.
+  if (await getUserId()) redirect("/dashboard");
+
   // Asked of Clerk rather than hard-coded, so a button never appears for a
   // provider that is switched off. See services/auth/providers.ts.
   const oauthProviders = await enabledOAuthProviders();

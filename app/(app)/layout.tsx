@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
+import { isAdmin } from "@/services/admin/auth";
 import { AppShell } from "@/features/dashboard/components/app-shell";
 import { ClerkProvider } from "@/providers/clerk-provider";
 import { requireUserId } from "@/lib/auth";
@@ -35,7 +36,11 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
     // Clerk is scoped to this group rather than the root layout — UserButton
     // and session hooks live here, and nothing outside needs them.
     <ClerkProvider>
-      <AppShell creditBalance={creditBalance} notifications={notifications}>
+      <AppShell
+        creditBalance={creditBalance}
+        notifications={notifications}
+        isAdmin={await isAdmin()}
+      >
         {children}
       </AppShell>
     </ClerkProvider>

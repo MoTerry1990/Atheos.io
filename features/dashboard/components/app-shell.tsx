@@ -12,6 +12,7 @@ import {
   Store,
   Wand2,
   Settings,
+  ShieldCheck,
   Sparkles,
   UserRound,
 } from "lucide-react";
@@ -49,6 +50,19 @@ import { SITE } from "@/features/marketing/content";
  * hamburger, the bell and the avatar and nothing else.
  */
 
+/**
+ * Appended only for admins.
+ *
+ * A section rather than an item in Account: it is a different *mode*, not a
+ * setting, and the audit log records what is done there. Until now `/admin`
+ * existed with nothing linking to it, so reaching it meant knowing the URL —
+ * which is security by obscurity where there is already a real check.
+ */
+const ADMIN_SECTION: NavSectionData = {
+  title: "Admin",
+  items: [{ href: "/admin", label: "Admin", icon: ShieldCheck }],
+};
+
 const NAV: NavSectionData[] = [
   {
     title: "Workspace",
@@ -75,8 +89,14 @@ export function AppShell({
   children,
   notifications,
   creditBalance,
+  isAdmin = false,
 }: {
   children: ReactNode;
+  /**
+   * Resolved on the server. Hiding the link is a convenience, never the
+   * control — `app/(admin)/layout.tsx` 404s regardless of what the nav shows.
+   */
+  isAdmin?: boolean;
   notifications: NotificationItem[];
   creditBalance: number;
 }) {
@@ -90,6 +110,8 @@ export function AppShell({
       <span className="truncate font-semibold tracking-tight">{SITE.name}</span>
     </Link>
   );
+
+  const sections = isAdmin ? [...NAV, ADMIN_SECTION] : NAV;
 
   const sidebarFooter = (
     // Points at billing now that it exists. This pill is the fastest route to
@@ -111,12 +133,12 @@ export function AppShell({
 
   return (
     <div className="flex h-dvh overflow-hidden bg-background">
-      <Sidebar sections={NAV} header={brand} footer={sidebarFooter} />
+      <Sidebar sections={sections} header={brand} footer={sidebarFooter} />
 
       <SidebarDrawer
         open={drawerOpen}
         onOpenChange={setDrawerOpen}
-        sections={NAV}
+        sections={sections}
         header={brand}
         footer={sidebarFooter}
       />
