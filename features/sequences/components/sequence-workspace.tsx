@@ -114,8 +114,13 @@ function assetUrl(key: string) {
 export function SequenceWorkspace() {
   const [title, setTitle] = useState("");
   const [scenes, setScenes] = useState<string[]>(["", ""]);
+  // Motion 1 at 10 seconds. Two shots is then a 20-second video, which is the
+  // shortest thing that reads as a finished piece rather than a test — 5s
+  // clips meant a first sequence came out at ten seconds and looked like a
+  // sample. Still the cheap model, so the default does not quietly cost 180
+  // credits a clip.
   const [clip, setClip] = useState<(typeof CLIP_OPTIONS)[number]>(
-    CLIP_OPTIONS[0],
+    CLIP_OPTIONS[1],
   );
   const [sequence, setSequence] = useState<SequenceState | null>(null);
   const [busy, setBusy] = useState(false);
