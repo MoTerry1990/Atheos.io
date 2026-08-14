@@ -1,4 +1,4 @@
-import { CreditCard } from "lucide-react";
+import { CreditCard, KeyRound } from "lucide-react";
 import type { Metadata } from "next";
 import dynamic from "next/dynamic";
 import Link from "next/link";
@@ -83,6 +83,23 @@ export default function SettingsPage() {
           <Link href="/settings/billing">
             <CreditCard />
             Open billing
+          </Link>
+        </Button>
+      </div>
+
+      {/* Same reasoning as billing: a key is something people link to from a
+          config file, and tab state is not linkable. */}
+      <div className="mb-6 flex items-center justify-between gap-3 rounded-lg border border-border p-3">
+        <div className="min-w-0">
+          <p className="text-sm font-medium">API keys</p>
+          <p className="text-xs text-muted-foreground">
+            Use Atheos from Claude, ChatGPT, your editor or your own code.
+          </p>
+        </div>
+        <Button variant="outline" size="sm" asChild>
+          <Link href="/settings/api-keys">
+            <KeyRound />
+            Manage keys
           </Link>
         </Button>
       </div>
