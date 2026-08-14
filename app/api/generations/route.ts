@@ -52,6 +52,7 @@ const submitSchema = z.object({
     "variations",
     "text-to-video",
     "image-to-video",
+    "text-to-audio",
   ]),
   modelId: z.string().min(1),
   // Capped rather than unbounded: an unbounded prompt is a cheap way to make
