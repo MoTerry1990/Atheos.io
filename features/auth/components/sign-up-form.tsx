@@ -279,9 +279,9 @@ export function SignUpForm({
           Create account
         </Button>
 
-        <p className="text-xs text-muted-foreground">
-          By creating an account you agree to our Terms and Privacy Policy.
-        </p>
+        {/* The linked version lives in <ConsentNote /> above the form. This
+            said the same thing again with no links, which is the half that
+            makes the sentence enforceable. */}
       </form>
     </div>
   );

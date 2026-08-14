@@ -4,6 +4,9 @@ import Link from "next/link";
 import { AuthShell } from "@/features/auth/components/auth-shell";
 import { enabledOAuthProviders } from "@/services/auth/providers";
 import { getUserId } from "@/lib/auth";
+// Read, not written twice: this said 200 while the grant was 100, which is a
+// promise the product does not keep on the page that makes it.
+import { SIGNUP_GRANT } from "@/services/billing/catalogue";
 import { redirect } from "next/navigation";
 import { SignUpForm } from "@/features/auth/components/sign-up-form";
 
@@ -23,7 +26,7 @@ export default async function SignUpPage() {
   return (
     <AuthShell
       title="Create your account"
-      description="Start with 200 credits a month, free. No card required."
+      description={`Start with ${SIGNUP_GRANT} credits a month, free. No card required.`}
       footer={
         <>
           Already have an account?{" "}
