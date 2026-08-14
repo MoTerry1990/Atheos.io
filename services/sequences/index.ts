@@ -4,7 +4,11 @@ import { prisma } from "@/lib/prisma";
 import { requireApiUser } from "@/lib/auth";
 import { findModel } from "@/services/ai/registry";
 import { creditsFor } from "@/services/ai/pricing";
-import { GenerationError, submitGeneration } from "@/services/generation";
+import {
+  GenerationError,
+  pollGeneration,
+  submitGeneration,
+} from "@/services/generation";
 
 /**
  * Sequences — long-form video, assembled from many short clips.
@@ -146,7 +150,17 @@ export async function createSequence(input: CreateSequenceInput) {
   // sequence half-fails on 429s that have nothing to do with the prompts. The
   // clips render concurrently on the provider's side regardless — this only
   // paces the submissions.
-  for (const scene of sequence.scenes) {
+  for (const [position, scene] of sequence.scenes.entries()) {
+    // Replicate throttles *creating* predictions to six a minute with a burst
+    // of one while an account is under $5 of credit, and a sequence submits
+    // several back to back. Without this pause the second clip is rejected and
+    // the sequence silently renders one shot — which is exactly what happened
+    // the first time this ran.
+    //
+    // Ten seconds is the documented window plus slack. Polling is not limited
+    // the same way, so this only paces the submissions, not the rendering.
+    if (position > 0) await new Promise((r) => setTimeout(r, 10_000));
+
     try {
       const { generationId } = await submitGeneration({
         operation: "text-to-video",
@@ -190,7 +204,7 @@ export async function createSequence(input: CreateSequenceInput) {
  * Scoped to the caller in the query rather than checked afterwards — the
  * ownership test belongs in the `where`, not in a branch somebody can forget.
  */
-export async function getSequence(id: string) {
+export async function getSequence(id: string, advance = true) {
   const user = await requireApiUser();
 
   const sequence = await prisma.sequence.findFirst({
@@ -217,6 +231,44 @@ export async function getSequence(id: string) {
   });
 
   if (!sequence) throw new SequenceError("No such sequence.", 404, "not_found");
+
+  /**
+   * Advance every clip that has not settled.
+   *
+   * `pollGeneration` is what asks the provider whether a job is done and, when
+   * it is, downloads the output to R2 and settles the credits. In the studio
+   * the browser drives it. A sequence has no such loop, so clips rendered on
+   * Replicate, finished there, and Atheos never noticed — the page sat on
+   * "QUEUED" indefinitely.
+   *
+   * In parallel, and each failure swallowed: one clip that cannot be polled
+   * must not stop the others from being read, and the page reloading is the
+   * retry.
+   */
+  const pending = sequence.scenes
+    .filter(
+      (scene) =>
+        scene.generation &&
+        (scene.generation.status === "QUEUED" ||
+          scene.generation.status === "RUNNING"),
+    )
+    .map((scene) => scene.generation!.id);
+
+  // `advance` guards the recursion below. A clip that is still rendering stays
+  // QUEUED after being polled, so re-reading would find it pending again and
+  // poll forever. One pass per request; the page polling every five seconds is
+  // what makes the next one happen.
+  if (advance && pending.length > 0) {
+    await Promise.all(
+      pending.map((generationId) =>
+        pollGeneration(generationId).catch(() => undefined),
+      ),
+    );
+
+    // Re-read, because the polls above may have settled several of them and the
+    // snapshot taken before is now stale.
+    return getSequence(id, false);
+  }
 
   const states = sequence.scenes.map(
     (scene) => scene.generation?.status ?? "FAILED",
