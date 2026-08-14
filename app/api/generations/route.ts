@@ -67,7 +67,10 @@ const submitSchema = z.object({
   scale: z.number().int().min(2).max(4).optional(),
   // Bounded well below any provider maximum. An unbounded duration is a cheap
   // way to run up a bill on our account.
-  durationSeconds: z.number().int().min(1).max(30).optional(),
+  // Not `.int()`: wan-2.2's longer clip is 121 frames at 16fps, which is 7.5
+  // seconds. Rounding it to 8 in the schema would reject the exact value the
+  // studio sends for the model's own maximum.
+  durationSeconds: z.number().min(1).max(30).optional(),
   cameraMotion: z.string().max(60).optional(),
   parentId: z.string().min(1).optional(),
   collectionId: z.string().min(1).optional(),

@@ -23,7 +23,8 @@ const schema = z.object({
   modelId: z.string().min(1),
   scenes: z.array(z.string().min(1).max(2000)).min(1).max(MAX_SCENES),
   aspectRatio: z.string().max(16).optional(),
-  clipSeconds: z.number().int().min(1).max(30),
+  // See /api/generations — 7.5 is a real clip length, not a rounding error.
+  clipSeconds: z.number().min(1).max(30),
   seed: z.number().int().min(0).max(2_147_483_647).optional(),
 });
 

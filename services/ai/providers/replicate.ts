@@ -121,8 +121,10 @@ const MODELS: (ProviderModel & { version: string })[] = [
       // One clip per run. Video is slow and expensive enough that batching
       // four is a bill nobody asked for.
       maxOutputs: 1,
-      durations: [5, 10],
-      maxDurationSeconds: 10,
+      // The model's two real lengths at 16fps: 81 and 121 frames. Not 5 and
+      // 10 — see videoFrames().
+      durations: [5, 7.5],
+      maxDurationSeconds: 7.5,
       cameraMotions: CAMERA_MOTIONS,
       operations: ["text-to-video", "image-to-video"],
     },
@@ -244,8 +246,20 @@ function findModel(modelId: string) {
  * seconds. Sending 161 for a "10s" request fails outright, which is a bug this
  * file has already had once.
  */
+/**
+ * wan-2.2 takes a frame count, not seconds, and runs at 16fps.
+ *
+ * The two lengths it can actually produce are **81 frames (5.06s)** and
+ * **121 frames (7.56s)** — 121 is the model's hard ceiling. The catalogue used
+ * to advertise 5 and 10 seconds, so somebody choosing "10 seconds" paid twice
+ * the five-second price and received 7.5 seconds. A measured clip is 5.07s and
+ * 10.13s for two of them, which is where this was caught.
+ *
+ * The catalogue now offers 5 and 7.5, and the credit multiplier follows the
+ * real ratio.
+ */
 function videoFrames(durationSeconds: number | undefined): number {
-  return durationSeconds && durationSeconds >= 10 ? 121 : 81;
+  return durationSeconds && durationSeconds > 5 ? 121 : 81;
 }
 
 function buildInput(
