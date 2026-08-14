@@ -228,6 +228,23 @@ const HERO = {
   seed: 7,
 };
 
+/**
+ * The sign-in and sign-up panel.
+ *
+ * Portrait, because the panel is a tall column beside the form rather than a
+ * banner above it. Darker and slower even than the hero: this one sits next to
+ * input fields, and motion beside a field somebody is typing into is the kind
+ * that gets a product called distracting.
+ */
+const AUTH = {
+  name: "auth",
+  prompt:
+    "Slow vertical drift of violet and magenta light through deep black space, " +
+    "soft volumetric haze, gentle continuous upward flow, no camera cuts, " +
+    "abstract, cinematic, very dark, unhurried",
+  seed: 21,
+};
+
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
@@ -343,7 +360,43 @@ async function runImages(jobs: ImageJob[]) {
   return manifest;
 }
 
+async function runAuth() {
+  const file = path.join(OUT, "auth.mp4");
+  if (existsSync(file)) {
+    console.log("auth video … cached");
+    return;
+  }
+
+  process.stdout.write("auth video … ");
+  const url = await replicate(WAN_VIDEO, {
+    prompt: AUTH.prompt,
+    num_frames: 81,
+    aspect_ratio: "9:16",
+    resolution: "720p",
+    seed: AUTH.seed,
+  });
+  await download(url, file);
+  console.log("ok");
+
+  process.stdout.write("auth poster … ");
+  const poster = await replicate(FLUX_SCHNELL, {
+    prompt: `${AUTH.prompt}. ${HOUSE}`,
+    aspect_ratio: "9:16",
+    output_format: "webp",
+    output_quality: 85,
+    num_outputs: 1,
+    seed: AUTH.seed,
+  });
+  await download(poster, path.join(OUT, "auth-poster.webp"));
+  console.log("ok");
+}
+
 async function runHero() {
+  if (existsSync(path.join(OUT, "hero.mp4"))) {
+    console.log("hero video … cached");
+    return;
+  }
+
   process.stdout.write("hero video … ");
   const url = await replicate(WAN_VIDEO, {
     prompt: HERO.prompt,
@@ -378,6 +431,7 @@ async function main() {
   const manifest: Record<string, string> = {};
 
   if (!only || only === "hero") await runHero();
+  if (!only || only === "auth") await runAuth();
   if (!only || only === "images") {
     Object.assign(
       manifest,

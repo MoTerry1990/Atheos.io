@@ -1,5 +1,7 @@
 import { Sparkles } from "lucide-react";
 import Link from "next/link";
+
+import { AuthPanelVideo } from "@/features/auth/components/auth-panel-video";
 import type { ReactNode } from "react";
 
 import { SITE } from "@/features/marketing/content";
@@ -71,6 +73,18 @@ export function AuthShell({
         aria-hidden
         className="relative hidden overflow-hidden border-l bg-surface-sunken lg:block lg:w-1/2"
       >
+        {/* A real generation, from the same wan-2.2 version the product runs —
+            see scripts/generate-marketing-assets.ts. The panel beside a sign-up
+            form is the last thing somebody looks at before deciding whether the
+            output is worth an account, so stock footage here would be the worst
+            possible place for it.
+
+            Suppressed under prefers-reduced-motion, and behind a poster of the
+            same seed, exactly as the hero is. Motion beside fields somebody is
+            typing into is the kind that gets a product called distracting, so
+            this clip is slower and darker than the hero's. */}
+        <AuthPanelVideo />
+
         <div className="absolute inset-0 bg-aurora" />
         <div className="absolute inset-0 bg-grid opacity-40" />
         <div
@@ -97,6 +111,23 @@ export function AuthShell({
           <p className="mt-2 max-w-md text-sm text-muted-foreground">
             {copy.site.description}
           </p>
+
+          {/* The models actually wired up, named. Higgsfield runs a carousel of
+              these beside its form and it is the most informative thing on the
+              page — but every name here resolves to a model in
+              services/ai/providers/replicate.ts, not to a roadmap. */}
+          <div className="mt-8 flex flex-wrap gap-x-6 gap-y-2 border-t border-border/60 pt-5">
+            {[
+              "FLUX",
+              "Motion 1 · 720p",
+              "Motion Pro · 1080p",
+              "4K upscale",
+            ].map((name) => (
+              <span key={name} className="text-xs text-muted-foreground">
+                {name}
+              </span>
+            ))}
+          </div>
         </div>
       </div>
     </div>

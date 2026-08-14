@@ -67,3 +67,6 @@ coverage
 # Stray personal files that are not part of this project.
 *.txt
 !requirements.txt
+
+.vercel
+.env*

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 
 import { AuthShell } from "@/features/auth/components/auth-shell";
+import { enabledOAuthProviders } from "@/services/auth/providers";
 import { SignInForm } from "@/features/auth/components/sign-in-form";
 import { Spinner } from "@/components/ui/loading";
 
@@ -16,7 +17,11 @@ export const metadata: Metadata = { title: "Sign in" };
  * `SignInForm` reads `useSearchParams` for the post-login redirect, which
  * requires a Suspense boundary or the whole route opts out of static rendering.
  */
-export default function SignInPage() {
+export default async function SignInPage() {
+  // Asked of Clerk rather than hard-coded, so a button never appears for a
+  // provider that is switched off. See services/auth/providers.ts.
+  const oauthProviders = await enabledOAuthProviders();
+
   return (
     <AuthShell
       title="Welcome back"
@@ -40,7 +45,7 @@ export default function SignInPage() {
           </div>
         }
       >
-        <SignInForm />
+        <SignInForm oauthProviders={oauthProviders} />
       </Suspense>
     </AuthShell>
   );

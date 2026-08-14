@@ -8,6 +8,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Field, InputField } from "@/components/ui/field";
 import { OAuthButtons } from "@/features/auth/components/oauth-buttons";
+import { ConsentNote } from "@/features/auth/components/consent-note";
 import { OtpInput } from "@/features/auth/components/otp-input";
 import { PasswordField } from "@/features/auth/components/password-field";
 import { toAuthErrorMessage, toFieldErrors } from "@/features/auth/lib/errors";
@@ -35,7 +36,12 @@ import { toAuthErrorMessage, toFieldErrors } from "@/features/auth/lib/errors";
  * Errors are **returned** by the signals API, not thrown, so every call checks
  * its `error` field rather than relying on `try/catch`.
  */
-export function SignUpForm() {
+export function SignUpForm({
+  oauthProviders,
+}: {
+  /** Resolved on the server; see services/auth/providers.ts. */
+  oauthProviders: readonly string[];
+}) {
   const { signUp } = useSignUp();
   const router = useRouter();
 
@@ -212,7 +218,9 @@ export function SignUpForm() {
 
   return (
     <div className="space-y-6">
-      <OAuthButtons disabled={submitting} />
+      <OAuthButtons disabled={submitting} enabled={oauthProviders} />
+
+      <ConsentNote />
 
       <form onSubmit={handleDetails} className="space-y-4">
         {error ? (

@@ -46,7 +46,12 @@ import { toAuthErrorMessage, toFieldErrors } from "@/features/auth/lib/errors";
  * relative path — accepting an absolute URL would make this an open redirect,
  * which is a real phishing vector on a login page.
  */
-export function SignInForm() {
+export function SignInForm({
+  oauthProviders,
+}: {
+  /** Resolved on the server; see services/auth/providers.ts. */
+  oauthProviders: readonly string[];
+}) {
   const { signIn } = useSignIn();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -119,7 +124,7 @@ export function SignInForm() {
 
   return (
     <div className="space-y-6">
-      <OAuthButtons disabled={submitting} />
+      <OAuthButtons disabled={submitting} enabled={oauthProviders} />
 
       <form onSubmit={handleSubmit} className="space-y-4">
         {error ? (

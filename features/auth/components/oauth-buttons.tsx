@@ -54,6 +54,27 @@ const PROVIDERS = [
     ),
   },
   {
+    strategy: "oauth_apple" as const,
+    label: "Apple",
+    icon: (
+      <svg viewBox="0 0 24 24" className="size-4 fill-current" aria-hidden>
+        <path d="M17.05 12.54c-.02-2.2 1.8-3.26 1.88-3.31-1.02-1.5-2.62-1.7-3.19-1.72-1.36-.14-2.65.8-3.34.8-.69 0-1.75-.78-2.87-.76-1.48.02-2.84.86-3.6 2.18-1.53 2.66-.39 6.6 1.1 8.76.73 1.06 1.6 2.25 2.74 2.2 1.1-.04 1.51-.71 2.84-.71 1.32 0 1.7.71 2.86.69 1.18-.02 1.93-1.08 2.65-2.14.83-1.22 1.18-2.41 1.2-2.47-.03-.01-2.3-.88-2.32-3.5zM14.9 5.6c.6-.74 1.01-1.76.9-2.78-.87.04-1.93.58-2.56 1.31-.56.65-1.05 1.69-.92 2.69.97.07 1.96-.49 2.58-1.22z" />
+      </svg>
+    ),
+  },
+  {
+    strategy: "oauth_microsoft" as const,
+    label: "Microsoft",
+    icon: (
+      <svg viewBox="0 0 24 24" className="size-4" aria-hidden>
+        <path fill="#F25022" d="M2 2h9.4v9.4H2z" />
+        <path fill="#7FBA00" d="M12.6 2H22v9.4h-9.4z" />
+        <path fill="#00A4EF" d="M2 12.6h9.4V22H2z" />
+        <path fill="#FFB900" d="M12.6 12.6H22V22h-9.4z" />
+      </svg>
+    ),
+  },
+  {
     strategy: "oauth_github" as const,
     label: "GitHub",
     icon: (
@@ -64,7 +85,19 @@ const PROVIDERS = [
   },
 ];
 
-export function OAuthButtons({ disabled }: { disabled?: boolean }) {
+export function OAuthButtons({
+  disabled,
+  enabled,
+}: {
+  disabled?: boolean;
+  /**
+   * Strategies Clerk reports as enabled, resolved on the server — see
+   * `services/auth/providers.ts`. Rendering the full catalogue instead would
+   * put buttons on screen that fail on click, which is how the GitHub button
+   * came to be broken for every visitor who tried it.
+   */
+  enabled: readonly string[];
+}) {
   const { signIn } = useSignIn();
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState("");
@@ -93,10 +126,25 @@ export function OAuthButtons({ disabled }: { disabled?: boolean }) {
     }
   }
 
+  // Ordered by the catalogue, not by what Clerk happened to return, so the
+  // buttons do not reshuffle between renders.
+  const available = PROVIDERS.filter((provider) =>
+    enabled.includes(provider.strategy),
+  );
+
+  if (available.length === 0) return null;
+
   return (
     <div className="space-y-3">
-      <div className="grid gap-2 sm:grid-cols-2">
-        {PROVIDERS.map((provider) => (
+      {/* One per row below `sm`, and one per row throughout when there are
+          three or more — Higgsfield's stacked layout, which reads faster than a
+          grid when the labels differ in length. */}
+      <div
+        className={
+          available.length === 2 ? "grid gap-2 sm:grid-cols-2" : "grid gap-2"
+        }
+      >
+        {available.map((provider) => (
           <Button
             key={provider.strategy}
             type="button"
