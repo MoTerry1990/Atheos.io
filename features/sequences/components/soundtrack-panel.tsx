@@ -53,10 +53,13 @@ const TRACKS = [
 
 export function SoundtrackPanel({
   video,
+  hasAudio,
   onScored,
 }: {
-  /** The stitched, silent MP4. */
+  /** The stitched MP4 — silent on the first pass, scored on later ones. */
   video: Blob;
+  /** True once a track has been added, so the next one mixes instead of replacing. */
+  hasAudio: boolean;
   onScored: (scored: Blob) => void;
 }) {
   const [track, setTrack] = useState<(typeof TRACKS)[number]>(TRACKS[0]);
@@ -105,7 +108,7 @@ export function SoundtrackPanel({
       }
 
       setStage("mixing");
-      onScored(await muxAudio(video, url, setProgress));
+      onScored(await muxAudio(video, url, setProgress, hasAudio));
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Could not add the soundtrack.",
@@ -163,8 +166,10 @@ export function SoundtrackPanel({
         </Button>
 
         <p className="text-xs text-muted-foreground">
-          {track.seconds}s of audio. Whichever of picture and sound is longer
-          gets trimmed, so the video never ends on silence.
+          {track.seconds}s of audio.{" "}
+          {hasAudio
+            ? "Mixed with the track already on the video, not replacing it."
+            : "Whichever of picture and sound is longer gets trimmed, so the video never ends on silence."}
         </p>
       </div>
 

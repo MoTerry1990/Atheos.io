@@ -131,6 +131,10 @@ export function SequenceWorkspace() {
   // The blob itself, because the soundtrack step re-muxes these bytes. An
   // object URL cannot be read back into ffmpeg without fetching it again.
   const [outputBlob, setOutputBlob] = useState<Blob | null>(null);
+  // Whether the current cut already carries a track. Tracked rather than read
+  // back off the file: probing the stream layout in wasm means a pass over the
+  // whole video, and this is the one place that knows.
+  const [hasAudio, setHasAudio] = useState(false);
 
   // Revoked on unmount: an object URL for a 30 MB video that outlives the page
   // is 30 MB the tab never gets back.
@@ -207,6 +211,9 @@ export function SequenceWorkspace() {
 
     setError("");
     try {
+      // A fresh assembly is silent, so any track added to it replaces rather
+      // than mixes.
+      setHasAudio(false);
       show(await stitchClips(urls, setStitching));
     } catch (err) {
       setError(
@@ -411,7 +418,14 @@ export function SequenceWorkspace() {
               thing people change their mind about, so it is a second step at
               20 credits rather than part of a re-render at thousands. */}
           {outputBlob ? (
-            <SoundtrackPanel video={outputBlob} onScored={show} />
+            <SoundtrackPanel
+              video={outputBlob}
+              hasAudio={hasAudio}
+              onScored={(scored) => {
+                setHasAudio(true);
+                show(scored);
+              }}
+            />
           ) : null}
         </div>
       )}

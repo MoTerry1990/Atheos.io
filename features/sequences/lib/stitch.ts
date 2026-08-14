@@ -157,6 +157,19 @@ export async function muxAudio(
   videoBlob: Blob,
   audioUrl: string,
   onProgress?: (p: StitchProgress) => void,
+  /**
+   * Mix with the audio already on the video rather than replacing it.
+   *
+   * Without this, adding sound effects to a video that already has music
+   * silently discards the music — ffmpeg maps one audio stream and the newer
+   * input wins. The user sees a track they paid 20 credits for disappear, with
+   * nothing saying so.
+   *
+   * Passed in rather than detected: reading the stream layout would mean a
+   * probe pass over the whole file in wasm, and the caller already knows
+   * whether it has added a track.
+   */
+  layer = false,
 ): Promise<Blob> {
   const ffmpeg = await loadFfmpeg(onProgress);
 
@@ -168,11 +181,32 @@ export async function muxAudio(
   await ffmpeg.writeFile("audio.dat", await fetchFile(audioUrl));
 
   onProgress?.({ ratio: 0, stage: "stitching" });
+
   await ffmpeg.exec([
     "-i",
     "video.mp4",
     "-i",
     "audio.dat",
+    ...(layer
+      ? [
+          // Equal-weight mix of the existing track and the new one.
+          //
+          // `duration=first` keeps the result the length of the video's own
+          // audio rather than the longer input, so layering a 30s track over a
+          // 20s film does not extend it. `dropout_transition=0` disables
+          // amix's automatic volume ramp when one input ends — audible as an
+          // unexplained swell a few seconds before the end.
+          "-filter_complex",
+          "[0:a][1:a]amix=inputs=2:duration=first:dropout_transition=0[mix]",
+          "-map",
+          "0:v",
+          "-map",
+          "[mix]",
+        ]
+      : // Nothing to preserve, so take the picture and the new track directly.
+        // Explicit maps rather than ffmpeg's defaults, which pick the "best"
+        // stream across inputs by its own heuristic.
+        ["-map", "0:v", "-map", "1:a"]),
     "-c:v",
     "copy",
     "-c:a",
