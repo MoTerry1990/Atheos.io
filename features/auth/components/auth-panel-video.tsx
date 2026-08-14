@@ -30,12 +30,32 @@ export function AuthPanelVideo() {
   const [allowed, setAllowed] = useState(false);
 
   useEffect(() => {
-    const query = window.matchMedia("(prefers-reduced-motion: reduce)");
-    setAllowed(!query.matches);
+    /**
+     * Two gates, both required.
+     *
+     * The panel this sits in is `hidden lg:block` — **CSS-hidden, not
+     * unmounted**. A `<video>` inside it still downloads, so on a phone this
+     * was three and a half megabytes fetched for a panel the user never sees,
+     * on the page where they are deciding whether to bother signing up. The
+     * width check is not an optimisation, it is the difference between a fast
+     * sign-up on a Peruvian mobile connection and a slow one.
+     *
+     * 1024px matches Tailwind's `lg`. Kept in step by hand, which is the cost
+     * of the container being styled and the video being mounted by two
+     * different systems.
+     */
+    const desktop = window.matchMedia("(min-width: 1024px)");
+    const still = window.matchMedia("(prefers-reduced-motion: reduce)");
 
-    const onChange = (event: MediaQueryListEvent) => setAllowed(!event.matches);
-    query.addEventListener("change", onChange);
-    return () => query.removeEventListener("change", onChange);
+    const evaluate = () => setAllowed(desktop.matches && !still.matches);
+    evaluate();
+
+    desktop.addEventListener("change", evaluate);
+    still.addEventListener("change", evaluate);
+    return () => {
+      desktop.removeEventListener("change", evaluate);
+      still.removeEventListener("change", evaluate);
+    };
   }, []);
 
   useEffect(() => {
