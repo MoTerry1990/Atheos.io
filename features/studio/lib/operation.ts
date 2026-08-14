@@ -29,6 +29,13 @@ export function operationFor(
   const hasReference = params.references.length > 0;
   const video = model.modality === "VIDEO";
 
+  // Audio has exactly one operation and no reference-image variant, so the
+  // branching below — which is entirely about whether a reference was
+  // attached — has nothing to decide. Handled first rather than folded into
+  // the ternary, where it would read as an afterthought and fall through to
+  // "text-to-image" on any future model that lists more than one operation.
+  if (model.modality === "AUDIO") return "text-to-audio";
+
   const preferred: GenerationOperation = video
     ? hasReference
       ? "image-to-video"
@@ -57,6 +64,7 @@ export const OPERATION_LABELS: Record<GenerationOperation, string> = {
   variations: "Variations",
   "text-to-video": "Text to video",
   "image-to-video": "Image to video",
+  "text-to-audio": "Text to audio",
 };
 
 /**

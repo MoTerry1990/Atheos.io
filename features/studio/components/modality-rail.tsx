@@ -58,13 +58,7 @@ interface ModalityOption {
 const MODALITIES: readonly ModalityOption[] = [
   { id: "image", label: "Image", icon: ImageIcon, available: true },
   { id: "video", label: "Video", icon: Video, available: true },
-  {
-    id: "audio",
-    label: "Audio",
-    icon: AudioLines,
-    available: false,
-    unavailableReason: "No provider generates audio yet.",
-  },
+  { id: "audio", label: "Audio", icon: AudioLines, available: true },
   {
     id: "text",
     label: "Text",

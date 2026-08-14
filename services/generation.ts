@@ -61,6 +61,7 @@ const OPERATION_TO_DB: Record<GenerationOperation, DbOperation> = {
   variations: "VARIATIONS",
   "text-to-video": "TEXT_TO_VIDEO",
   "image-to-video": "IMAGE_TO_VIDEO",
+  "text-to-audio": "TEXT_TO_AUDIO",
 };
 
 /**

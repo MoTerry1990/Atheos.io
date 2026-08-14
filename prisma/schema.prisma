@@ -272,6 +272,7 @@ enum GenerationOperation {
   VARIATIONS
   TEXT_TO_VIDEO
   IMAGE_TO_VIDEO
+  TEXT_TO_AUDIO
 }
 
 enum GenerationStatus {

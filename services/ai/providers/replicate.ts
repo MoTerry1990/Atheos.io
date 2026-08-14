@@ -153,6 +153,54 @@ const MODELS: (ProviderModel & { version: string })[] = [
     },
   },
   {
+    id: "replicate/music",
+    providerId: "replicate",
+    displayName: "Score",
+    modality: "AUDIO",
+    // Cheap next to video and not free: musicgen is a real GPU minute. Priced
+    // between an image and a clip, which is where it sits on cost.
+    creditCost: 20,
+    // meta/musicgen.
+    version: "671ac645ce5e552cc63a54a2bbff63fcf798043055d2dac5fc9e36a837eedcfb",
+    capabilities: {
+      supportsNegativePrompt: false,
+      supportsImageInput: false,
+      supportsSeed: true,
+      // Audio has no aspect ratio. Empty rather than absent so the studio
+      // renders no control instead of an empty dropdown.
+      aspectRatios: [],
+      maxOutputs: 1,
+      // A continuous range in the model, but offered as steps for the same
+      // reason the video models are: a slider whose positions are silently
+      // rounded charges people for something they did not choose.
+      durations: [8, 15, 30],
+      maxDurationSeconds: 30,
+      operations: ["text-to-audio"],
+    },
+  },
+  {
+    id: "replicate/sfx",
+    providerId: "replicate",
+    displayName: "Foley",
+    modality: "AUDIO",
+    // Shorter clips and a smaller model than Score.
+    creditCost: 10,
+    // sepal/audiogen — sound effects rather than music. A separate model
+    // because musicgen asked for "a door slamming" returns music *about* a
+    // door slamming, which is not what anybody scoring a video wants.
+    version: "154b3e5141493cb1b8cec976d9aa90f2b691137e39ad906d2421b74c2a8c52b8",
+    capabilities: {
+      supportsNegativePrompt: false,
+      supportsImageInput: false,
+      supportsSeed: true,
+      aspectRatios: [],
+      maxOutputs: 1,
+      durations: [3, 5, 8],
+      maxDurationSeconds: 8,
+      operations: ["text-to-audio"],
+    },
+  },
+  {
     id: "replicate/remove-bg",
     providerId: "replicate",
     displayName: "Background Remover",
@@ -235,6 +283,23 @@ function buildInput(
               resolution: "720p",
             }),
         ...(request.seed !== undefined ? { seed: request.seed } : {}),
+      };
+
+    case "text-to-audio":
+      return {
+        prompt: request.prompt,
+        duration: request.durationSeconds ?? 8,
+        ...(request.seed !== undefined ? { seed: request.seed } : {}),
+        ...(model.id === "replicate/music"
+          ? {
+              // Stereo, and the large weights: this is background score for
+              // video, and mono music under a widescreen clip sounds like a
+              // mistake rather than a choice.
+              model_version: "stereo-large",
+              output_format: "mp3",
+              normalization_strategy: "peak",
+            }
+          : {}),
       };
 
     case "upscale":

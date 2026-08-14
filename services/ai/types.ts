@@ -44,7 +44,8 @@ export type GenerationOperation =
   | "remove-background"
   | "variations"
   | "text-to-video"
-  | "image-to-video";
+  | "image-to-video"
+  | "text-to-audio";
 
 /** Operations that require at least one input image. */
 export const OPERATIONS_REQUIRING_INPUT: ReadonlySet<GenerationOperation> =

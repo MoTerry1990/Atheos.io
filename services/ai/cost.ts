@@ -94,6 +94,19 @@ const COST_BASIS: Record<string, ModelCostBasis> = {
     perSecondMicroUsd: 54_000, // ~$0.27 per 5s clip
     checked: "2026-08-13 (measured)",
   },
+  // Audio, added Sprint 27. Both bill by GPU time rather than per output, so
+  // the rate is per *generated* second and the numbers below are conservative
+  // — an 8s musicgen run took well under a minute of A100 time.
+  "replicate/music": {
+    perOutputMicroUsd: 0,
+    perSecondMicroUsd: 3_000, // ~$0.024 for 8s
+    checked: "2026-08-13 (estimated from run time)",
+  },
+  "replicate/sfx": {
+    perOutputMicroUsd: 0,
+    perSecondMicroUsd: 2_000, // ~$0.010 for 5s
+    checked: "2026-08-13 (estimated from run time)",
+  },
   "openai/gpt-image-1": { perOutputMicroUsd: 40_000, checked: "2026-08" },
 
   // The mock costs nothing. Recorded explicitly so it does not fall into the
