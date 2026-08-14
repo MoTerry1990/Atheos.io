@@ -114,13 +114,20 @@ function assetUrl(key: string) {
 export function SequenceWorkspace() {
   const [title, setTitle] = useState("");
   const [scenes, setScenes] = useState<string[]>(["", ""]);
-  // Motion 1 at 10 seconds. Two shots is then a 20-second video, which is the
-  // shortest thing that reads as a finished piece rather than a test — 5s
-  // clips meant a first sequence came out at ten seconds and looked like a
-  // sample. Still the cheap model, so the default does not quietly cost 180
-  // credits a clip.
+  /**
+   * Motion Pro at 10 seconds.
+   *
+   * The default was Motion 1, chosen for speed — it renders a clip in about two
+   * minutes against Seedance's ten. That was the wrong trade for this feature.
+   * A sequence is something somebody publishes, and 720p from the fast model
+   * looks like 720p from the fast model. Waiting is recoverable; a finished
+   * video that looks cheap is not.
+   *
+   * Motion 1 is still one click away for drafts, where the point is to see
+   * whether the shot list works before paying for the good version.
+   */
   const [clip, setClip] = useState<(typeof CLIP_OPTIONS)[number]>(
-    CLIP_OPTIONS[1],
+    CLIP_OPTIONS[3],
   );
   const [sequence, setSequence] = useState<SequenceState | null>(null);
   const [busy, setBusy] = useState(false);
