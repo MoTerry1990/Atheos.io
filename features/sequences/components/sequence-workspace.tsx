@@ -9,9 +9,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { request } from "@/lib/http";
 import { cn } from "@/lib/utils";
 import {
+  lastFrame,
   stitchClips,
   type StitchProgress,
 } from "@/features/sequences/lib/stitch";
+import { uploadReference } from "@/features/studio/lib/api";
 import { SoundtrackPanel } from "@/features/sequences/components/soundtrack-panel";
 
 /**
@@ -148,6 +150,9 @@ export function SequenceWorkspace() {
   // Revoked on unmount: an object URL for a 30 MB video that outlives the page
   // is 30 MB the tab never gets back.
   const outputRef = useRef<string | null>(null);
+  /** Guards against two ticks submitting the same shot. */
+  const chaining = useRef(false);
+  const [chainNote, setChainNote] = useState("");
   useEffect(
     () => () => {
       if (outputRef.current) URL.revokeObjectURL(outputRef.current);
@@ -159,23 +164,90 @@ export function SequenceWorkspace() {
   const totalCredits = filled.length * clip.credits;
   const totalSeconds = filled.length * clip.seconds;
 
-  /** Poll while anything is still rendering. */
+  /**
+   * Drive the chain.
+   *
+   * Each tick polls, and when the newest clip has landed it extracts that
+   * clip's final frame, uploads it, and submits the next shot starting from
+   * it. That is what makes the shots continuous rather than six variations on
+   * a theme — see `lastFrame` in lib/stitch.ts.
+   *
+   * `chaining` is a ref rather than state because the interval closes over it:
+   * frame extraction takes a few seconds and a second tick must not start a
+   * duplicate submission of the same shot, which would charge twice.
+   */
   useEffect(() => {
     if (!sequence || sequence.status !== "GENERATING") return;
 
     const timer = setInterval(async () => {
+      if (chaining.current) return;
+
+      let current: SequenceState;
       try {
-        setSequence(
-          await request<SequenceState>(`/api/sequences/${sequence.id}`),
-        );
+        current = await request<SequenceState>(`/api/sequences/${sequence.id}`);
+        setSequence(current);
       } catch {
-        // A dropped poll is not a failed sequence — the clips are rendering on
-        // the provider regardless. The next tick picks it up.
+        // A dropped poll is not a failed sequence — the clips render on the
+        // provider regardless. The next tick picks it up.
+        return;
+      }
+
+      const next = current.scenes.find((scene) => !scene.generation);
+      if (!next) return;
+
+      // Only chain once the shot before it has actually landed.
+      const previous = current.scenes[next.index - 1];
+      if (!previous?.generation) return;
+      if (
+        previous.generation.status === "QUEUED" ||
+        previous.generation.status === "RUNNING"
+      ) {
+        return;
+      }
+
+      chaining.current = true;
+      try {
+        let frameKey: string | undefined;
+
+        if (previous.generation.status === "SUCCEEDED") {
+          const key = previous.generation.assets[0]?.storageKey;
+          if (key) {
+            setChainNote(`Reading the last frame of shot ${next.index}…`);
+            const frame = await lastFrame(assetUrl(key));
+            const uploaded = await uploadReference(frame);
+            frameKey = uploaded.storageKey;
+          }
+        }
+
+        // No frame means the previous shot failed. Submit anyway, from text —
+        // a broken link should cost continuity, not the rest of the video.
+        setChainNote(`Starting shot ${next.index + 1}…`);
+        setSequence(
+          await request<SequenceState>(`/api/sequences/${sequence.id}/scenes`, {
+            method: "POST",
+            body: JSON.stringify({
+              index: next.index,
+              modelId: clip.modelId,
+              clipSeconds: clip.seconds,
+              aspectRatio: "16:9",
+              frameKey,
+            }),
+          }),
+        );
+      } catch (err) {
+        setError(
+          err instanceof Error
+            ? `Shot ${next.index + 1} could not be started: ${err.message}`
+            : `Shot ${next.index + 1} could not be started.`,
+        );
+      } finally {
+        setChainNote("");
+        chaining.current = false;
       }
     }, 5000);
 
     return () => clearInterval(timer);
-  }, [sequence]);
+  }, [sequence, clip]);
 
   async function start() {
     setBusy(true);
@@ -359,6 +431,12 @@ export function SequenceWorkspace() {
             {rendered} of {sequence.scenes.length} clips ready
             {sequence.status === "GENERATING" ? " — still rendering" : ""}
           </p>
+
+          {chainNote ? (
+            <p aria-live="polite" className="text-sm text-muted-foreground">
+              {chainNote}
+            </p>
+          ) : null}
 
           <ul className="divide-y divide-border rounded-xl border border-border">
             {sequence.scenes.map((scene) => (

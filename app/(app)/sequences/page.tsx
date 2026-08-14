@@ -25,7 +25,7 @@ export default async function SequencesPage() {
     <Container>
       <PageHeader
         title="Sequences"
-        description="No model generates more than 12 seconds at once. Write the shots, and Atheos renders each one and assembles them into a single video."
+        description="No model generates more than 12 seconds at once. Write the shots, and each one continues from the last frame of the one before it — then Atheos assembles them into a single video."
       />
       <SequenceWorkspace />
     </Container>

@@ -324,3 +324,71 @@ export async function muxAudio(
   onProgress?.({ ratio: 1, stage: "done" });
   return new Blob([data as Uint8Array<ArrayBuffer>], { type: "video/mp4" });
 }
+
+/**
+ * The final frame of a clip, as a PNG file.
+ *
+ * ## What this is for
+ *
+ * Continuity. A sequence used to generate every shot independently with a
+ * shared seed, and a shared seed is a weak constraint — the presenter's face,
+ * the room and the lighting all drifted between shots, because nothing tied
+ * clip N+1 to clip N except a random number.
+ *
+ * Feeding this frame into the next clip as an image-to-video input ties them
+ * together properly: shot two *starts* on the last frame of shot one, so the
+ * cut is continuous rather than a jump to a similar-looking scene. It is the
+ * technique behind every "video extension" feature on the market.
+ *
+ * ## Why `-sseof`
+ *
+ * Seeking from the *end* of the file. Seeking to `duration - 0.1` from the
+ * front requires knowing the duration, and the container's reported duration
+ * and its last decodable frame do not always agree — landing past the end
+ * yields an empty file rather than an error, which would then be uploaded as
+ * a black frame and quietly ruin the next shot.
+ */
+export async function lastFrame(
+  videoUrl: string,
+  onProgress?: (p: StitchProgress) => void,
+): Promise<File> {
+  const ffmpeg = await loadFfmpeg(onProgress);
+
+  onProgress?.({ ratio: 0, stage: "fetching" });
+  await ffmpeg.writeFile("tail.mp4", await fetchFile(videoUrl));
+
+  await ffmpeg.exec([
+    // One second before the end, then take the first frame from there. Not the
+    // very last frame: models trained on video often produce a final frame with
+    // compression artefacts or a fade, and starting the next shot on that
+    // propagates it.
+    "-sseof",
+    "-1",
+    "-i",
+    "tail.mp4",
+    "-vframes",
+    "1",
+    // PNG rather than JPEG: this is the seed for a whole clip, and JPEG ringing
+    // around high-contrast edges is exactly the kind of artefact a model
+    // amplifies.
+    "-f",
+    "image2",
+    "-c:v",
+    "png",
+    "frame.png",
+  ]);
+
+  const data = await ffmpeg.readFile("frame.png");
+
+  for (const name of ["tail.mp4", "frame.png"]) {
+    await ffmpeg.deleteFile(name).catch(() => undefined);
+  }
+
+  const bytes = data as Uint8Array<ArrayBuffer>;
+  if (bytes.length === 0) {
+    throw new Error("Could not read the last frame of that clip.");
+  }
+
+  onProgress?.({ ratio: 1, stage: "done" });
+  return new File([bytes], "frame.png", { type: "image/png" });
+}

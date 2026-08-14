@@ -1,17 +1,14 @@
 import "server-only";
 
 import { prisma } from "@/lib/prisma";
+import { env } from "@/lib/env";
 import { requireApiUser } from "@/lib/auth";
 import { findModel } from "@/services/ai/registry";
 import { creditsFor } from "@/services/ai/pricing";
-import {
-  GenerationError,
-  pollGeneration,
-  submitGeneration,
-} from "@/services/generation";
+import { pollGeneration, submitGeneration } from "@/services/generation";
 
 /**
- * Sequences — long-form video, assembled from many short clips.
+ * Sequences — long-form video, chained shot by shot.
  *
  * No model generates two minutes in one call; the ceiling is 7.5 to 12 seconds.
  * Every product that appears to make long AI video is stitching, and this is
@@ -27,18 +24,28 @@ import {
  * container and an ordering. Building a second pipeline for it would have
  * meant a parallel implementation of the most expensive code in the product.
  *
- * ## Credits are reserved by submitting, not by a separate hold
+ * ## Shots are chained, not generated in parallel
+ *
+ * Each shot after the first starts from the **last frame of the one before
+ * it**, passed as an image-to-video input. That is the difference between one
+ * continuous piece and six clips of six different people wearing the same
+ * jumper — a shared seed constrains style, but carries no face, room or light
+ * direction between clips.
+ *
+ * The consequence is that a sequence is necessarily serial: shot three cannot
+ * start until shot two has rendered. Slower than firing them all at once, and
+ * the only way to get continuity out of models that have no memory between
+ * calls.
+ *
+ * ## Credits are spent per shot, as it is submitted
  *
  * There is no "reserve" concept in the ledger and adding one would mean a new
- * transaction type, a new expiry, and a new way for credits to get stuck. So
- * every clip is submitted up front: each debit is a real generation, and the
- * existing automatic refund covers each failure. A sequence that fails halfway
- * refunds exactly the clips that failed and keeps the ones that worked — which
- * is the behaviour the spec asks for, obtained by doing nothing special.
+ * transaction type, a new expiry, and a new way for credits to get stuck. Each
+ * shot is an ordinary generation with the existing automatic refund, so a
+ * sequence that breaks halfway refunds the failures and keeps what worked.
  *
- * The affordability check still happens first, against the whole sequence, so
- * a user cannot start sixteen clips with credits for four and discover it on
- * clip five.
+ * The affordability check still runs first against the *whole* sequence, so
+ * nobody starts sixteen shots with credits for four and finds out on shot five.
  */
 
 export class SequenceError extends Error {
@@ -143,59 +150,108 @@ export async function createSequence(input: CreateSequenceInput) {
     include: { scenes: { orderBy: { index: "asc" } } },
   });
 
-  // Submitted one at a time, in cut order.
+  // Only the first shot is submitted here.
   //
-  // Serial rather than `Promise.all`: the provider throttles hard when the
-  // account balance is low, and sixteen simultaneous submissions is how a
-  // sequence half-fails on 429s that have nothing to do with the prompts. The
-  // clips render concurrently on the provider's side regardless — this only
-  // paces the submissions.
-  for (const [position, scene] of sequence.scenes.entries()) {
-    // Replicate throttles *creating* predictions to six a minute with a burst
-    // of one while an account is under $5 of credit, and a sequence submits
-    // several back to back. Without this pause the second clip is rejected and
-    // the sequence silently renders one shot — which is exactly what happened
-    // the first time this ran.
-    //
-    // Ten seconds is the documented window plus slack. Polling is not limited
-    // the same way, so this only paces the submissions, not the rendering.
-    if (position > 0) await new Promise((r) => setTimeout(r, 10_000));
+  // The rest are chained by the client, each one starting from the last frame
+  // of the shot before it — see `submitScene`. That cannot happen server-side:
+  // the frame is extracted with the ffmpeg that runs in the browser, and the
+  // provider needs a URL it can fetch, so the round trip through R2 has to be
+  // driven from there.
+  try {
+    const { generationId } = await submitGeneration({
+      operation: "text-to-video",
+      modelId: model.id,
+      prompt: sequence.scenes[0]!.prompt,
+      aspectRatio: input.aspectRatio,
+      durationSeconds: input.clipSeconds,
+      outputs: 1,
+      seed,
+    });
 
-    try {
-      const { generationId } = await submitGeneration({
-        operation: "text-to-video",
-        modelId: model.id,
-        prompt: scene.prompt,
-        aspectRatio: input.aspectRatio,
-        durationSeconds: input.clipSeconds,
-        outputs: 1,
-        seed,
-      });
-
-      await prisma.scene.update({
-        where: { id: scene.id },
-        data: { generationId },
-      });
-    } catch (error) {
-      // One scene failing must not abandon the ones already submitted — they
-      // are real generations that will finish and be worth keeping. The scene
-      // stays without a generation and reads as failed.
-      console.error(
-        `sequence ${sequence.id}: scene ${scene.index} could not be submitted`,
-        error,
-      );
-
-      if (
-        error instanceof GenerationError &&
-        error.code === "insufficient_credits"
-      ) {
-        // Nothing later will succeed either.
-        break;
-      }
-    }
+    await prisma.scene.update({
+      where: { id: sequence.scenes[0]!.id },
+      data: { generationId },
+    });
+  } catch (error) {
+    console.error(`sequence ${sequence.id}: opening shot failed`, error);
+    throw error;
   }
 
   return getSequence(sequence.id);
+}
+
+/**
+ * Submit one shot, continuing from the previous one.
+ *
+ * ## Why this is image-to-video
+ *
+ * `frameUrl` is the last frame of the preceding clip, uploaded by the browser.
+ * Passing it as the input image makes the model *start* on that image, so the
+ * shots join instead of cutting between two similar-looking scenes.
+ *
+ * The old approach — every shot generated independently from a shared seed —
+ * produced six clips of six different people wearing the same jumper. A seed
+ * constrains style; it does not carry a face, a room or a light direction from
+ * one clip to the next.
+ *
+ * Falls back to text-to-video when there is no frame, which is both the opening
+ * shot and the case where the previous clip failed. A broken chain should cost
+ * continuity, not the rest of the video.
+ */
+export async function submitScene(
+  sequenceId: string,
+  index: number,
+  options: {
+    modelId: string;
+    clipSeconds: number;
+    aspectRatio?: string;
+    /** Storage key, not a URL — see the route's schema for why. */
+    frameKey?: string;
+  },
+) {
+  const user = await requireApiUser();
+
+  const scene = await prisma.scene.findFirst({
+    // Ownership in the query, not in a branch after it.
+    where: { index, sequence: { id: sequenceId, userId: user.id } },
+    include: { sequence: { select: { seed: true } } },
+  });
+
+  if (!scene) throw new SequenceError("No such scene.", 404, "not_found");
+
+  // Already submitted. Returning quietly rather than throwing: the client
+  // retries a chain step after a dropped poll, and a double-submit here would
+  // charge twice for one shot.
+  if (scene.generationId) return getSequence(sequenceId);
+
+  const model = findModel(options.modelId);
+  if (!model || model.modality !== "VIDEO") {
+    throw new SequenceError("That model does not generate video.", 400);
+  }
+
+  // Built here, from our own bucket, so a caller cannot aim the provider at an
+  // arbitrary host.
+  const frameUrl = options.frameKey
+    ? `${env.NEXT_PUBLIC_R2_PUBLIC_URL}/${options.frameKey}`
+    : undefined;
+
+  const { generationId } = await submitGeneration({
+    operation: frameUrl ? "image-to-video" : "text-to-video",
+    modelId: model.id,
+    prompt: scene.prompt,
+    aspectRatio: options.aspectRatio,
+    durationSeconds: options.clipSeconds,
+    outputs: 1,
+    seed: scene.sequence.seed ?? undefined,
+    ...(frameUrl ? { inputImageUrls: [frameUrl] } : {}),
+  });
+
+  await prisma.scene.update({
+    where: { id: scene.id },
+    data: { generationId },
+  });
+
+  return getSequence(sequenceId);
 }
 
 /**
