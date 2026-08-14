@@ -11,6 +11,7 @@ import {
   Search,
   Store,
   Wand2,
+  Clapperboard,
   Settings,
   ShieldCheck,
   Sparkles,
@@ -69,6 +70,7 @@ const NAV: NavSectionData[] = [
     items: [
       { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
       { href: "/studio", label: "Studio", icon: Wand2 },
+      { href: "/sequences", label: "Sequences", icon: Clapperboard },
       { href: "/projects", label: "Projects", icon: Layers },
       { href: "/marketplace", label: "Marketplace", icon: Store },
       { href: "/explore", label: "Explore", icon: Compass },

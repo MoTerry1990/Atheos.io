@@ -65,8 +65,19 @@ const CSP_DIRECTIVES = [
   "default-src 'self'",
 
   // Clerk and Stripe both load and execute their own SDKs. Nothing else does,
-  // and `unsafe-eval` is granted to nobody.
-  "script-src 'self' 'unsafe-inline' https://*.clerk.accounts.dev https://*.clerk.com https://js.stripe.com https://challenges.cloudflare.com",
+  // and `unsafe-eval` is still granted to nobody.
+  //
+  // `wasm-unsafe-eval` is a *narrower* grant added in Sprint 27 and is not the
+  // same permission: it allows compiling and instantiating WebAssembly and
+  // nothing else — `eval` and `new Function` on JavaScript stay blocked. It is
+  // required by the ffmpeg build that concatenates a sequence's clips in the
+  // browser. Doing that on the server would mean a 70 MB binary inside a
+  // function that Vercel's Hobby plan kills at 60 seconds.
+  "script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval' https://*.clerk.accounts.dev https://*.clerk.com https://js.stripe.com https://challenges.cloudflare.com",
+
+  // ffmpeg.wasm runs its work off the main thread and builds that worker from
+  // a blob URL. Without this the stitch freezes the tab it runs in.
+  "worker-src 'self' blob:",
 
   // See above — Next's streamed CSS and the theme script need this.
   "style-src 'self' 'unsafe-inline'",
