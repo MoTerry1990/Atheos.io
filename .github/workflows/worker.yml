@@ -1,0 +1,82 @@
+# Runs the background worker on a schedule Vercel's Hobby plan cannot.
+#
+# ## Why this exists
+#
+# `vercel.json` declares one cron, at 03:00 daily, because that is the Hobby
+# plan's limit. The worker's lease is five minutes. Those two numbers together
+# mean a generation whose lease expires — the user closed the tab, an instance
+# was recycled mid-job — sits untouched until three in the morning.
+#
+# For a video that takes ninety seconds, "your clip will be ready tomorrow" is
+# not a beta experience, it is a bug report. GitHub Actions runs this every five
+# minutes for free, which matches the lease exactly.
+#
+# ## Replace this, do not build on it
+#
+# Scheduled Actions are best-effort: GitHub delays them under load, sometimes by
+# ten or fifteen minutes, and skips them entirely on repositories with no recent
+# activity. That is acceptable for recovering stranded jobs and unacceptable as
+# the primary path — the client polls its own generation while the tab is open,
+# which is what makes the common case fast.
+#
+# The right fix is Vercel Pro, where `vercel.json` can declare `*/5 * * * *` and
+# this file is deleted.
+#
+# ## Setup
+#
+# Two repository secrets, under Settings → Secrets and variables → Actions:
+#
+#   WORKER_TRIGGER_SECRET   the same value as in the Vercel environment
+#   PRODUCTION_URL          https://atheos-io.vercel.app
+#
+# Without them every run fails loudly, which is the intent — a worker silently
+# not running is how six sprints passed with `markSucceeded` doing nothing.
+
+name: Worker tick
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  # So a stranded job can be cleared without waiting for the next slot.
+  workflow_dispatch:
+
+# A tick that overruns must not have a second one started on top of it. The
+# claim query is safe under concurrency, but two overlapping runs double the
+# provider polling for no benefit.
+concurrency:
+  group: worker-tick
+  cancel-in-progress: false
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Trigger the worker
+        env:
+          SECRET: ${{ secrets.WORKER_TRIGGER_SECRET }}
+          URL: ${{ secrets.PRODUCTION_URL }}
+        run: |
+          if [ -z "$SECRET" ] || [ -z "$URL" ]; then
+            echo "::error::WORKER_TRIGGER_SECRET and PRODUCTION_URL must both be set as repository secrets."
+            exit 1
+          fi
+
+          # `-w` captures the status separately from the body, so a 401 is
+          # distinguishable from a 200 whose body happens to mention an error.
+          status=$(curl -sS -o /tmp/tick.json -w '%{http_code}' \
+            -X POST "$URL/api/worker/tick" \
+            -H "Authorization: Bearer $SECRET" \
+            --max-time 120)
+
+          echo "HTTP $status"
+          cat /tmp/tick.json
+
+          # Any non-2xx is a real failure: the secret is wrong, the deployment
+          # is down, or the tick threw. All three want a red run rather than a
+          # green one that did nothing.
+          if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
+            echo "::error::Worker tick failed with HTTP $status"
+            exit 1
+          fi

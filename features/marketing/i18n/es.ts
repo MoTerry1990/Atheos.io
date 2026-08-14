@@ -456,17 +456,16 @@ export const ES: MarketingCopy = {
       {
         title: "Empresa",
         links: [
-          { label: "Nosotros", href: "#" },
-          { label: "Contacto", href: "#" },
-          { label: "Trabaje con nosotros", href: "#" },
+          { label: "Conecte sus herramientas", href: "/connect" },
+          { label: "Contacto", href: "mailto:hello@atheos.io" },
         ],
       },
       {
         title: "Legal",
         links: [
-          { label: "Privacidad", href: "#" },
-          { label: "Términos", href: "#" },
-          { label: "Uso aceptable", href: "#" },
+          { label: "Privacidad", href: "/privacy" },
+          { label: "Términos", href: "/terms" },
+          { label: "Uso aceptable", href: "/acceptable-use" },
         ],
       },
     ],

@@ -434,19 +434,22 @@ export const EN: MarketingCopy = {
         ],
       },
       {
+        // "About" and "Careers" were links to `#`. A beta with no About page
+        // should not advertise one, and a careers page for a team of one is a
+        // claim rather than a link. Contact is a real mailbox, and Connect is a
+        // real page — both are more use to a visitor than a dead anchor.
         title: "Company",
         links: [
-          { label: "About", href: "#" },
-          { label: "Contact", href: "#" },
-          { label: "Careers", href: "#" },
+          { label: "Connect your tools", href: "/connect" },
+          { label: "Contact", href: "mailto:hello@atheos.io" },
         ],
       },
       {
         title: "Legal",
         links: [
-          { label: "Privacy", href: "#" },
-          { label: "Terms", href: "#" },
-          { label: "Acceptable use", href: "#" },
+          { label: "Privacy", href: "/privacy" },
+          { label: "Terms", href: "/terms" },
+          { label: "Acceptable use", href: "/acceptable-use" },
         ],
       },
     ],
