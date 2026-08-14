@@ -109,6 +109,7 @@ model User {
   marketplaceSaves   MarketplaceFavorite[]
   marketplaceItems   MarketplaceInstall[]
   apiKeys            ApiKey[]
+  sequences          Sequence[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -292,6 +293,9 @@ enum GenerationStatus {
 
 model Generation {
   id String @id @default(cuid())
+
+  /// The scene this clip belongs to, if it was made for a sequence.
+  scene Scene?
 
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -496,6 +500,9 @@ enum AssetSource {
 
 model Asset {
   id String @id @default(cuid())
+
+  /// Sequences whose stitched output this is.
+  sequenceOutputs Sequence[]
 
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -1019,4 +1026,87 @@ model ApiKey {
 
   @@index([userId, createdAt])
   @@map("api_keys")
+}
+
+enum SequenceStatus {
+  DRAFT
+  GENERATING
+  /// Every clip is done; the browser is concatenating them.
+  STITCHING
+  SUCCEEDED
+  FAILED
+}
+
+/// One user-facing video assembled from many generated clips.
+///
+/// No model generates two minutes in one call — the ceiling is 7.5 to 12
+/// seconds. Every product that appears to make long AI video is stitching, and
+/// this is where Atheos does it. See SEQUENCES_SPEC.md for why the cap is two
+/// minutes rather than five or thirty.
+///
+/// ## Scenes reuse Generation
+///
+/// A clip is an ordinary generation, so it inherits credits, retries, refunds,
+/// R2 storage and the worker for free. A Sequence is a container and an
+/// ordering, not a second pipeline. Getting this wrong would have meant a
+/// parallel implementation of the most expensive code in the product.
+model Sequence {
+  id String @id @default(cuid())
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  title  String?
+  status SequenceStatus @default(DRAFT)
+
+  /// What the user asked for. The clip count is derived from it and the
+  /// model's clip length, so a change of model does not silently change the
+  /// length of somebody's video.
+  targetSeconds Int
+
+  /// Shared by every clip. The single most effective coherence measure there
+  /// is: same seed, different prompt keeps lighting and style from wandering
+  /// between shots.
+  seed Int?
+
+  /// Reserved up front, in one transaction, so a sequence cannot start and
+  /// then run out halfway. Unused clips are refunded on partial failure.
+  creditsCost Int @default(0)
+
+  /// The stitched MP4, once assembled.
+  outputAssetId String?
+  outputAsset   Asset?  @relation(fields: [outputAssetId], references: [id], onDelete: SetNull)
+
+  scenes Scene[]
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  completedAt DateTime?
+
+  @@index([userId, createdAt])
+  @@index([status])
+  @@map("sequences")
+}
+
+/// One shot in a sequence.
+model Scene {
+  id String @id @default(cuid())
+
+  sequenceId String
+  sequence   Sequence @relation(fields: [sequenceId], references: [id], onDelete: Cascade)
+
+  /// Position in the final cut. Not the creation order — scenes can be
+  /// reordered, and the concat must follow the cut rather than the database.
+  index Int
+
+  prompt String @db.Text
+
+  /// The clip. Null until submitted; a failed scene keeps its generation so
+  /// the error is still readable.
+  generationId String?     @unique
+  generation   Generation? @relation(fields: [generationId], references: [id], onDelete: SetNull)
+
+  @@unique([sequenceId, index])
+  @@index([sequenceId])
+  @@map("scenes")
 }
