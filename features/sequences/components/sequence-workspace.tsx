@@ -214,7 +214,9 @@ export function SequenceWorkspace() {
       // A fresh assembly is silent, so any track added to it replaces rather
       // than mixes.
       setHasAudio(false);
-      show(await stitchClips(urls, setStitching));
+      // Passed so the stitcher can tell a silent `-c copy` failure from a
+      // correct result — see the note in lib/stitch.ts.
+      show(await stitchClips(urls, setStitching, urls.length * clip.seconds));
     } catch (err) {
       setError(
         err instanceof Error
@@ -382,7 +384,9 @@ export function SequenceWorkspace() {
                 ? "Loading the assembler (31 MB, once per visit)…"
                 : stitching.stage === "fetching"
                   ? `Collecting clips… ${Math.round(stitching.ratio * 100)}%`
-                  : `Assembling… ${Math.round(stitching.ratio * 100)}%`}
+                  : stitching.stage === "reencoding"
+                    ? "These clips could not be joined without re-encoding — this takes a little longer…"
+                    : `Assembling… ${Math.round(stitching.ratio * 100)}%`}
             </p>
           ) : null}
 

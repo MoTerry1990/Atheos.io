@@ -43,7 +43,7 @@ const CORE_BASE = "/r2/vendor/ffmpeg/0.12";
 export interface StitchProgress {
   /** 0–1 while the concat runs. */
   ratio: number;
-  stage: "loading" | "fetching" | "stitching" | "done";
+  stage: "loading" | "fetching" | "stitching" | "reencoding" | "done";
 }
 
 /**
@@ -80,6 +80,14 @@ async function loadFfmpeg(onProgress?: (p: StitchProgress) => void) {
 export async function stitchClips(
   urls: string[],
   onProgress?: (p: StitchProgress) => void,
+  /**
+   * Expected length, in seconds.
+   *
+   * Used to catch the silent failure described on `-c copy` below. Optional so
+   * the function still works without it, but a caller that knows the answer
+   * should always pass it.
+   */
+  expectedSeconds?: number,
 ): Promise<Blob> {
   if (urls.length === 0) throw new Error("Nothing to stitch.");
 
@@ -130,16 +138,104 @@ export async function stitchClips(
     "out.mp4",
   ]);
 
-  const data = await ffmpeg.readFile("out.mp4");
+  let data = await ffmpeg.readFile("out.mp4");
+  let produced = "out.mp4";
+
+  /**
+   * `-c copy` fails quietly, and this is where that gets caught.
+   *
+   * The concat demuxer requires every input to share the same codec
+   * *parameters* — not just the same codec. wan-2.2 does not guarantee
+   * identical SPS/PPS between runs, so two clips from the same model at the
+   * same resolution can still be incompatible. When they are, ffmpeg logs a
+   * warning and writes a file containing **only the first clip**, exiting 0.
+   *
+   * Six ten-second shots came out as a ten-second video, with a progress bar
+   * that reached 100% and no error anywhere. Nothing short of measuring the
+   * result would have found it.
+   *
+   * The fallback re-encodes, which is slower — tens of seconds rather than
+   * two — and always correct. Attempted only when the cheap path demonstrably
+   * failed, so the common case keeps its speed.
+   */
+  const expected = expectedSeconds ?? urls.length * 5;
+  const copied = await durationOf(ffmpeg, "out.mp4", data);
+
+  if (copied !== null && copied < expected * 0.6) {
+    onProgress?.({ ratio: 0, stage: "reencoding" });
+
+    await ffmpeg.exec([
+      "-f",
+      "concat",
+      "-safe",
+      "0",
+      "-i",
+      "list.txt",
+      // Normalises timestamps across inputs that disagree about them, which is
+      // usually the same disagreement that broke the stream copy.
+      "-fflags",
+      "+genpts",
+      "-c:v",
+      "libx264",
+      "-preset",
+      "veryfast",
+      // Visually lossless for this material without the file size of a lower
+      // number. The source is already model output, not a camera negative.
+      "-crf",
+      "20",
+      "-pix_fmt",
+      "yuv420p",
+      "-movflags",
+      "+faststart",
+      "joined.mp4",
+    ]);
+
+    data = await ffmpeg.readFile("joined.mp4");
+    produced = "joined.mp4";
+  }
 
   // Free the virtual filesystem. Sixteen clips is ~32 MB held in wasm memory
   // that a second stitch on the same page would add to rather than reuse.
-  for (const name of [...names, "list.txt", "out.mp4"]) {
+  for (const name of [...names, "list.txt", "out.mp4", "joined.mp4"]) {
     await ffmpeg.deleteFile(name).catch(() => undefined);
   }
 
   onProgress?.({ ratio: 1, stage: "done" });
+  void produced;
   return new Blob([data as Uint8Array<ArrayBuffer>], { type: "video/mp4" });
+}
+
+/**
+ * How long a file in ffmpeg's virtual filesystem actually is.
+ *
+ * There is no ffprobe in the wasm build, so this reads it back through a
+ * `<video>` element — the browser already has a demuxer and will report
+ * `duration` from the container. Returns null rather than throwing when the
+ * browser cannot read it, so an unverifiable result is treated as fine rather
+ * than triggering a needless re-encode.
+ */
+async function durationOf(
+  _ffmpeg: FFmpeg,
+  _name: string,
+  data: unknown,
+): Promise<number | null> {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(
+      new Blob([data as Uint8Array<ArrayBuffer>], { type: "video/mp4" }),
+    );
+    const probe = document.createElement("video");
+    probe.preload = "metadata";
+
+    const done = (value: number | null) => {
+      URL.revokeObjectURL(url);
+      resolve(value);
+    };
+
+    probe.onloadedmetadata = () =>
+      done(Number.isFinite(probe.duration) ? probe.duration : null);
+    probe.onerror = () => done(null);
+    probe.src = url;
+  });
 }
 
 /**
