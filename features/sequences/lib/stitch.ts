@@ -24,15 +24,21 @@ import { fetchFile } from "@ffmpeg/util";
  * Motion 1 and Motion Pro clips in one sequence is refused upstream: different
  * resolutions cannot be stream-copied together.
  *
- * ## The core is served from our own R2
+ * ## The core is served from our own R2, through our own origin
  *
- * Not from unpkg. The default is a CDN we do not control, on the page where a
- * user's work is assembled, and our CSP does not allow it. 31 MB is also too
- * much to commit to the repository — R2 already serves media, already has an
- * allowed CSP origin, and caches it immutably.
+ * Not from unpkg: that is a CDN we do not control, on the page where a user's
+ * work is assembled, and our CSP does not allow it. 31 MB is also too much to
+ * commit to the repository.
+ *
+ * The URL is `/r2/...` rather than the bucket's public host because the bucket
+ * has no CORS policy and a cross-origin `fetch` is therefore blocked. Every
+ * clip goes through the same proxy for the same reason.
  */
 
-const CORE_BASE = `${process.env.NEXT_PUBLIC_R2_PUBLIC_URL}/vendor/ffmpeg/0.12`;
+// Same-origin, proxied to R2 by a rewrite in next.config.ts. The bucket has no
+// CORS policy, so fetching it directly from pub-*.r2.dev is blocked — see the
+// note on `rewrites()` there.
+const CORE_BASE = "/r2/vendor/ffmpeg/0.12";
 
 export interface StitchProgress {
   /** 0–1 while the concat runs. */

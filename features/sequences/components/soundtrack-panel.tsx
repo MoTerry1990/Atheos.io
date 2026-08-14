@@ -96,9 +96,9 @@ export function SoundtrackPanel({
       // `outputs` carries a storage key rather than a URL; the CDN hostname is
       // an operational detail the DTO deliberately keeps out.
       const key = settled.outputs[0]?.storageKey;
-      const url = key
-        ? `${process.env.NEXT_PUBLIC_R2_PUBLIC_URL}/${key}`
-        : null;
+      // Same-origin proxy, because muxAudio fetches it and the bucket has no
+      // CORS policy. See next.config.ts.
+      const url = key ? `/r2/${key}` : null;
       if (!url) {
         setError("The track rendered with no file, which is a bug. Tell us.");
         return;

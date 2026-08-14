@@ -53,10 +53,16 @@ interface SequenceState {
 
 const CLIP_SECONDS = 5;
 const CREDITS_PER_CLIP = 90;
-const PUBLIC_R2 = process.env.NEXT_PUBLIC_R2_PUBLIC_URL ?? "";
-
+/**
+ * Same-origin, proxied to R2 by a rewrite.
+ *
+ * The `<video>` previews would work against the bucket's public host directly —
+ * media elements do not need CORS — but the stitcher `fetch`es these exact URLs
+ * and that does. One path for both, so a preview that plays cannot be a clip
+ * that fails to assemble.
+ */
 function assetUrl(key: string) {
-  return `${PUBLIC_R2}/${key}`;
+  return `/r2/${key}`;
 }
 
 export function SequenceWorkspace() {

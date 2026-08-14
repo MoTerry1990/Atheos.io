@@ -240,6 +240,33 @@ const nextConfig: NextConfig = {
   // Keep server-only native dependencies out of the bundler's way.
   serverExternalPackages: ["@prisma/client", "@prisma/adapter-pg"],
 
+  /**
+   * Serve R2 objects through our own origin.
+   *
+   * ## Why this exists
+   *
+   * The bucket has **no CORS policy**, so a cross-origin `fetch()` of an object
+   * is blocked by the browser. `<img>` and `<video>` never noticed — they do not
+   * need CORS — but the sequence stitcher fetches both the clips and the 31 MB
+   * ffmpeg core, and every one of those requests would have failed.
+   *
+   * Setting the policy on the bucket is the better fix and needs a token with
+   * bucket-admin rights; the deploy token has object read/write only, and R2
+   * returned 403. Proxying costs a little egress through Vercel and needs
+   * nobody to touch the Cloudflare dashboard, so it ships today. Replace it
+   * with a real CORS rule when convenient — the stitcher only cares that the
+   * URL is same-origin.
+   *
+   * Read-only by construction: a rewrite forwards the method, and the R2 public
+   * host accepts nothing but GET and HEAD.
+   */
+  async rewrites() {
+    const base = process.env.NEXT_PUBLIC_R2_PUBLIC_URL;
+    if (!base) return [];
+
+    return [{ source: "/r2/:path*", destination: `${base}/:path*` }];
+  },
+
   async headers() {
     return [
       { source: "/:path*", headers: securityHeaders },
