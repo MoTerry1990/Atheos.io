@@ -1,6 +1,6 @@
 "use client";
 
-import { AnimatePresence, motion } from "motion/react";
+import { motion } from "motion/react";
 import { Check } from "lucide-react";
 import { useState } from "react";
 
@@ -25,9 +25,18 @@ import { cn } from "@/lib/utils";
  * disappearing and reappearing. It is a small effect that accounts for most of
  * why a tab bar feels expensive.
  *
- * **`mode="wait"` on the panel.** The outgoing panel finishes before the
- * incoming one starts. Without it both are mounted at once, the container jumps
- * to fit whichever is taller, and the whole page shifts underneath the reader.
+ * **No `AnimatePresence`.** There used to be one, wrapping the panel with
+ * `mode="wait"`, and it broke the feature outright: the outgoing panel's exit
+ * animation never reported completion, so the incoming panel was never mounted.
+ * Clicking Video set `aria-selected="true"` and left the Image panel on screen
+ * indefinitely — two of the three things Atheos sells were invisible on its own
+ * homepage, behind tabs that looked like they worked.
+ *
+ * A keyed `motion.div` with no exit variant is what replaced it. React unmounts
+ * the old panel and mounts the new one because the `key` changed, which is a
+ * guarantee; the entry animation is decoration on top of that. Nothing about a
+ * tab panel needs an exit animation, and the one it had was load-bearing in
+ * exactly the wrong way.
  *
  * Tabs are real buttons with `aria-selected`, not styled divs, so the section is
  * operable by keyboard and announced correctly.
@@ -101,51 +110,48 @@ export function AIShowcase() {
       </Reveal>
 
       <div className="mt-10">
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={panel.id}
-            id={`panel-${panel.id}`}
-            role="tabpanel"
-            aria-labelledby={`tab-${panel.id}`}
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: duration.normal, ease: easing.out }}
-            className="grid items-center gap-10 lg:grid-cols-2 lg:gap-16"
-          >
-            <div>
-              <h3 className="text-2xl font-semibold tracking-tight text-balance sm:text-3xl">
-                {panelCopy?.headline}
-              </h3>
-              <p className="mt-4 text-base text-muted-foreground">
-                {panelCopy?.body}
-              </p>
+        <motion.div
+          key={panel.id}
+          id={`panel-${panel.id}`}
+          role="tabpanel"
+          aria-labelledby={`tab-${panel.id}`}
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: duration.normal, ease: easing.out }}
+          className="grid items-center gap-10 lg:grid-cols-2 lg:gap-16"
+        >
+          <div>
+            <h3 className="text-2xl font-semibold tracking-tight text-balance sm:text-3xl">
+              {panelCopy?.headline}
+            </h3>
+            <p className="mt-4 text-base text-muted-foreground">
+              {panelCopy?.body}
+            </p>
 
-              <ul className="mt-8 space-y-3">
-                {(panelCopy?.bullets ?? []).map((bullet) => (
-                  <li key={bullet} className="flex items-start gap-3">
-                    <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-                      <Check className="size-3" strokeWidth={2.5} aria-hidden />
-                    </span>
-                    <span className="text-sm">{bullet}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
+            <ul className="mt-8 space-y-3">
+              {(panelCopy?.bullets ?? []).map((bullet) => (
+                <li key={bullet} className="flex items-start gap-3">
+                  <span className="mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+                    <Check className="size-3" strokeWidth={2.5} aria-hidden />
+                  </span>
+                  <span className="text-sm">{bullet}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
 
-            {/* Order flips on mobile so the artwork does not push the copy
+          {/* Order flips on mobile so the artwork does not push the copy
                 below the fold on a phone. */}
-            <div className="order-first lg:order-last">
-              <div className="relative aspect-[4/3] w-full overflow-hidden rounded-xl ring-1 ring-white/10">
-                <GeneratedImage
-                  src={`showcase-${panel.id}`}
-                  prompt={panelCopy?.headline ?? ""}
-                  sizes="(max-width: 1024px) 100vw, 50vw"
-                />
-              </div>
+          <div className="order-first lg:order-last">
+            <div className="relative aspect-[4/3] w-full overflow-hidden rounded-xl ring-1 ring-white/10">
+              <GeneratedImage
+                src={`showcase-${panel.id}`}
+                prompt={panelCopy?.headline ?? ""}
+                sizes="(max-width: 1024px) 100vw, 50vw"
+              />
             </div>
-          </motion.div>
-        </AnimatePresence>
+          </div>
+        </motion.div>
       </div>
     </Section>
   );

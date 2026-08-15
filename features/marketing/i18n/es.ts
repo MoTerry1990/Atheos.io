@@ -93,7 +93,7 @@ export const ES: MarketingCopy = {
     headline: ["Todos los modelos de IA.", "Una sola interfaz."],
     subheadline:
       "Deje de manejar seis suscripciones y seis formas distintas de trabajar. Atheos reúne la generación de imagen, video y audio en un solo espacio: una biblioteca, un saldo de créditos y un solo lugar que aprender.",
-    primaryCta: { label: "Solicitar acceso anticipado", href: "#pricing" },
+    primaryCta: { label: "Empiece gratis", href: "/sign-up" },
     secondaryCta: { label: "Ver cómo funciona", href: "#how-it-works" },
     stats: [
       { value: "3", label: "Modalidades" },

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { ArrowUpRight } from "lucide-react";
 
 import { GeneratedImage } from "@/features/marketing/components/generated-image";
@@ -42,8 +43,14 @@ export function Templates({ locale }: { locale: Locale }) {
             delay={Math.min(index * 0.05, 0.2)}
             className="w-[78%] shrink-0 snap-start sm:w-[46%] md:w-auto"
           >
-            <a
-              href="#pricing"
+            <Link
+              // Straight into the product, not at the price list. These cards
+              // are the fastest-looking way to start something, and sending
+              // them to pricing read as a paywall on a product with a free
+              // tier. `redirect_url` is what Clerk returns to after sign-up,
+              // so somebody who clicked a template lands in the studio rather
+              // than on a dashboard wondering where it went.
+              href="/sign-up?redirect_url=%2Fstudio"
               className="group block h-full overflow-hidden rounded-2xl border border-border bg-card transition-all duration-300 hover:-translate-y-1 hover:border-primary/30 focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:outline-none motion-reduce:hover:translate-y-0"
             >
               <div className="relative aspect-[4/3] w-full overflow-hidden">
@@ -76,7 +83,7 @@ export function Templates({ locale }: { locale: Locale }) {
                   {copy.templates[index]?.body}
                 </p>
               </div>
-            </a>
+            </Link>
           </Reveal>
         ))}
       </div>

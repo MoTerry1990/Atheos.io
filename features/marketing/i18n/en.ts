@@ -73,7 +73,7 @@ export const EN: MarketingCopy = {
     headline: ["Every AI model.", "One interface."],
     subheadline:
       "Stop juggling six subscriptions and six mental models. Atheos puts image, video and audio generation behind a single workspace — with one library, one credit balance, and one place to learn.",
-    primaryCta: { label: "Request early access", href: "#pricing" },
+    primaryCta: { label: "Start creating free", href: "/sign-up" },
     secondaryCta: { label: "See how it works", href: "#how-it-works" },
     stats: [
       { value: "3", label: "Modalities" },

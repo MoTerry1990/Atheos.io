@@ -99,10 +99,10 @@ export function SiteHeader() {
             className="hidden sm:inline-flex"
             asChild
           >
-            <a href="#pricing">{copy.auth.signIn}</a>
+            <Link href="/sign-in">{copy.auth.signIn}</Link>
           </Button>
           <Button variant="gradient" size="sm" asChild>
-            <a href="#pricing">{copy.auth.signUp}</a>
+            <Link href="/sign-up">{copy.auth.signUp}</Link>
           </Button>
 
           <Sheet open={open} onOpenChange={setOpen}>

@@ -51,25 +51,42 @@ export function Landing({ locale }: { locale: Locale }) {
   return (
     <>
       <Hero />
-      <TrustedBy locale={locale} />
 
       {/* The demo sits directly after the fold. A visitor who has read the hero
-          is asking "what is it actually like", and answering that before the
-          feature list is what stops the page reading as a brochure. */}
+          is asking "what is it actually like", and answering that before
+          anything else is what stops the page reading as a brochure. */}
       <AnimatedDemo />
 
       <AIShowcase />
-      <Features locale={locale} />
-      <HowItWorks locale={locale} />
 
-      {/* Providers before templates: which models are connected is a
-          qualifying question, and a buyer who needs a vendor we do not have
-          should find that out before scrolling a gallery. */}
-      <AIModels />
+      {/* Promoted from ninth.
+          
+          This is eight real generations with the prompt that produced each one
+          — the only unambiguous proof on the page that the product works. It
+          used to sit below the feature list, the provider grid and the
+          templates, which meant a visitor met three sections of claims before
+          a single piece of evidence. */}
+      <Gallery locale={locale} />
 
       <Templates locale={locale} />
-      <Gallery locale={locale} />
+      <HowItWorks locale={locale} />
+      <Features locale={locale} />
+
+      {/* Demoted from seventh. Which providers are connected is a qualifying
+          question for a technical buyer, not an opening argument — and the
+          roadmap half of it was competing for attention with shipped work. */}
+      <AIModels />
+
       <Pricing />
+
+      {/* Demoted from second.
+          
+          Naming Next.js, Vercel and Stripe is credible and reassuring, and it
+          is reassurance — it answers "is this a weekend project", which is a
+          question somebody asks *after* they are interested. It was occupying
+          the second-most valuable position on the page, above every piece of
+          evidence that the product generates anything. */}
+      <TrustedBy locale={locale} />
 
       {/* Renders nothing — `TESTIMONIALS` is empty because there are no
           customers yet. Mounted anyway so the section appears the moment a
