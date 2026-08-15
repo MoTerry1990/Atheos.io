@@ -40,13 +40,12 @@ function delay<T>(value: T): Promise<T> {
 
 const PLANS = PLAN_DEFINITIONS.map((plan) => ({
   ...plan,
+  // Monthly only. The fixture used to mint a `year` id too, which meant the
+  // billing preview rendered a working yearly option for a price that does not
+  // exist in Stripe and a plan that is not sold annually — a preview showing
+  // something the real screen cannot do is worse than no preview.
   priceIds:
-    plan.tier === "FREE"
-      ? {}
-      : {
-          month: `price_fixture_${plan.tier}_m`,
-          year: `price_fixture_${plan.tier}_y`,
-        },
+    plan.tier === "FREE" ? {} : { month: `price_fixture_${plan.tier}_m` },
 }));
 
 const PACKS = PACK_DEFINITIONS.map((pack) => ({

@@ -1,6 +1,9 @@
 import { Check, Minus } from "lucide-react";
 
-import { PLAN_DEFINITIONS, formatMoney } from "@/services/billing/catalogue";
+import {
+  formatMoney,
+  visiblePlanDefinitions,
+} from "@/services/billing/catalogue";
 import { getCopy } from "@/features/marketing/i18n/dictionaries";
 import type { Locale } from "@/features/marketing/i18n/locales";
 import { COMPARISON_ROWS } from "@/features/marketing/plan-comparison-rows";
@@ -84,7 +87,7 @@ export function PlanComparison({ locale }: { locale: Locale }) {
                 <th scope="col" className="px-4 py-3 text-left font-medium">
                   {comparison.feature}
                 </th>
-                {PLAN_DEFINITIONS.map((plan) => (
+                {visiblePlanDefinitions().map((plan) => (
                   <th
                     key={plan.tier}
                     scope="col"
@@ -113,7 +116,7 @@ export function PlanComparison({ locale }: { locale: Locale }) {
                   </th>
                   {row.values.map((value, index) => (
                     <td
-                      key={`${row.label}-${PLAN_DEFINITIONS[index]?.tier ?? index}`}
+                      key={`${row.label}-${visiblePlanDefinitions()[index]?.tier ?? index}`}
                       className="px-4 py-3 text-center text-muted-foreground"
                     >
                       <Cell value={value} labels={comparison} />

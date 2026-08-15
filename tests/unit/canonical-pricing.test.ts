@@ -104,6 +104,30 @@ describe("monthly billing only", () => {
     }
   });
 
+  it("mints no yearly price id, even in the dev fixture", () => {
+    /**
+     * The billing preview builds its own fake price ids. It was still minting
+     * `price_fixture_{TIER}_y` alongside the monthly one, which made the
+     * preview render a working yearly option — for a price that does not exist
+     * in Stripe, on a plan that is not sold annually. A preview showing
+     * something the real screen cannot do is worse than no preview.
+     */
+    const source = readFileSync(
+      resolve(
+        import.meta.dirname,
+        "../../app/(dev)/billing-preview/fixtures.ts",
+      ),
+      "utf8",
+    );
+
+    expect(source.length, "the fixture is empty or unreadable").toBeGreaterThan(
+      500,
+    );
+    expect(source, "the fixture still mints a yearly price id").not.toMatch(
+      /year:\s*`price_fixture/,
+    );
+  });
+
   it("renders no interval toggle on the pricing page or in billing settings", () => {
     // Source-level, because both were React state that no unit test reaches.
     // Each path is resolved and the file length checked, so a moved or renamed
