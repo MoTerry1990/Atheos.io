@@ -1,9 +1,7 @@
 "use client";
 
-import { motion, useReducedMotion } from "motion/react";
 import type { ReactNode } from "react";
 
-import { duration, easing } from "@/components/ui/motion";
 import { cn } from "@/lib/utils";
 
 /**
@@ -39,35 +37,28 @@ export function Section({
 }
 
 /**
- * Scroll-triggered reveal.
+ * Entrance reveal — **CSS only, visible by default**.
  *
- * `once: true` — re-animating on every scroll past turns a long page into a
- * flicker. The negative bottom margin starts the animation slightly before the
- * element reaches the fold so it has settled by the time it is actually looked
- * at, rather than animating in the centre of the screen.
+ * This was a `motion.div` with `initial={{ opacity: 0, y: 24 }}` and a
+ * `whileInView` transition. That writes `style="opacity:0"` into the
+ * server-rendered HTML, so the content only became visible once JavaScript had
+ * loaded, hydrated, and an IntersectionObserver had fired.
  *
- * ## Reduced motion renders a plain div, with no hidden initial state
+ * It failed in production: one Chrome profile showed the background and header
+ * with a blank hero, and clearing site data did not reliably fix it. Forty
+ * elements on the homepage were shipping invisible and waiting on a chain of
+ * four things to go right.
  *
- * `MotionConfig reducedMotion="user"` in `providers/motion-provider` already
- * suppresses the 24px translate. It does **not** suppress the opacity fade —
- * motion treats opacity as a non-vestibular property and keeps animating it —
- * so a reduced-motion reader still got 41 elements fading in on scroll.
+ * Now the animation lives entirely in `styles/globals.css`. The element's
+ * resting state is visible; the `.reveal` class only describes how it arrives.
+ * No JavaScript, no observer, no library, and nothing to fail.
  *
- * Skipping the wrapper entirely is better than shortening the fade, for a
- * reason beyond preference. `initial={{ opacity: 0 }}` is written into the
- * server HTML as an inline style, so those 40 elements — the h1, every h2, the
- * composer, both hero CTAs — arrive **invisible** and depend on JavaScript
- * running *and* an IntersectionObserver firing to appear. That normally
- * happens in milliseconds. When it does not, the page is blank.
+ * `delay` staggers a group. It is applied as `animation-delay`, which under
+ * `both` fill mode holds the opening frame — so a long delay *is* a period of
+ * invisibility. Keep them under ~250ms.
  *
- * It has happened here before: `providers/index.tsx` records a period when
- * `ClerkProvider` threw during hydration and "every animation sat frozen at
- * its initial value" — a homepage that server-rendered perfectly and showed
- * nothing. Removing the hidden initial state for the readers who asked for
- * less motion narrows that blast radius at no cost to anybody else.
- *
- * The `useReducedMotion()` hook returns null on the server and resolves after
- * mount, so the server always emits the animated branch and hydration matches.
+ * Reduced-motion readers never match the rule and see the resting state
+ * immediately.
  */
 export function Reveal({
   children,
@@ -78,20 +69,13 @@ export function Reveal({
   delay?: number;
   className?: string;
 }) {
-  const reduced = useReducedMotion();
-
-  if (reduced) return <div className={className}>{children}</div>;
-
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 24 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, margin: "0px 0px -100px 0px" }}
-      transition={{ duration: duration.slow, ease: easing.out, delay }}
-      className={className}
+    <div
+      className={cn("reveal", className)}
+      style={delay ? { animationDelay: `${delay}s` } : undefined}
     >
       {children}
-    </motion.div>
+    </div>
   );
 }
 

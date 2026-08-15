@@ -838,3 +838,77 @@
   content-visibility: auto;
   contain-intrinsic-size: auto 320px;
 }
+
+/* Entrance animation, in CSS only.
+ *
+ * ## Why this is not JavaScript
+ *
+ * The reveals used to be `motion.div` with `initial={{ opacity: 0 }}`, which
+ * Next writes into the server HTML as an inline style. Forty elements on the
+ * homepage — the h1, every h2, both hero CTAs, the composer — arrived
+ * **invisible** and depended on JavaScript running *and* an
+ * IntersectionObserver firing to appear.
+ *
+ * That is a lot of machinery between a visitor and the first sentence of the
+ * page, and it failed in the field: one Chrome profile rendered the background
+ * and header while the hero stayed blank, in a way that clearing site data did
+ * not reliably fix. `providers/index.tsx` records an earlier instance of the
+ * same class of failure, when a throwing provider left "every animation frozen
+ * at its initial value".
+ *
+ * A CSS animation needs no JavaScript, no hydration, no observer and no
+ * library. If it runs, the content fades in. If anything prevents it from
+ * running, the content is simply *there* — because the element's resting state
+ * is visible and the animation only describes how it arrives.
+ *
+ * `both` fill mode holds the opening frame during `animation-delay`, which is
+ * what makes a stagger possible. Delays are kept short for that reason: the
+ * delay is the only window in which content is not yet visible.
+ *
+ * Under `prefers-reduced-motion: reduce` the rule does not apply at all, so
+ * those readers get the resting state immediately — no fade, no movement, no
+ * waiting.
+ *
+ * The trade against the old behaviour: this animates on load rather than on
+ * scroll, so sections below the fold have finished animating by the time they
+ * are reached. That is a smaller loss than a blank homepage. */
+@keyframes reveal-in {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .reveal {
+    animation: reveal-in 500ms var(--ease-out-quart) both;
+  }
+}
+
+/* Shorter reveal, for content that swaps in place rather than arriving on
+ * load — the showcase tab panels. Same guarantees: visible at rest, animated
+ * only under `no-preference`, no JavaScript involved.
+ *
+ * React remounts the panel when its `key` changes, which restarts the CSS
+ * animation. That is what keeps the crossfade on a tab click while leaving the
+ * first server-rendered panel fully visible. */
+@keyframes reveal-in-sm {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .reveal-sm {
+    animation: reveal-in-sm 240ms var(--ease-out-quart) both;
+  }
+}

@@ -231,7 +231,7 @@ describe("composer state", () => {
 });
 
 describe("Reveal under reduced motion", () => {
-  it("renders children with no hidden initial state", () => {
+  it("renders children with no hidden inline state", () => {
     /**
      * `initial={{ opacity: 0 }}` is written into the server HTML as an inline
      * style — 40 elements on the homepage, including the h1 and every h2 —
@@ -252,7 +252,18 @@ describe("Reveal under reduced motion", () => {
     expect(container.querySelector('[style*="opacity"]')).toBeNull();
   });
 
-  it("still animates for everybody else", () => {
+  it("is visible for everybody else too, animation or not", () => {
+    /**
+     * This used to assert the opposite — that a non-reduced-motion reader got
+     * an inline `opacity` style. That was the bug: the style was `opacity: 0`
+     * in the server HTML, and the content only appeared once JavaScript had
+     * hydrated and an observer had fired. One Chrome profile rendered a blank
+     * hero because of it.
+     *
+     * The entrance is now a CSS class animating *from* a hidden frame *to* the
+     * element's natural, visible resting state. There is no inline opacity in
+     * either branch, and nothing has to run for the text to be readable.
+     */
     reducedMotion = false;
     const { container } = render(
       <Reveal>
@@ -261,6 +272,7 @@ describe("Reveal under reduced motion", () => {
     );
 
     expect(screen.getByText("fades in")).toBeDefined();
-    expect(container.querySelector('[style*="opacity"]')).not.toBeNull();
+    expect(container.querySelector('[style*="opacity"]')).toBeNull();
+    expect(container.querySelector(".reveal")).not.toBeNull();
   });
 });

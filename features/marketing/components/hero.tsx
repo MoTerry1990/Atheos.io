@@ -1,14 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { motion } from "motion/react";
 import { ArrowRight, Play } from "lucide-react";
 
 import { AnimatedBackground } from "@/features/marketing/components/animated-background";
 import { HeroVideo } from "@/features/marketing/components/hero-video";
 import { Button } from "@/components/ui/button";
 import { useCopy } from "@/features/marketing/i18n";
-import { duration, easing } from "@/components/ui/motion";
 
 /**
  * Hero.
@@ -21,25 +19,25 @@ import { duration, easing } from "@/components/ui/motion";
  * definition, and a scroll-triggered animation up here can fail to fire at all
  * if the browser restores a scroll position on reload.
  *
- * Reduced motion is handled globally by `MotionConfig reducedMotion="user"`,
+ * Reduced motion is handled by the `.reveal` rule, which only applies under
+ * `prefers-reduced-motion: no-preference`,
  * which strips the transforms and leaves the opacity fade. Nothing here branches
  * on the preference, which is what keeps it safe under SSR — see
  * `docs/DESIGN-SYSTEM.md`.
  */
 
-const container = {
-  hidden: {},
-  visible: { transition: { staggerChildren: 0.08, delayChildren: 0.05 } },
-};
-
-const item = {
-  hidden: { opacity: 0, y: 16 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    transition: { duration: duration.slow, ease: easing.out },
-  },
-};
+/**
+ * Stagger, as `animation-delay` values.
+ *
+ * These were motion variants with `initial="hidden"` — `opacity: 0` written
+ * into the server HTML for the h1, the subheadline and both CTAs. See
+ * `styles/globals.css` for why that is gone: the hero is the one part of the
+ * page that must never wait on JavaScript to appear.
+ *
+ * Kept small. Under `both` fill mode the delay is a window in which the
+ * element is still transparent, so a long stagger is a long blank hero.
+ */
+const STAGGER = [0, 0.08, 0.16, 0.24, 0.32] as const;
 
 export function Hero() {
   const { hero } = useCopy();
@@ -54,13 +52,8 @@ export function Hero() {
       <AnimatedBackground />
 
       <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
-        <motion.div
-          variants={container}
-          initial="hidden"
-          animate="visible"
-          className="mx-auto max-w-3xl text-center"
-        >
-          <motion.div variants={item}>
+        <div className="mx-auto max-w-3xl text-center">
+          <div className="reveal">
             <a
               href="#showcase"
               className="group inline-flex items-center gap-2 rounded-full border border-border/60 bg-background/50 px-3 py-1 text-xs font-medium text-muted-foreground backdrop-blur-sm transition-colors hover:border-primary/40 hover:text-foreground"
@@ -72,7 +65,7 @@ export function Hero() {
                 aria-hidden
               />
             </a>
-          </motion.div>
+          </div>
 
           {/* The two lines are separate variants children so the headline
               assembles itself rather than arriving as one block. */}
@@ -81,27 +74,30 @@ export function Hero() {
                 it collapses visually — but without it the h1's text content is
                 "Every AI model.One interface.", which is what a screen reader
                 announces and what a crawler indexes. */}
-            <motion.span variants={item} className="block">
+            <span
+              className="reveal block"
+              style={{ animationDelay: `${STAGGER[1]}s` }}
+            >
               {hero.headline[0]}{" "}
-            </motion.span>
-            <motion.span
-              variants={item}
-              className="block text-gradient-brand pb-2"
+            </span>
+            <span
+              className="reveal block text-gradient-brand pb-2"
+              style={{ animationDelay: `${STAGGER[2]}s` }}
             >
               {hero.headline[1]}
-            </motion.span>
+            </span>
           </h1>
 
-          <motion.p
-            variants={item}
-            className="mx-auto mt-6 max-w-2xl text-base text-balance text-muted-foreground sm:text-lg"
+          <p
+            className="reveal mx-auto mt-6 max-w-2xl text-base text-balance text-muted-foreground sm:text-lg"
+            style={{ animationDelay: `${STAGGER[3]}s` }}
           >
             {hero.subheadline}
-          </motion.p>
+          </p>
 
-          <motion.div
-            variants={item}
-            className="mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row"
+          <div
+            className="reveal mt-9 flex flex-col items-center justify-center gap-3 sm:flex-row"
+            style={{ animationDelay: `${STAGGER[4]}s` }}
           >
             {/* Full-width buttons on mobile: a centred pill on a 375px screen
                 wastes the most valuable real estate on the page. */}
@@ -127,7 +123,7 @@ export function Hero() {
                 {hero.secondaryCta.label}
               </a>
             </Button>
-          </motion.div>
+          </div>
 
           {/* The four-tile proof strip lived here and has moved.
           
@@ -137,7 +133,7 @@ export function Hero() {
               studio, one scroll below. Keeping both meant showing the same
               four generations twice within a screen and a half, and it crowded
               the composer that sits directly beneath this. */}
-        </motion.div>
+        </div>
       </div>
     </section>
   );

@@ -164,15 +164,17 @@ export function AIShowcase() {
       </Reveal>
 
       <div className="mt-10">
-        <motion.div
+        {/* Keyed, so React remounts on a tab change and the CSS animation
+            restarts — the crossfade survives. `initial={{ opacity: 0 }}` used
+            to be written into the server HTML, which left the first panel
+            invisible until hydration; the class animates from a visible
+            resting state instead. */}
+        <div
           key={panel.id}
           id={`panel-${panel.id}`}
           role="tabpanel"
           aria-labelledby={`tab-${panel.id}`}
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: duration.normal, ease: easing.out }}
-          className="grid items-center gap-10 lg:grid-cols-2 lg:gap-16"
+          className="reveal-sm grid items-center gap-10 lg:grid-cols-2 lg:gap-16"
         >
           <div>
             <h3 className="text-2xl font-semibold tracking-tight text-balance sm:text-3xl">
@@ -205,7 +207,7 @@ export function AIShowcase() {
               />
             </div>
           </div>
-        </motion.div>
+        </div>
       </div>
     </Section>
   );
