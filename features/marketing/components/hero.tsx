@@ -1,9 +1,11 @@
 "use client";
 
+import Link from "next/link";
 import { motion } from "motion/react";
 import { ArrowRight, Play } from "lucide-react";
 
 import { AnimatedBackground } from "@/features/marketing/components/animated-background";
+import { GeneratedImage } from "@/features/marketing/components/generated-image";
 import { HeroVideo } from "@/features/marketing/components/hero-video";
 import { Button } from "@/components/ui/button";
 import { useCopy } from "@/features/marketing/i18n";
@@ -25,6 +27,26 @@ import { duration, easing } from "@/components/ui/motion";
  * on the preference, which is what keeps it safe under SSR — see
  * `docs/DESIGN-SYSTEM.md`.
  */
+
+/**
+ * Four of the gallery's own generations, reused above the fold.
+ *
+ * Reused rather than newly generated: these are already in `public/marketing`,
+ * already the right aspect ratio, and already carry their prompts. Making four
+ * more would have cost provider credit to say the same thing twice.
+ *
+ * Chosen for contrast against each other — fog, chrome, aurora, neon — so the
+ * row reads as range rather than as four versions of one look.
+ */
+const HERO_PROOF = [
+  {
+    src: "gallery-1",
+    prompt: "Volumetric light through fog, anamorphic lens flare",
+  },
+  { src: "gallery-2", prompt: "Liquid chrome sculpture, studio reflection" },
+  { src: "gallery-3", prompt: "Aurora over black water, long exposure" },
+  { src: "gallery-4", prompt: "Neon rain on glass, shallow depth of field" },
+] as const;
 
 const container = {
   hidden: {},
@@ -110,10 +132,10 @@ export function Hero() {
               className="w-full sm:w-auto"
               asChild
             >
-              <a href={hero.primaryCta.href}>
+              <Link href={hero.primaryCta.href}>
                 {hero.primaryCta.label}
                 <ArrowRight />
-              </a>
+              </Link>
             </Button>
             <Button
               variant="outline"
@@ -128,24 +150,35 @@ export function Hero() {
             </Button>
           </motion.div>
 
-          <motion.dl
+          {/* Real output, above the fold.
+          
+              This replaced a row of statistics — "3 modalities", "1 credit
+              balance" — which were true, abstract, and asked the reader to
+              take the product's word for the only thing they came to check.
+              Four generations with the prompts that made them settle it in the
+              space the numbers occupied.
+
+              `priority` on the first tile only: it is plausibly the LCP
+              element, and marking all four would have them compete with each
+              other and with the headline. */}
+          <motion.ul
             variants={item}
-            className="mx-auto mt-14 grid max-w-lg grid-cols-3 gap-4"
+            className="mx-auto mt-14 grid max-w-3xl grid-cols-2 gap-3 sm:grid-cols-4"
           >
-            {hero.stats.map((stat) => (
-              <div key={stat.label} className="text-center">
-                <dt className="sr-only">{stat.label}</dt>
-                <dd>
-                  <span className="block text-gradient-brand text-3xl font-semibold tracking-tight tabular-nums sm:text-4xl">
-                    {stat.value}
-                  </span>
-                  <span className="mt-1 block text-xs text-muted-foreground sm:text-sm">
-                    {stat.label}
-                  </span>
-                </dd>
-              </div>
+            {HERO_PROOF.map((tile, tileIndex) => (
+              <li
+                key={tile.src}
+                className="relative aspect-square overflow-hidden rounded-xl ring-1 ring-white/10"
+              >
+                <GeneratedImage
+                  src={tile.src}
+                  prompt={tile.prompt}
+                  sizes="(max-width: 640px) 50vw, 25vw"
+                  priority={tileIndex === 0}
+                />
+              </li>
             ))}
-          </motion.dl>
+          </motion.ul>
         </motion.div>
       </div>
     </section>
