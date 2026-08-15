@@ -336,18 +336,34 @@ describe("what the customer is told", () => {
 });
 
 describe("plan configuration", () => {
-  it("configures exactly the four launch plans, plus the retired one", () => {
-    const sellable = PLAN_CONFIGS.filter((plan) => plan.status !== "retired");
+  it("configures exactly the four launch plans and nothing else", () => {
+    // Four values in the enum, four configs, in price order. A fifth of either
+    // is the drift Sprint 4.1 removed.
+    expect(PLAN_CONFIGS.map((plan) => plan.tier)).toEqual([
+      "FREE",
+      "CREATOR",
+      "PRO",
+      "STUDIO",
+    ]);
 
-    expect(sellable.map((plan) => plan.displayName)).toEqual([
+    expect(PLAN_CONFIGS.map((plan) => plan.displayName)).toEqual([
       "Free",
       "Creator",
       "Pro",
       "Studio",
     ]);
-    expect(sellable.map((plan) => plan.monthlyPriceCents)).toEqual([
+    expect(PLAN_CONFIGS.map((plan) => plan.monthlyPriceCents)).toEqual([
       0, 999, 3499, 8999,
     ]);
+  });
+
+  it("names every tier after the plan it actually is", () => {
+    // The Sprint 4.1 invariant. The enum value and the customer-facing name
+    // must be the same word, so nobody has to keep a translation table in
+    // their head and no report can say "AGENCY now represents the $89.99 tier".
+    for (const plan of PLAN_CONFIGS) {
+      expect(plan.tier).toBe(plan.displayName.toUpperCase());
+    }
   });
 
   it("derives every provisional allocation from its provider allowance", () => {
@@ -355,7 +371,7 @@ describe("plan configuration", () => {
     // drift is invisible: a plan quietly budgeted for more spend than it earns.
     for (const plan of PLAN_CONFIGS) {
       if (plan.provisionalCreditsPerMonth === null) continue;
-      if (plan.tier === "STARTER") continue; // fixed at the signup grant
+      if (plan.tier === "FREE") continue; // fixed at the signup grant
 
       expect(
         plan.provisionalCreditsPerMonth,
@@ -395,7 +411,7 @@ describe("plan configuration", () => {
   });
 
   it("raises the limits monotonically with price", () => {
-    const paid = PLAN_CONFIGS.filter((plan) => plan.status !== "retired").sort(
+    const paid = [...PLAN_CONFIGS].sort(
       (a, b) => a.monthlyPriceCents - b.monthlyPriceCents,
     );
 
@@ -410,9 +426,9 @@ describe("plan configuration", () => {
   });
 
   it("holds the Free plan to images and audio, one at a time", () => {
-    const free = planConfigFor("STARTER");
+    const free = planConfigFor("FREE");
 
-    expect(isFreeTier("STARTER")).toBe(true);
+    expect(isFreeTier("FREE")).toBe(true);
     expect(free.eligibleModalities).not.toContain("VIDEO");
     expect(free.maxConcurrentJobs).toBe(1);
     expect(free.maxModelClass).toBe("economical");
@@ -421,9 +437,9 @@ describe("plan configuration", () => {
   it("falls back to the least privileged plan on an unknown tier", () => {
     // A bug must not hand somebody the top tier's concurrency.
     // @ts-expect-error deliberately invalid, which is the case being tested
-    expect(planConfigFor("NOT_A_TIER").tier).toBe("STARTER");
-    expect(planConfigFor(null).tier).toBe("STARTER");
-    expect(planConfigFor(undefined).tier).toBe("STARTER");
+    expect(planConfigFor("NOT_A_TIER").tier).toBe("FREE");
+    expect(planConfigFor(null).tier).toBe("FREE");
+    expect(planConfigFor(undefined).tier).toBe("FREE");
   });
 
   it("refuses a model whose cost is unknown, on every plan", () => {

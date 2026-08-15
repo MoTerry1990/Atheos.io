@@ -283,7 +283,7 @@ describe("plan-aware generation limits", () => {
 
     const verdict = await checkGenerationLimits({
       userId: "u1",
-      tier: "STARTER",
+      tier: "FREE",
     });
 
     expect(verdict.allowed).toBe(false);
@@ -301,7 +301,7 @@ describe("plan-aware generation limits", () => {
 
     const verdict = await checkGenerationLimits({
       userId: "u2",
-      tier: "SCALE",
+      tier: "PRO",
     });
 
     expect(verdict.allowed).toBe(true);
@@ -317,6 +317,6 @@ describe("plan-aware generation limits", () => {
     const verdict = await checkGenerationLimits({ userId: "u3", tier: null });
 
     expect(verdict.allowed).toBe(false);
-    expect(verdict.plan.tier).toBe("STARTER");
+    expect(verdict.plan.tier).toBe("FREE");
   });
 });

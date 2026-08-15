@@ -40,25 +40,26 @@ export interface CreditPack extends PackDefinition {
   priceId?: string;
 }
 
+/**
+ * Stripe price ids, per plan.
+ *
+ * **Monthly only.** Sprint 4 retired annual billing — a year of money taken
+ * against provider costs that have not been measured is the wrong direction to
+ * be wrong in — so there is no `year` id to configure, and `priceFor` returns
+ * undefined for a yearly request rather than quietly charging the monthly rate
+ * twelve times.
+ *
+ * The variable names follow the `PlanTier` value, which since Sprint 4.1 is
+ * also the plan's name. `STRIPE_PRICE_STUDIO_MONTHLY` is the $89.99 Studio
+ * plan; it used to be `STRIPE_PRICE_AGENCY_MONTHLY` for a plan called Studio,
+ * which is the class of confusion that sprint existed to end.
+ */
 const PRICE_IDS: Partial<Record<PlanTier, { month?: string; year?: string }>> =
   {
-    BASIC: {
-      month: env.STRIPE_PRICE_BASIC_MONTHLY,
-      year: env.STRIPE_PRICE_BASIC_YEARLY,
-    },
-    STUDIO: {
-      month: env.STRIPE_PRICE_STUDIO_MONTHLY,
-      year: env.STRIPE_PRICE_STUDIO_YEARLY,
-    },
-    SCALE: {
-      month: env.STRIPE_PRICE_SCALE_MONTHLY,
-      year: env.STRIPE_PRICE_SCALE_YEARLY,
-    },
-    AGENCY: {
-      month: env.STRIPE_PRICE_AGENCY_MONTHLY,
-      year: env.STRIPE_PRICE_AGENCY_YEARLY,
-    },
-    // STARTER has none deliberately: the free tier is the *absence* of a
+    CREATOR: { month: env.STRIPE_PRICE_CREATOR_MONTHLY },
+    PRO: { month: env.STRIPE_PRICE_PRO_MONTHLY },
+    STUDIO: { month: env.STRIPE_PRICE_STUDIO_MONTHLY },
+    // FREE has none deliberately: the free tier is the *absence* of a
     // subscription, not a zero-amount one. A $0 Stripe subscription still asks
     // for a card, which is exactly the friction a free tier exists to avoid.
   };
@@ -105,6 +106,9 @@ export function resolvePriceId(
     if (plan.priceIds.month === priceId) {
       return { tier: plan.tier, interval: "MONTH" };
     }
+    // Kept so a subscription created before annual billing was retired still
+    // resolves to a tier rather than to null. `priceIds.year` is undefined for
+    // every plan now, so this matches nothing new.
     if (plan.priceIds.year === priceId) {
       return { tier: plan.tier, interval: "YEAR" };
     }
@@ -147,10 +151,11 @@ export function billingConfigurationProblems(): string[] {
   }
 
   for (const plan of PLANS) {
-    if (plan.tier === "STARTER") continue;
+    if (plan.tier === "FREE") continue;
     if (!plan.priceIds.month)
       problems.push(`STRIPE_PRICE_${plan.tier}_MONTHLY`);
-    if (!plan.priceIds.year) problems.push(`STRIPE_PRICE_${plan.tier}_YEARLY`);
+    // No yearly check. Annual billing was retired in Sprint 4, so a missing
+    // yearly price is the configured state rather than a problem to report.
   }
 
   for (const pack of CREDIT_PACKS) {

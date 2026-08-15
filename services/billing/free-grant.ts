@@ -117,7 +117,7 @@ export async function auditFreeGrants(): Promise<FreeGrantAudit> {
 
   const freeUsers = await prisma.user.count({
     where: {
-      OR: [{ subscription: null }, { subscription: { planTier: "STARTER" } }],
+      OR: [{ subscription: null }, { subscription: { planTier: "FREE" } }],
     },
   });
 

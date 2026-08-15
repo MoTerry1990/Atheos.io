@@ -168,12 +168,12 @@ export function BillingScreen({
     }
 
     // No subscription yet: this is a purchase, so it goes through Checkout.
-    if (!current.stripeSubscriptionId && tier !== "STARTER") {
+    if (!current.stripeSubscriptionId && tier !== "FREE") {
       setPendingTier(tier);
       const result = await withBusy(
         () =>
           api.startSubscriptionCheckout(
-            tier as "BASIC" | "STUDIO" | "SCALE" | "AGENCY",
+            tier as "CREATOR" | "PRO" | "STUDIO",
             interval,
           ),
         "Could not start checkout",
@@ -198,14 +198,14 @@ export function BillingScreen({
     setPendingTier(tier);
     const result = await withBusy(
       () =>
-        tier === "STARTER" ? api.cancelPlan() : api.changePlan(tier, interval),
+        tier === "FREE" ? api.cancelPlan() : api.changePlan(tier, interval),
       "Could not change your plan",
     );
     setPendingTier(null);
 
     if (result) {
       toast.success(
-        tier === "STARTER" ? "Subscription cancelled" : "Plan changed",
+        tier === "FREE" ? "Subscription cancelled" : "Plan changed",
         result.effective === "period_end"
           ? "You keep everything until the end of the period you have paid for."
           : "Your new allowance appears once Stripe confirms the payment.",
@@ -619,7 +619,7 @@ export function BillingScreen({
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {confirming === "STARTER"
+              {confirming === "FREE"
                 ? "Cancel your subscription?"
                 : `Move to ${data.plans.find((plan) => plan.tier === confirming)?.name}?`}
             </AlertDialogTitle>
@@ -648,7 +648,7 @@ export function BillingScreen({
                 if (tier) void applyChange(tier);
               }}
             >
-              {confirming === "STARTER" ? "Cancel subscription" : "Confirm"}
+              {confirming === "FREE" ? "Cancel subscription" : "Confirm"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

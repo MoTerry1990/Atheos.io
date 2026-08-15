@@ -1,7 +1,9 @@
 "use client";
 
-import { Menu, Sparkles } from "lucide-react";
+import { Menu } from "lucide-react";
 import Link from "next/link";
+
+import { BrandLink } from "@/components/layout/brand-link";
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -12,7 +14,6 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
-import { SITE } from "@/features/marketing/content";
 import { useCopy, useHref, useLocale } from "@/features/marketing/i18n";
 import { pathFor } from "@/features/marketing/i18n/locales";
 import { cn } from "@/lib/utils";
@@ -57,19 +58,10 @@ export function SiteHeader() {
         aria-label="Main"
         className="mx-auto flex h-16 w-full max-w-7xl items-center gap-6 px-4 sm:px-6 lg:px-8"
       >
-        <Link
-          href={pathFor("home", locale)}
-          className="flex shrink-0 items-center gap-2 font-semibold tracking-tight"
-        >
-          <span className="flex size-8 items-center justify-center rounded-lg bg-gradient-brand">
-            <Sparkles
-              className="size-4 text-white"
-              strokeWidth={2}
-              aria-hidden
-            />
-          </span>
-          {SITE.name}
-        </Link>
+        {/* `/` in English, `/es` in Spanish — the only brand link that has
+            ever had a locale to respect, and the only one that was already
+            correct. It shares `BrandLink` now so it cannot drift back. */}
+        <BrandLink href={pathFor("home", locale)} />
 
         {/* Centred rather than left-aligned against the wordmark: four items
             in the middle of a wide bar reads as navigation, four items pushed

@@ -47,7 +47,7 @@ describe("plan catalogue", () => {
     // a number on a pricing card. Only the Free grant is settled today.
     for (const plan of visiblePlanDefinitions()) {
       if (plan.monthlyCredits !== null) {
-        expect(plan.tier).toBe("STARTER");
+        expect(plan.tier).toBe("FREE");
         expect(plan.monthlyCredits).toBe(SIGNUP_GRANT);
       } else {
         expect(plan.status).toBe("launch_disabled");
@@ -59,7 +59,7 @@ describe("plan catalogue", () => {
     for (const plan of PLAN_DEFINITIONS) {
       expect(Object.keys(plan)).not.toContain("yearly");
     }
-    // The $199 Agency tier is gone; AGENCY now labels the $89.99 top plan.
+    // The $199 Agency tier is gone; STUDIO now labels the $89.99 top plan.
     expect(visiblePlanDefinitions().map((p) => p.name)).not.toContain("Agency");
     expect(visiblePlanDefinitions()).toHaveLength(4);
   });
@@ -72,9 +72,9 @@ describe("plan catalogue", () => {
     const visible = visiblePlanDefinitions();
     const ranks = visible.map((p) => rankOf(p.tier));
     expect(ranks).toEqual([...ranks].sort((a, b) => a - b));
-    expect(isUpgrade("STARTER", "AGENCY")).toBe(true);
-    expect(isUpgrade("AGENCY", "STARTER")).toBe(false);
-    expect(isUpgrade("BASIC", "BASIC")).toBe(false);
+    expect(isUpgrade("FREE", "STUDIO")).toBe(true);
+    expect(isUpgrade("STUDIO", "FREE")).toBe(false);
+    expect(isUpgrade("CREATOR", "CREATOR")).toBe(false);
   });
 
   it("does not sell a pack at the same price as a plan", () => {

@@ -1,7 +1,23 @@
--- Sprint 4 — financial safety, credit ledger and abuse protection.
+-- Sprint 4 + 4.1 — financial safety, credit ledger, abuse protection, and the
+-- canonical plan tiers.
 --
 -- Closes B1 (no spending control), B2 (credit race), B7 (ineffective rate
--- limiter) at the schema level. B5 and B6 are code-only and need nothing here.
+-- limiter) at the schema level, and rebuilds `PlanTier` so its values are the
+-- plan names. B5 and B6 are code-only and need nothing here.
+--
+-- ## Why this is one migration and not two
+--
+-- The Sprint 4 half of this file was written, committed and **never applied**.
+-- Sprint 4.1 amended it in place rather than chaining a second migration on
+-- top, because a follow-up that corrects something no database has ever seen
+-- leaves a permanent two-step in the history explaining a mistake that never
+-- reached anyone. One unapplied migration is easier to review and impossible
+-- to half-apply in the wrong order.
+--
+-- The directory was renamed from `20260814000000_financial_safety` for the
+-- same reason. If any environment has already applied the old name — none has,
+-- see docs/OPERATIONS.md § 6 — do **not** apply this; resolve it as a rename
+-- in `_prisma_migrations` first.
 --
 -- ## Safe to rerun
 --
@@ -144,7 +160,97 @@ CREATE INDEX IF NOT EXISTS "rate_limit_buckets_expiresAt_idx"
   ON rate_limit_buckets ("expiresAt");
 
 -- ---------------------------------------------------------------------------
--- 5. Ledger read paths
+-- 5. PlanTier — the values become the plan names (Sprint 4.1)
+-- ---------------------------------------------------------------------------
+--
+-- ## What changes
+--
+--   STARTER -> FREE      $0
+--   STUDIO  -> CREATOR   $9.99
+--   SCALE   -> PRO       $34.99
+--   AGENCY  -> STUDIO    $89.99
+--   BASIC   -> dropped   the retired $5 tier, never sold
+--
+-- ## Why a rebuild rather than ALTER TYPE ... RENAME VALUE
+--
+-- It is a **rotation**, not a set of independent renames. `STUDIO` has to
+-- become `CREATOR` at the same moment `AGENCY` becomes `STUDIO`, and Postgres
+-- cannot hold two values named `STUDIO` in between. Renaming through a
+-- temporary name would work and would leave the type's internal sort order
+-- scrambled, which is visible in `enum_range()` and in any ORDER BY on the
+-- column.
+--
+-- Building a fresh type and converting the column with an explicit `USING`
+-- map is deterministic, states every mapping in one place, and fails loudly on
+-- a value nobody planned for rather than silently dropping the row.
+--
+-- ## Safety
+--
+-- `subscriptions` is expected to hold **zero rows** — Stripe has never been
+-- configured, so nothing has ever been sold. The conversion is written to be
+-- correct anyway: every old value has an explicit destination, and `BASIC`
+-- maps to `FREE` rather than erroring, because a row on a retired $5 tier that
+-- somehow exists is closest to a free account and must not block the migration
+-- or be silently deleted.
+--
+-- The `ALTER TABLE ... ALTER COLUMN TYPE` takes an ACCESS EXCLUSIVE lock and
+-- rewrites the table. On zero rows that is sub-millisecond. The guard below
+-- makes the whole block a no-op once it has run, so the migration is still
+-- safe to rerun.
+
+DO $$
+BEGIN
+  -- Already rebuilt? Then there is nothing to do. Detected by looking for a
+  -- value that only exists after the rotation.
+  IF EXISTS (
+    SELECT 1 FROM pg_enum e
+      JOIN pg_type t ON t.oid = e.enumtypid
+     WHERE t.typname = 'PlanTier' AND e.enumlabel = 'CREATOR'
+  ) THEN
+    RETURN;
+  END IF;
+
+  CREATE TYPE "PlanTier_new" AS ENUM ('FREE', 'CREATOR', 'PRO', 'STUDIO');
+
+  -- The default has to go first: Postgres will not convert a column whose
+  -- default expression is still typed as the old enum.
+  ALTER TABLE subscriptions ALTER COLUMN "planTier" DROP DEFAULT;
+
+  ALTER TABLE subscriptions
+    ALTER COLUMN "planTier" TYPE "PlanTier_new"
+    USING (
+      CASE "planTier"::text
+        WHEN 'STARTER' THEN 'FREE'
+        WHEN 'BASIC'   THEN 'FREE'     -- retired $5 tier; nearest surviving plan
+        WHEN 'STUDIO'  THEN 'CREATOR'
+        WHEN 'SCALE'   THEN 'PRO'
+        WHEN 'AGENCY'  THEN 'STUDIO'
+      END
+    )::"PlanTier_new";
+
+  -- `scheduledTier` holds a pending downgrade and is nullable. Same map; NULL
+  -- passes through untouched because CASE returns NULL for a NULL input.
+  ALTER TABLE subscriptions
+    ALTER COLUMN "scheduledTier" TYPE "PlanTier_new"
+    USING (
+      CASE "scheduledTier"::text
+        WHEN 'STARTER' THEN 'FREE'
+        WHEN 'BASIC'   THEN 'FREE'
+        WHEN 'STUDIO'  THEN 'CREATOR'
+        WHEN 'SCALE'   THEN 'PRO'
+        WHEN 'AGENCY'  THEN 'STUDIO'
+      END
+    )::"PlanTier_new";
+
+  DROP TYPE "PlanTier";
+  ALTER TYPE "PlanTier_new" RENAME TO "PlanTier";
+
+  ALTER TABLE subscriptions
+    ALTER COLUMN "planTier" SET DEFAULT 'FREE'::"PlanTier";
+END $$;
+
+-- ---------------------------------------------------------------------------
+-- 6. Ledger read paths
 -- ---------------------------------------------------------------------------
 --
 -- `listCapturedFailures()` looks up capture/release rows by idempotency key,

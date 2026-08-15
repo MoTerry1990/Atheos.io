@@ -26,24 +26,28 @@ import {
  * `server-only` because the fields below include the provider allowance each
  * plan is budgeted for, which is a margin disclosure.
  *
- * ## The four plans, and the enum values behind them
+ * ## The four plans
  *
- * The stored `PlanTier` enum has five values and predates this sprint. It is
- * **not** being changed, because a migration that rewrites stored entitlements
- * is a risk taken for tidiness. The mapping:
+ * `PlanTier` has exactly four values and each one is the plan's name:
  *
- *   STARTER  ->  Free      $0
- *   BASIC    ->  retired   was "Starter" $5 — no longer sold
- *   STUDIO   ->  Creator   $9.99
- *   SCALE    ->  Pro       $34.99
- *   AGENCY   ->  Studio    $89.99   (was "Agency" $199)
+ *   FREE     $0
+ *   CREATOR  $9.99
+ *   PRO      $34.99
+ *   STUDIO   $89.99
  *
- * `AGENCY` now denotes the $89.99 top tier rather than the $199 one. That is
- * only safe because **no subscription row exists on any tier** — Stripe has
- * never been configured, so nothing has ever been sold. It is listed as a
- * manual pre-flight check in `docs/OPERATIONS.md`: confirm `subscriptions` is
- * empty before this reaches production, and if it is not, add a real enum value
- * instead of reusing one.
+ * Sprint 4 left the old five-value enum in place and mapped it — `AGENCY` for
+ * the plan called Studio, `STUDIO` for the plan called Creator — on the
+ * reasoning that a stored entitlement must not change meaning when marketing
+ * renames a plan. That reasoning is sound and it did not apply here: no
+ * subscription row has ever existed, because Stripe has never been configured.
+ * What the mapping actually bought was a codebase where the top tier's
+ * identifier was the name of a plan that had been deleted.
+ *
+ * Sprint 4.1 rotated the values to match, once, while it was free. See
+ * `prisma/schema.prisma` for why the migration rebuilds the type instead of
+ * renaming values in place, and `docs/OPERATIONS.md` § 6 for the pre-flight
+ * check that `subscriptions` is still empty. **After that window closes, add a
+ * value; never rotate one.**
  *
  * ## Credit allocations are deliberately unfinished
  *
@@ -117,16 +121,18 @@ export interface PlanConfig {
   maxModelClass: ModelClass;
 
   /**
-   * `active`         sellable and enforceable today
+   * `active`          sellable and enforceable today
    * `launch_disabled` configured, priced, and not offered — credits unverified
-   * `retired`        exists only so historical rows resolve to something
+   *
+   * No `retired`. Sprint 4.1 deleted the one retired tier from the enum, so
+   * there is nothing left for a retired config to resolve.
    */
-  status: "active" | "launch_disabled" | "retired";
+  status: "active" | "launch_disabled";
 }
 
 export const PLAN_CONFIGS: readonly PlanConfig[] = [
   {
-    tier: "STARTER",
+    tier: "FREE",
     displayName: "Free",
     monthlyPriceCents: 0,
     // Not monthly — a **one-time** grant. Sprint 4 changed this; see
@@ -148,7 +154,7 @@ export const PLAN_CONFIGS: readonly PlanConfig[] = [
     status: "active",
   },
   {
-    tier: "STUDIO",
+    tier: "CREATOR",
     displayName: "Creator",
     monthlyPriceCents: 999,
     creditsPerMonth: null,
@@ -162,7 +168,7 @@ export const PLAN_CONFIGS: readonly PlanConfig[] = [
     status: "launch_disabled",
   },
   {
-    tier: "SCALE",
+    tier: "PRO",
     displayName: "Pro",
     monthlyPriceCents: 3499,
     creditsPerMonth: null,
@@ -176,7 +182,7 @@ export const PLAN_CONFIGS: readonly PlanConfig[] = [
     status: "launch_disabled",
   },
   {
-    tier: "AGENCY",
+    tier: "STUDIO",
     displayName: "Studio",
     monthlyPriceCents: 8999,
     creditsPerMonth: null,
@@ -192,22 +198,6 @@ export const PLAN_CONFIGS: readonly PlanConfig[] = [
     maxModelClass: "premium",
     status: "launch_disabled",
   },
-  {
-    tier: "BASIC",
-    displayName: "Starter (retired)",
-    monthlyPriceCents: 500,
-    creditsPerMonth: null,
-    provisionalCreditsPerMonth: null,
-    providerAllowanceUsd: 0,
-    // Retired plans resolve to the Free plan's limits. A row that should not
-    // exist must not be the most permissive thing in the table.
-    maxConcurrentJobs: 1,
-    generationsPerHour: 10,
-    generationsPerMinute: 3,
-    eligibleModalities: ["IMAGE", "AUDIO"],
-    maxModelClass: "economical",
-    status: "retired",
-  },
 ];
 
 const BY_TIER = new Map(PLAN_CONFIGS.map((plan) => [plan.tier, plan]));
@@ -219,7 +209,7 @@ const BY_TIER = new Map(PLAN_CONFIGS.map((plan) => [plan.tier, plan]));
  * is a bug, and a bug must not hand somebody the top tier's concurrency.
  */
 export function planConfigFor(tier: PlanTier | null | undefined): PlanConfig {
-  return (tier && BY_TIER.get(tier)) || BY_TIER.get("STARTER")!;
+  return (tier && BY_TIER.get(tier)) || BY_TIER.get("FREE")!;
 }
 
 /** Plans that may be shown and sold. */
@@ -229,7 +219,7 @@ export function sellablePlans(): readonly PlanConfig[] {
 
 /** Whether the tier is the free one. Used by every gate that treats it apart. */
 export function isFreeTier(tier: PlanTier | null | undefined): boolean {
-  return planConfigFor(tier).tier === "STARTER";
+  return planConfigFor(tier).tier === "FREE";
 }
 
 /**

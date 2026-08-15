@@ -1,12 +1,12 @@
 import Link from "next/link";
-import { Sparkles } from "lucide-react";
+
+import { BrandLink } from "@/components/layout/brand-link";
 import type { ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Container } from "@/components/layout/container";
 import { ThemeToggle } from "@/components/layout/top-bar";
 import { getUserId } from "@/lib/auth";
-import { SITE } from "@/features/marketing/content";
 
 /**
  * The public community shell.
@@ -33,16 +33,9 @@ export default async function CommunityLayout({
     <div className="flex min-h-dvh flex-col">
       <header className="sticky top-0 z-40 border-b border-border bg-background/80 backdrop-blur-md">
         <Container size="lg" className="flex h-14 items-center gap-3">
-          <Link href="/explore" className="flex items-center gap-2">
-            <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-gradient-brand">
-              <Sparkles
-                className="size-4 text-white"
-                strokeWidth={2}
-                aria-hidden
-              />
-            </span>
-            <span className="font-semibold tracking-tight">{SITE.name}</span>
-          </Link>
+          {/* Home, not `/explore` — this header renders *on* Explore, so the
+              logo used to be a link to the current page. */}
+          <BrandLink size="sm" />
 
           <nav className="ml-2 flex items-center gap-1">
             <Button variant="ghost" size="sm" asChild>

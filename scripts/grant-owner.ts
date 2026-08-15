@@ -22,7 +22,7 @@
 import { PrismaClient } from "../lib/generated/prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 
-const AGENCY_CREDITS = 20_000;
+const OWNER_CREDITS = 20_000;
 
 async function main() {
   const email = process.argv[2];
@@ -53,7 +53,7 @@ async function main() {
 
     // Idempotent by construction: re-running tops up to the allowance rather
     // than adding another 20,000 every time somebody runs the script twice.
-    const shortfall = AGENCY_CREDITS - user.creditBalance;
+    const shortfall = OWNER_CREDITS - user.creditBalance;
     let balance = user.creditBalance;
 
     if (shortfall > 0) {
@@ -70,9 +70,9 @@ async function main() {
             amount: shortfall,
             reason: "MANUAL_ADJUSTMENT",
             balanceAfter: updated.creditBalance,
-            idempotencyKey: `owner-grant:${user.id}:${AGENCY_CREDITS}`,
+            idempotencyKey: `owner-grant:${user.id}:${OWNER_CREDITS}`,
             metadata: {
-              note: "Owner account topped up to the Agency allowance",
+              note: "Owner account topped up to the operator allowance",
             },
           },
         });
@@ -83,7 +83,7 @@ async function main() {
 
     console.log(
       JSON.stringify(
-        { email: user.email, role: "ADMIN", tier: "AGENCY (derived)", balance },
+        { email: user.email, role: "ADMIN", tier: "STUDIO (derived)", balance },
         null,
         2,
       ),

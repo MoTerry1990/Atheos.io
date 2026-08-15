@@ -8,11 +8,15 @@ import { Reveal, Section } from "@/features/marketing/components/section";
 /**
  * The enterprise track.
  *
- * ## Why this has no price, when Agency does
+ * ## Why this has no price, when Studio does
  *
- * Agency is a **volume** tier: 20,000 credits a month, at a price, on a card.
- * Every line on it is a capability the product has today, so it can be bought
- * without a conversation.
+ * Studio is a **volume** tier: a price, on a card. Every line on it is a
+ * capability the product has today, so it can be bought without a conversation.
+ *
+ * Neither this card nor the plan copy quotes a credit count any more. The paid
+ * allowances are unset until the provider costs behind them are measured — see
+ * `services/billing/plan-config.ts` — and a number here would be the same guess
+ * the pricing card declines to print, wearing a different hat.
  *
  * This is the other thing people mean by "enterprise", and it is not volume —
  * team seats, SSO, an invoice instead of a card, a signed DPA, a support

@@ -14,10 +14,11 @@ import {
   Clapperboard,
   Settings,
   ShieldCheck,
-  Sparkles,
   UserRound,
 } from "lucide-react";
 import Link from "next/link";
+
+import { BrandLink } from "@/components/layout/brand-link";
 import { useState, type ReactNode } from "react";
 
 import type { NavSectionData } from "@/components/layout/nav";
@@ -27,7 +28,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { NotificationsMenu } from "@/features/dashboard/components/notifications-menu";
 import type { NotificationItem } from "@/features/dashboard/types";
-import { SITE } from "@/features/marketing/content";
 
 /**
  * The signed-in application shell.
@@ -104,14 +104,10 @@ export function AppShell({
 }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
 
-  const brand = (
-    <Link href="/dashboard" className="flex items-center gap-2">
-      <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-gradient-brand">
-        <Sparkles className="size-4 text-white" strokeWidth={2} aria-hidden />
-      </span>
-      <span className="truncate font-semibold tracking-tight">{SITE.name}</span>
-    </Link>
-  );
+  // Home, not `/dashboard`. This link pointed at the page it was rendered on,
+  // so on the dashboard it did nothing and everywhere else it was a shortcut
+  // to a screen the sidebar already lists. `BrandLink` explains the rule.
+  const brand = <BrandLink size="sm" />;
 
   const sections = isAdmin ? [...NAV, ADMIN_SECTION] : NAV;
 

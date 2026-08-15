@@ -142,7 +142,7 @@ describe("provider cost configuration", () => {
   it("lets the Free plan reach at least one enabled model", () => {
     // The mirror of the test above. A free tier that can generate nothing is
     // not a conservative free tier, it is a broken sign-up flow.
-    const free = PLAN_CONFIGS.find((plan) => plan.tier === "STARTER")!;
+    const free = PLAN_CONFIGS.find((plan) => plan.tier === "FREE")!;
 
     const reachable = MODEL_COSTS.filter(
       (entry) =>

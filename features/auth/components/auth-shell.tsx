@@ -1,10 +1,8 @@
-import { Sparkles } from "lucide-react";
-import Link from "next/link";
+import { BrandLink } from "@/components/layout/brand-link";
 
 import { AuthPanelVideo } from "@/features/auth/components/auth-panel-video";
 import type { ReactNode } from "react";
 
-import { SITE } from "@/features/marketing/content";
 import { getCopy } from "@/features/marketing/i18n/dictionaries";
 
 // These surfaces are English-only today: the auth screens and the OG image
@@ -38,19 +36,7 @@ export function AuthShell({
     <div className="flex min-h-dvh">
       <div className="flex w-full flex-col justify-center px-4 py-12 sm:px-8 lg:w-1/2 lg:px-16">
         <div className="mx-auto w-full max-w-sm">
-          <Link
-            href="/"
-            className="mb-10 flex w-fit items-center gap-2 font-semibold tracking-tight"
-          >
-            <span className="flex size-8 items-center justify-center rounded-lg bg-gradient-brand">
-              <Sparkles
-                className="size-4 text-white"
-                strokeWidth={2}
-                aria-hidden
-              />
-            </span>
-            {SITE.name}
-          </Link>
+          <BrandLink className="mb-10" />
 
           <h1 className="text-2xl font-semibold tracking-tight">{title}</h1>
           {description ? (

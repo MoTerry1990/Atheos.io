@@ -55,11 +55,15 @@ export interface PlanDefinition {
   /**
    * Whether this plan can be bought today.
    *
-   * `launch_disabled` plans are configured, priced and deliberately not
-   * offered. They are excluded from the pricing page rather than shown greyed
-   * out, because a plan a visitor cannot buy is not a plan, it is a rumour.
+   * `launch_disabled` plans are configured and priced, and the pricing page
+   * shows them with their credit line replaced by "confirmed at launch"
+   * rather than a guess.
+   *
+   * There is no `retired` state. Sprint 4.1 removed the last retired tier by
+   * deleting its enum value outright, which is the honest version of retiring
+   * a plan that was never sold.
    */
-  status: "active" | "launch_disabled" | "retired";
+  status: "active" | "launch_disabled";
 }
 
 export const CURRENCY = "usd";
@@ -67,16 +71,18 @@ export const CURRENCY = "usd";
 /**
  * The plans.
  *
- * ## Four, monthly, no annual, no Agency — Sprint 4
+ * ## Four, monthly, no annual, no Agency
  *
  * The $5 Starter and the $199 Agency are gone: the first was marginal after
  * Stripe took $0.45 of it, and the second sold volume nobody had asked for.
  * Annual billing is gone too — it takes a year's money against costs that have
  * not been measured yet, which is the wrong direction to be wrong in.
  *
- * `AGENCY` now labels the $89.99 top tier. The enum value is reused rather than
- * migrated, which is only safe because nothing has ever been sold; see
- * `services/billing/plan-config.ts` for the full note and the pre-flight check.
+ * Sprint 4.1 went further and renamed the **enum values** to match, so `STUDIO`
+ * is the $89.99 plan in the database, in the type system and on the page. See
+ * `prisma/schema.prisma` for why that was done once, while it was still free.
+ * There is no retired-tier entry here any more because there is no retired
+ * value left in the enum to resolve.
  *
  * ## Every feature line here must be true today.
  * Sequences, audio and the
@@ -91,7 +97,7 @@ export const CURRENCY = "usd";
  */
 export const PLAN_DEFINITIONS: readonly PlanDefinition[] = [
   {
-    tier: "STARTER",
+    tier: "FREE",
     name: "Free",
     description:
       "A handful of images, to see whether the output is good enough.",
@@ -110,7 +116,7 @@ export const PLAN_DEFINITIONS: readonly PlanDefinition[] = [
     status: "active",
   },
   {
-    tier: "STUDIO",
+    tier: "CREATOR",
     name: "Creator",
     description: "For one person publishing on a schedule.",
     monthly: 999,
@@ -127,7 +133,7 @@ export const PLAN_DEFINITIONS: readonly PlanDefinition[] = [
     status: "launch_disabled",
   },
   {
-    tier: "SCALE",
+    tier: "PRO",
     name: "Pro",
     description: "For channels shipping every day.",
     monthly: 3499,
@@ -143,7 +149,7 @@ export const PLAN_DEFINITIONS: readonly PlanDefinition[] = [
     status: "launch_disabled",
   },
   {
-    tier: "AGENCY",
+    tier: "STUDIO",
     name: "Studio",
     description: "For studios producing at volume.",
     monthly: 8999,
@@ -155,22 +161,6 @@ export const PLAN_DEFINITIONS: readonly PlanDefinition[] = [
       "Priority email support",
     ],
     status: "launch_disabled",
-  },
-  {
-    /**
-     * Retired, and kept only so a historical `BASIC` row resolves to something
-     * rather than crashing a billing screen. Never shown, never sold.
-     *
-     * Deleting the entry would be tidier and would turn any surviving row into
-     * a lookup failure on a page somebody is trying to read.
-     */
-    tier: "BASIC",
-    name: "Starter",
-    description: "No longer offered.",
-    monthly: 500,
-    monthlyCredits: null,
-    features: [],
-    status: "retired",
   },
 ] as const;
 
@@ -231,10 +221,13 @@ export function sellablePlanDefinitions(): readonly PlanDefinition[] {
  * entirely would suggest the product has no paid tier, which is a different and
  * larger untruth.
  *
- * Excludes `retired`, which is a row that exists only for lookups.
+ * Since Sprint 4.1 this is every plan — there is no retired tier left to
+ * exclude. It stays a function rather than becoming an alias for
+ * `PLAN_DEFINITIONS` because the pricing page should keep asking "which of
+ * these may I show?" rather than assuming the answer is always "all of them".
  */
 export function visiblePlanDefinitions(): readonly PlanDefinition[] {
-  return PLAN_DEFINITIONS.filter((plan) => plan.status !== "retired");
+  return PLAN_DEFINITIONS;
 }
 
 export function planDefinitionFor(tier: PlanTier): PlanDefinition {
@@ -245,11 +238,10 @@ export function planDefinitionFor(tier: PlanTier): PlanDefinition {
 
 /** Ordering, so "is this an upgrade" is a comparison rather than a table. */
 const RANK: Record<PlanTier, number> = {
-  STARTER: 0,
-  BASIC: 1,
-  STUDIO: 2,
-  SCALE: 3,
-  AGENCY: 4,
+  FREE: 0,
+  CREATOR: 1,
+  PRO: 2,
+  STUDIO: 3,
 };
 
 export function isUpgrade(from: PlanTier, to: PlanTier): boolean {

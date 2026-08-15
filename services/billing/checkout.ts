@@ -128,7 +128,7 @@ export async function createSubscriptionCheckout(input: {
   const user = await requireApiUser();
   requireBillingConfigured();
 
-  if (input.tier === "STARTER") {
+  if (input.tier === "FREE") {
     throw new BillingError(
       "The free plan is what you get without a subscription — there is nothing to buy.",
       400,
@@ -276,7 +276,7 @@ export async function changePlan(input: {
     );
   }
 
-  if (input.tier === "STARTER") {
+  if (input.tier === "FREE") {
     return cancelSubscription();
   }
 
@@ -361,8 +361,8 @@ export async function cancelSubscription(): Promise<{
     cancel_at_period_end: true,
   });
 
-  await setScheduledTier(user.id, "STARTER");
-  return { effective: "period_end", tier: "STARTER" };
+  await setScheduledTier(user.id, "FREE");
+  return { effective: "period_end", tier: "FREE" };
 }
 
 /** Undo a pending cancellation, while the subscription is still running. */

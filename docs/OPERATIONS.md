@@ -16,6 +16,8 @@ fastest option first.
 4. [Update the manual monthly spend figure](#4-update-the-manual-monthly-spend-figure)
 5. [Inspect credit transactions safely](#5-inspect-credit-transactions-safely)
 6. [Apply the Sprint 4 migration](#6-apply-the-sprint-4-migration)
+   - [6.1 Backup](#61-backup)
+   - [6.2 Rollback](#62-rollback)
 7. [The spending ladder, and what each rung does](#7-the-spending-ladder)
 8. [Rate limiting — how it works and when to change it](#8-rate-limiting)
 9. [Monthly reconciliation](#9-monthly-reconciliation)
@@ -265,20 +267,36 @@ does nothing the second time.
 
 ## 6. Apply the Sprint 4 migration
 
-`prisma/migrations/20260814000000_financial_safety/` — **created, not applied.**
+`prisma/migrations/20260814000000_financial_safety_and_plan_tiers/` —
+**created, not applied.**
+
+It carries two things: the financial-safety schema (Sprint 4) and the
+`PlanTier` rebuild (Sprint 4.1). They are one migration rather than two because
+the first was never applied anywhere, so amending it in place left a clean
+history instead of a permanent two-step explaining a mistake nobody saw.
+
+> **The directory was renamed** from `20260814000000_financial_safety`. If any
+> environment has already applied the old name, **stop** — resolve it as a
+> rename inside `_prisma_migrations` before running anything. None has; this is
+> written for the case where that turns out to be wrong.
 
 ### Pre-flight
 
-1. **Confirm no subscription rows exist.** Sprint 4 reuses the `AGENCY` enum
-   value for the $89.99 Studio tier, which is only safe if nothing has ever
-   been sold on it.
+1. **Confirm the subscriptions table is empty.**
 
    ```sql
-   SELECT "planTier", count(*) FROM subscriptions GROUP BY "planTier";
+   SELECT "planTier"::text, count(*) FROM subscriptions GROUP BY 1;
    ```
 
-   Expected: **zero rows.** If any exist, stop, and add a new enum value
-   instead of reusing one — see the note in `services/billing/plan-config.ts`.
+   Expected: **zero rows.** Stripe has never been configured, so nothing has
+   ever been sold.
+
+   **If rows exist, the migration is still correct** — every legacy value has
+   an explicit destination (`STARTER`/`BASIC` → `FREE`, `STUDIO` → `CREATOR`,
+   `SCALE` → `PRO`, `AGENCY` → `STUDIO`), and that mapping is covered by
+   `tests/db/migration-safety.test.ts`. What changes is that somebody's paid
+   entitlement is being rewritten, so read the rows first and confirm each one
+   lands where you expect before proceeding.
 
 2. **Survey balances.** The migration adds `CHECK (creditBalance >= 0)` and
    clamps any negative balance to zero first, writing a ledger row for each.
@@ -287,13 +305,11 @@ does nothing the second time.
    SELECT count(*), min("creditBalance") FROM users WHERE "creditBalance" < 0;
    ```
 
-   Expected: **0 rows.** No generation has run in production, so no balance
-   should ever have gone negative. A non-zero count means the pre-Sprint-4 race
-   fired and each row will be written off to zero — read them first and decide
+   Expected: **0 rows.** A non-zero count means the pre-Sprint-4 race fired.
+   Those balances will be written off to zero, so read them first and decide
    whether the users need compensating.
 
-3. **Take a backup.** Supabase → Database → Backups → the daily snapshot is
-   enough; confirm one exists from today.
+3. **Take a backup.** See § 6.1.
 
 ### Apply
 
@@ -305,40 +321,155 @@ npx dotenv-cli -e .env.local -- npx prisma migrate deploy
 It uses `DIRECT_URL` (port 5432) — the transaction pooler cannot run DDL or hold
 the advisory locks Migrate needs.
 
+### Locks and downtime
+
+| Statement                                     | Lock                              | Cost at zero rows                               |
+| --------------------------------------------- | --------------------------------- | ----------------------------------------------- |
+| `ALTER TYPE "CreditReason" ADD VALUE`         | none on tables                    | instant                                         |
+| `ALTER TABLE users ADD CONSTRAINT CHECK`      | ACCESS EXCLUSIVE, `users`         | full scan; instant on a small table             |
+| `ALTER TABLE subscriptions ALTER COLUMN TYPE` | ACCESS EXCLUSIVE, `subscriptions` | table rewrite; **sub-millisecond on zero rows** |
+| `CREATE TABLE`, `CREATE INDEX IF NOT EXISTS`  | new objects only                  | instant                                         |
+
+The enum rebuild is the only statement that rewrites a table. ACCESS EXCLUSIVE
+blocks reads as well as writes on `subscriptions` for its duration — which,
+with no rows, is not a measurable outage. **If that table ever holds meaningful
+volume, this is the statement to reconsider**, not the constraint.
+
+Nothing here touches `generations`, `assets` or `credit_transactions` data. The
+two new indexes on `credit_transactions` are built without `CONCURRENTLY`
+because Prisma Migrate wraps the file in a transaction, and on a small table a
+brief `SHARE` lock is cheaper than the operational complexity of splitting them
+out.
+
 ### Verify
 
 ```sql
--- Enum values
-SELECT unnest(enum_range(NULL::"CreditReason"));
--- Expect GENERATION_RESERVATION, GENERATION_CAPTURE, GENERATION_RELEASE
--- alongside the originals.
+SELECT e.enumlabel FROM pg_enum e JOIN pg_type t ON t.oid = e.enumtypid
+ WHERE t.typname = 'PlanTier' ORDER BY e.enumsortorder;
+```
 
--- Constraint
+Expect `FREE, CREATOR, PRO, STUDIO` — in that order, which is price order.
+
+```sql
+SELECT column_default FROM information_schema.columns
+ WHERE table_name = 'subscriptions' AND column_name = 'planTier';
+```
+
+Expect `'FREE'::"PlanTier"`. The default is dropped before the conversion and
+put back after it; a NULL here means the rebuild was interrupted.
+
+```sql
+SELECT unnest(enum_range(NULL::"CreditReason"));
+
 SELECT conname FROM pg_constraint
  WHERE conname IN ('users_credit_balance_non_negative','budget_usage_non_negative');
--- Expect both.
 
--- Tables
 SELECT tablename FROM pg_tables
  WHERE tablename IN ('budget_usage','rate_limit_buckets');
--- Expect both.
 ```
 
 ### If it fails halfway
 
-Every statement is guarded (`IF NOT EXISTS`, `ADD VALUE IF NOT EXISTS`, `DO`
-blocks around the constraints, `ON CONFLICT DO NOTHING` on the clamp rows), so
-re-running it is safe. Run it again rather than editing it.
+Every statement is guarded — `IF NOT EXISTS`, `ADD VALUE IF NOT EXISTS`, `DO`
+blocks around the constraints, `ON CONFLICT DO NOTHING` on the clamp rows, and
+an early `RETURN` in the enum block once `CREATOR` exists. **Run it again**
+rather than editing it. `tests/db/migration-safety.test.ts` applies it twice
+and asserts the second run changes nothing.
 
-### Rolling back
+---
 
-There is no down migration. Adding enum values, tables and a CHECK constraint
-is additive, and the only way any of it breaks existing behaviour is the
-constraint — which can be dropped on its own without touching data:
+## 6.1 Backup
+
+Before applying, in this order.
+
+**1. Supabase snapshot.** Dashboard → Database → Backups. Confirm a snapshot
+exists dated today; take a manual one if not. This is the rollback of record.
+
+**2. A logical dump of the three tables this touches.** Faster to restore than a
+full snapshot and enough for everything here:
+
+```bash
+pg_dump "$DIRECT_URL" --data-only --column-inserts -t users -t subscriptions -t credit_transactions -f atheos-pre-sprint4.sql
+```
+
+Use `DIRECT_URL` (5432), not the pooler. Keep the file out of the repository —
+it contains email addresses.
+
+**3. Record the current migration state**, so a rollback knows where to return
+to:
+
+```sql
+SELECT migration_name, finished_at FROM _prisma_migrations
+ ORDER BY finished_at DESC LIMIT 5;
+```
+
+---
+
+## 6.2 Rollback
+
+**Nothing in this migration destroys data**, so a rollback is subtractive
+rather than a restore. Take these in order and stop at the first one that gets
+you working again.
+
+**1. The CHECK constraint** — the only change that can reject a write which
+previously succeeded:
 
 ```sql
 ALTER TABLE users DROP CONSTRAINT users_credit_balance_non_negative;
 ```
+
+**2. The new tables.** Dropping them disarms the spending breaker and the rate
+limiter, which then fail safe — `emergency` and `failMode: "closed"`
+respectively. That is a hard stop on generation, so redeploy the previous build
+at the same time:
+
+```sql
+DROP TABLE IF EXISTS budget_usage;
+DROP TABLE IF EXISTS rate_limit_buckets;
+```
+
+**3. The enum rotation.** Reverse it with the same rebuild technique. The map is
+not injective — `FREE` came from both `STARTER` and `BASIC` — so this returns
+every free account to `STARTER`, which is where all of them were:
+
+```sql
+BEGIN;
+  CREATE TYPE "PlanTier_old" AS ENUM ('STARTER','BASIC','STUDIO','SCALE','AGENCY');
+  ALTER TABLE subscriptions ALTER COLUMN "planTier" DROP DEFAULT;
+  ALTER TABLE subscriptions ALTER COLUMN "planTier" TYPE "PlanTier_old"
+    USING (CASE "planTier"::text
+             WHEN 'FREE'    THEN 'STARTER'
+             WHEN 'CREATOR' THEN 'STUDIO'
+             WHEN 'PRO'     THEN 'SCALE'
+             WHEN 'STUDIO'  THEN 'AGENCY'
+           END)::"PlanTier_old";
+  ALTER TABLE subscriptions ALTER COLUMN "scheduledTier" TYPE "PlanTier_old"
+    USING (CASE "scheduledTier"::text
+             WHEN 'FREE'    THEN 'STARTER'
+             WHEN 'CREATOR' THEN 'STUDIO'
+             WHEN 'PRO'     THEN 'SCALE'
+             WHEN 'STUDIO'  THEN 'AGENCY'
+           END)::"PlanTier_old";
+  DROP TYPE "PlanTier";
+  ALTER TYPE "PlanTier_old" RENAME TO "PlanTier";
+  ALTER TABLE subscriptions ALTER COLUMN "planTier" SET DEFAULT 'STARTER'::"PlanTier";
+COMMIT;
+```
+
+**4. The credit reasons — leave them.** Postgres cannot drop an enum value, and
+three unused labels cost nothing. Removing them would mean rebuilding
+`CreditReason`, which rewrites the entire ledger.
+
+**5. `_prisma_migrations`.** Delete the row so a later `migrate deploy`
+re-applies cleanly:
+
+```sql
+DELETE FROM _prisma_migrations
+ WHERE migration_name = '20260814000000_financial_safety_and_plan_tiers';
+```
+
+**6. If all of that is worse than the problem**, restore the § 6.1 snapshot and
+redeploy the previous build.
 
 ---
 

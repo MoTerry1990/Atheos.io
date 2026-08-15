@@ -19,7 +19,7 @@ export const metadata: Metadata = { title: "Billing" };
  * outside a Suspense boundary and makes the preview route able to pass the same
  * prop directly.
  */
-const TIERS = ["STARTER", "BASIC", "STUDIO", "SCALE", "AGENCY"] as const;
+const TIERS = ["FREE", "CREATOR", "PRO", "STUDIO"] as const;
 
 export default async function BillingPage({
   searchParams,

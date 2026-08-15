@@ -41,7 +41,7 @@ function delay<T>(value: T): Promise<T> {
 const PLANS = PLAN_DEFINITIONS.map((plan) => ({
   ...plan,
   priceIds:
-    plan.tier === "STARTER"
+    plan.tier === "FREE"
       ? {}
       : {
           month: `price_fixture_${plan.tier}_m`,
@@ -64,7 +64,7 @@ export function createFixtureApi(now: number, scenario: Scenario): BillingApi {
     scenario === "cancelling";
 
   const state = {
-    tier: (subscribed ? "STUDIO" : "STARTER") as PlanTier,
+    tier: (subscribed ? "CREATOR" : "FREE") as PlanTier,
     interval: "MONTH" as BillingInterval,
     status: subscribed
       ? scenario === "past_due"
@@ -73,7 +73,7 @@ export function createFixtureApi(now: number, scenario: Scenario): BillingApi {
       : null,
     cancelAtPeriodEnd: scenario === "cancelling",
     scheduledTier: (scenario === "cancelling"
-      ? "STARTER"
+      ? "FREE"
       : null) as PlanTier | null,
     balance: subscribed ? 2140 : 118,
   };
@@ -89,10 +89,9 @@ export function createFixtureApi(now: number, scenario: Scenario): BillingApi {
       problems: configured
         ? []
         : [
+            "STRIPE_PRICE_CREATOR_MONTHLY",
+            "STRIPE_PRICE_PRO_MONTHLY",
             "STRIPE_PRICE_STUDIO_MONTHLY",
-            "STRIPE_PRICE_STUDIO_YEARLY",
-            "STRIPE_PRICE_SCALE_MONTHLY",
-            "STRIPE_PRICE_SCALE_YEARLY",
           ],
       creditBalance: state.balance,
       entitlement: {
@@ -256,7 +255,7 @@ export function createFixtureApi(now: number, scenario: Scenario): BillingApi {
         );
       }
 
-      const rank = { STARTER: 0, BASIC: 1, STUDIO: 2, SCALE: 3, AGENCY: 4 };
+      const rank = { FREE: 0, CREATOR: 1, PRO: 2, STUDIO: 3 };
       const upgrading = rank[tier] > rank[state.tier];
 
       if (upgrading) {
@@ -280,7 +279,7 @@ export function createFixtureApi(now: number, scenario: Scenario): BillingApi {
     async cancelPlan() {
       requireConfigured();
       state.cancelAtPeriodEnd = true;
-      state.scheduledTier = "STARTER";
+      state.scheduledTier = "FREE";
       return delay({
         ok: true as const,
         effective: "period_end",

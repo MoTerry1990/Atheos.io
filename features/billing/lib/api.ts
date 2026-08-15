@@ -95,7 +95,7 @@ export function loadBilling() {
 }
 
 export function startSubscriptionCheckout(
-  tier: "BASIC" | "STUDIO" | "SCALE" | "AGENCY",
+  tier: "CREATOR" | "PRO" | "STUDIO",
   interval: BillingInterval,
 ) {
   return request<{ url: string }>("/api/billing/checkout", {

@@ -248,7 +248,7 @@ export async function submitGeneration(input: SubmitInput) {
   const entitledTier =
     subscription && ["ACTIVE", "TRIALING"].includes(subscription.status)
       ? subscription.planTier
-      : "STARTER";
+      : "FREE";
 
   const plan = planConfigFor(entitledTier);
   const free = isFreeTier(entitledTier);

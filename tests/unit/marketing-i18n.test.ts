@@ -51,14 +51,63 @@ describe("marketing dictionaries", () => {
         expect(entry.name.length).toBeGreaterThan(0);
         expect(entry.features.length).toBeGreaterThan(0);
       }
-      // A card is rendered per PRICING row, so a stray tier would render blank.
-      // A superset, not an exact match. `copy.plans` is keyed by `PlanTier`,
-      // so it must carry an entry for the retired BASIC tier too — a historical
-      // subscription still renders a card, and a missing key would crash the
-      // billing screen of the one person it applies to. What must not happen is
-      // a *rendered* tier with no name, which is what this checks.
-      for (const tier of PRICING) {
-        expect(Object.keys(copy.plans)).toContain(tier.tier);
+      // Exact, since Sprint 4.1: four values in the enum, four entries here.
+      expect(Object.keys(copy.plans).sort()).toEqual(
+        PRICING.map((tier) => tier.tier).sort(),
+      );
+    },
+  );
+
+  it.each(Object.entries(DICTIONARIES))(
+    "%s calls each plan what the catalogue calls it",
+    (locale, copy) => {
+      /**
+       * The check that was missing, and what it cost.
+       *
+       * The pricing card renders `plans[tier].name` from the dictionary, not
+       * `PLAN_DEFINITIONS[].name` from the catalogue. Sprint 4 renamed the
+       * catalogue to Free / Creator / Pro / Studio and left the dictionary
+       * alone, so the live page went on advertising an **Agency** plan — with
+       * the old feature list and a "20,000 credits a month" claim — under the
+       * new $89.99 price. Every test passed. Nothing threw.
+       *
+       * Two sources for one customer-facing string will diverge. English is
+       * pinned exactly; Spanish only has to be non-empty, because "Gratis" is
+       * the correct translation of "Free" and demanding equality would forbid
+       * translating at all.
+       */
+      for (const plan of PLAN_DEFINITIONS) {
+        const name = copy.plans[plan.tier].name;
+
+        if (locale === "en") {
+          expect(name, `${plan.tier} is "${name}" in copy`).toBe(plan.name);
+        } else {
+          expect(name.trim().length).toBeGreaterThan(0);
+        }
+
+        // No plan may be named after one that no longer exists, in either
+        // language. "Agency" and "Starter" are both retired.
+        expect(name).not.toMatch(/agency/i);
+      }
+    },
+  );
+
+  it.each(Object.entries(DICTIONARIES))(
+    "%s promises no credit allowance the backend has not settled",
+    (_locale, copy) => {
+      // A feature bullet is as much a promise as the credit line on the card,
+      // and it is not covered by the `credits: null` guard. Paid plans have no
+      // settled allowance yet, so no bullet on one may quote a number of
+      // credits.
+      for (const plan of PLAN_DEFINITIONS) {
+        if (plan.monthlyCredits !== null) continue;
+
+        for (const feature of copy.plans[plan.tier].features) {
+          expect(
+            feature,
+            `${plan.tier} advertises credits it cannot honour`,
+          ).not.toMatch(/cr[eé]dit/i);
+        }
       }
     },
   );
@@ -90,8 +139,8 @@ describe("marketing dictionaries", () => {
       ES.hero.subheadline === EN.hero.subheadline && "hero.subheadline",
       ES.pricing.title === EN.pricing.title && "pricing.title",
       ES.faq[0]?.answer === EN.faq[0]?.answer && "faq[0].answer",
-      ES.plans.AGENCY.description === EN.plans.AGENCY.description &&
-        "plans.AGENCY.description",
+      ES.plans.STUDIO.description === EN.plans.STUDIO.description &&
+        "plans.STUDIO.description",
     ].filter(Boolean);
 
     expect(untranslated).toEqual([]);

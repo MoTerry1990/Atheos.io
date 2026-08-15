@@ -76,7 +76,7 @@ export function PlanCard({
       : "Current plan"
     : direction === "up"
       ? `Upgrade to ${plan.name}`
-      : plan.tier === "STARTER"
+      : plan.tier === "FREE"
         ? "Cancel subscription"
         : `Downgrade to ${plan.name}`;
 
@@ -126,7 +126,7 @@ export function PlanCard({
       <p className="mt-3 text-xs font-medium tabular-nums">
         {plan.monthlyCredits === null
           ? "Credit allowance confirmed at launch"
-          : plan.tier === "STARTER"
+          : plan.tier === "FREE"
             ? `${plan.monthlyCredits.toLocaleString("en-US")} credits, one time`
             : `${plan.monthlyCredits.toLocaleString("en-US")} credits monthly`}
       </p>

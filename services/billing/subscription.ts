@@ -71,7 +71,7 @@ export interface Entitlement {
  * credits of its own — see the note in `getEntitlement`; credits are a
  * separate ledger and are granted, not implied by a tier.
  */
-const OWNER_TIER: PlanTier = "AGENCY";
+const OWNER_TIER: PlanTier = "STUDIO";
 
 /**
  * Whether this account belongs to whoever runs the install.
@@ -98,7 +98,7 @@ function isOwnerAccount(user: { clerkId: string; role: Role }): boolean {
 /**
  * What this user is entitled to right now.
  *
- * Falls back to STARTER rather than throwing when there is no subscription: not
+ * Falls back to FREE rather than throwing when there is no subscription: not
  * having paid is a normal state, and every caller would otherwise have to
  * handle null in the same way.
  */
@@ -151,7 +151,7 @@ export async function getEntitlement(userId: string): Promise<Entitlement> {
 
   if (!subscription) {
     return {
-      tier: "STARTER",
+      tier: "FREE",
       interval: "MONTH",
       status: null,
       active: false,
@@ -169,7 +169,7 @@ export async function getEntitlement(userId: string): Promise<Entitlement> {
   return {
     // A lapsed subscription does not keep its tier. The row still records what
     // it *was*, which is useful for support; entitlement is what it is now.
-    tier: active ? subscription.planTier : "STARTER",
+    tier: active ? subscription.planTier : "FREE",
     interval: subscription.interval,
     status: subscription.status,
     active,
@@ -234,7 +234,7 @@ export async function syncSubscription(
     stripeProductId:
       typeof item?.price.product === "string" ? item.price.product : null,
     // An unrecognised price id keeps the tier rather than resetting it to
-    // STARTER. That happens when a price is added in Stripe before the deploy
+    // FREE. That happens when a price is added in Stripe before the deploy
     // that knows about it, and silently downgrading a paying customer over a
     // deployment ordering detail is not acceptable.
     ...(resolved

@@ -1233,3 +1233,234 @@ TEST_DATABASE_URL=postgres://postgres:x@localhost:5433/postgres npx vitest run t
 
 **Not Sprint 5:** R2 lifecycle (B11), Sentry (B12), signed URLs (B13), mobile
 Studio (B14).
+
+---
+
+# 22. Sprint 4.1 Addendum — Canonical Plan Identifiers
+
+**Date:** 2026-08-15. **Scope:** correcting the plan model, verifying migration
+safety, and fixing the brand-link navigation.
+
+**Not touched:** Stripe (no object created), production database (no migration
+applied), Replicate (no paid generation).
+
+---
+
+## 22.1 Why `AGENCY` still existed
+
+Not an oversight — a decision, made twice, that was right in general and wrong
+here.
+
+The `PlanTier` enum was written for a five-tier line-up: `STARTER`, `BASIC`,
+`STUDIO`, `SCALE`, `AGENCY`. Sprint 25 renamed the customer-facing labels and
+deliberately left the values alone, on the principle that a stored entitlement
+must not change meaning when marketing renames a plan. Sprint 4 renamed them
+again — Free / Creator / Pro / Studio — and applied the same principle,
+reusing `AGENCY` for the $89.99 top tier and noting it in a comment.
+
+The principle is sound. It protects real subscribers from having their
+entitlement rewritten by a copy change. **It did not apply here, because there
+are no subscribers**: Stripe has never been configured, `subscriptions` has
+never held a row, and no entitlement has ever been stored.
+
+What the drift actually bought was a codebase in which the top tier's
+identifier was the name of a deleted plan, `STUDIO` meant Creator, and every
+reader had to carry a translation table. It ended with a report to the founder
+saying _"AGENCY now represents the $89.99 tier"_ — which is the sentence that
+made the cost visible.
+
+**It also hid a live bug.** The pricing card renders its plan name from the
+i18n dictionary, not from the catalogue. Sprint 4 renamed the catalogue and
+left the dictionary alone, so the public pricing page went on advertising an
+**Agency** plan — old feature list, "20,000 credits a month" — under the new
+$89.99 price. Every test passed. Nothing threw.
+
+---
+
+## 22.2 Every reference found
+
+**Enum and schema (2)** — `prisma/schema.prisma`: the `PlanTier` declaration
+and its documentation block.
+
+**Server configuration (6)** — `services/billing/catalogue.ts` (plan
+definitions, `RANK`), `plan-config.ts` (entitlement table), `plans.ts` (Stripe
+price map), `subscription.ts` (`OWNER_TIER`), `checkout.ts`, `free-grant.ts`.
+
+**Environment (10)** — `lib/env.ts` schema and runtime map, `.env.example`:
+`STRIPE_PRICE_{BASIC,STUDIO,SCALE,AGENCY}_{MONTHLY,YEARLY}`. **None has ever
+been set in any environment.**
+
+**API surface (2)** — `app/api/billing/checkout/route.ts` and
+`app/api/billing/subscription/route.ts` zod enums, both hand-written copies of
+the tier list.
+
+**Client (3)** — `features/billing/lib/api.ts`, `billing-screen.tsx`,
+`plan-card.tsx`.
+
+**Public copy (6)** — `features/marketing/i18n/en.ts` and `es.ts`: the `plans`
+record (**the live bug**), the enterprise block's "20,000 credits a month", and
+`enterprise-card.tsx`'s explanatory comment.
+
+**Pages and fixtures (4)** — `app/(app)/settings/billing/page.tsx`,
+`app/(dev)/billing-preview/fixtures.ts` (rank map and a stale price-id list),
+`app/(dev)/admin-preview/page.tsx`.
+
+**Scripts (1)** — `scripts/grant-owner.ts` (`AGENCY_CREDITS`).
+
+**Tests (4)** — `marketing-pricing.test.ts`, `marketing-i18n.test.ts`,
+`spending-controls.test.ts`, `credit-lifecycle.test.ts`.
+
+**Migration (1, untouched)** — `20260813000000_plan_tiers_basic_agency`. Applied
+history; never edited.
+
+Authentication metadata, seeds and API _responses_ carry no tier literal —
+`planTier` is read from the row and passed through.
+
+---
+
+## 22.3 The canonical identifiers
+
+| Value     | Name    |  Price | Status            |
+| --------- | ------- | -----: | ----------------- |
+| `FREE`    | Free    |     $0 | `active`          |
+| `CREATOR` | Creator |  $9.99 | `launch_disabled` |
+| `PRO`     | Pro     | $34.99 | `launch_disabled` |
+| `STUDIO`  | Studio  | $89.99 | `launch_disabled` |
+
+**The value is the name.** `tests/unit/spending-controls.test.ts` asserts
+`plan.tier === plan.displayName.toUpperCase()` for all four, so the two cannot
+drift again.
+
+`BASIC` — the retired $5 "Starter" — was **deleted**, not kept as a retired
+row. There is no `retired` status left in either plan table. Nothing is stored
+as `AGENCY` anywhere; the display name and the internal identifier are one
+string.
+
+There is no Agency plan and no unlimited plan. Concurrency is capped at 8 even
+on Studio.
+
+---
+
+## 22.4 Migration
+
+**Name:** `20260814000000_financial_safety_and_plan_tiers`
+**Renamed from:** `20260814000000_financial_safety` (never applied anywhere)
+**Applied to production:** **No.**
+
+Sprint 4's migration was amended in place rather than chained behind a second
+one. A follow-up correcting something no database has ever seen leaves a
+permanent two-step in the history explaining a mistake that never reached
+anyone; one unapplied migration is easier to review and impossible to
+half-apply in the wrong order.
+
+### Why a type rebuild rather than `ALTER TYPE ... RENAME VALUE`
+
+It is a **rotation**, not a set of independent renames. `STUDIO` must become
+`CREATOR` at the same moment `AGENCY` becomes `STUDIO`, and Postgres cannot
+hold two values named `STUDIO` in between. Renaming through a temporary name
+would work and would leave the type's sort order scrambled, which is visible in
+`enum_range()` and in any `ORDER BY` on the column.
+
+The rebuild creates `PlanTier_new`, converts both enum columns with an explicit
+`USING` map, drops the old type and renames. Every legacy value has a stated
+destination:
+
+```
+STARTER -> FREE      BASIC -> FREE      STUDIO -> CREATOR
+SCALE   -> PRO       AGENCY -> STUDIO
+```
+
+`BASIC` maps to `FREE` rather than erroring: a row on a retired $5 tier that
+somehow exists is closest to a free account, and must neither block the
+migration nor be silently deleted.
+
+### Affected tables and columns
+
+| Table                 | Column          | Change                                     |
+| --------------------- | --------------- | ------------------------------------------ |
+| `subscriptions`       | `planTier`      | type rebuilt, default restored             |
+| `subscriptions`       | `scheduledTier` | type rebuilt, stays nullable               |
+| `users`               | `creditBalance` | CHECK >= 0 added; negatives clamped        |
+| `credit_transactions` | —               | two indexes added; three enum values added |
+| `budget_usage`        | _(new)_         | created                                    |
+| `rate_limit_buckets`  | _(new)_         | created                                    |
+
+### Locks
+
+`ALTER TABLE subscriptions ALTER COLUMN TYPE` takes **ACCESS EXCLUSIVE** and
+rewrites the table — sub-millisecond at zero rows, and the only statement here
+that would matter at volume. The CHECK constraint takes ACCESS EXCLUSIVE on
+`users` for a full scan. Everything else creates new objects.
+
+---
+
+## 22.5 Migration validation
+
+**Executed. Database: PGlite — PostgreSQL compiled to WebAssembly, run in
+process.**
+
+Not SQLite, not a mock: enum types, `ALTER TYPE`, `USING` conversions, CHECK
+constraints and unique indexes behave exactly as they will on Supabase. Its one
+limitation is a single connection, which matters for concurrency tests and not
+for a migration, which runs alone by definition.
+
+**Docker is not available in this environment**, so a containerised Postgres
+was not used. Said plainly rather than implied.
+
+`tests/db/migration-safety.test.ts` — **9 tests, all passing**:
+
+| Check                                             | Result                                                    |
+| ------------------------------------------------- | --------------------------------------------------------- |
+| Every legacy tier maps to its canonical plan      | ✅ seeded a row on all five old values, including `BASIC` |
+| `scheduledTier` converts, NULLs pass through      | ✅                                                        |
+| Enum holds exactly four values, in price order    | ✅                                                        |
+| Column default restored as `FREE` and usable      | ✅ inserted a subscription with no tier                   |
+| `planTier` NOT NULL, `scheduledTier` nullable     | ✅                                                        |
+| Second run changes nothing                        | ✅ applied twice                                          |
+| Balances preserved across both runs               | ✅ 100–104 unchanged                                      |
+| One-time signup grant cannot be duplicated        | ✅ second insert rejected by the unique index             |
+| Negative balance written off, then CHECK enforced | ✅ −80 → 0 with a `MANUAL_ADJUSTMENT` row                 |
+
+The fixture seeds a subscription on **every** legacy tier even though
+production is expected to hold zero, because a migration that is only correct
+on an empty table is a migration nobody has actually tested.
+
+---
+
+## 22.6 Brand-link navigation
+
+Four surfaces each rendered their own copy of the wordmark, and **two linked to
+the page they were rendered on**:
+
+| Surface          | Was          | Now                   |
+| ---------------- | ------------ | --------------------- |
+| Marketing header | `/` or `/es` | unchanged, now shared |
+| Dashboard shell  | `/dashboard` | `/`                   |
+| Community header | `/explore`   | `/`                   |
+| Auth screens     | `/`          | `/`, now labelled     |
+
+The dashboard and community logos did nothing when clicked. That is a
+disorienting failure: the logo is the one control every user assumes they
+understand, so a logo that does not respond reads as the page having broken —
+and a signed-in subscriber had no route back to the pricing page or the terms.
+
+All four now render `components/layout/brand-link.tsx`, with
+`aria-label="Atheos home"`. English goes to `/`, Spanish marketing routes to
+`/es`, both resolved from `ROUTES` rather than by prefixing.
+
+**Clicking it cannot sign anybody out** — it is a `next/link` to an unprotected
+route; Clerk's session lives in a cookie and in `ClerkProvider`, neither of
+which a navigation touches. **`/` and `/es` do not bounce signed-in users to
+the dashboard** — no such redirect exists in the page or the middleware, and a
+test asserts it stays that way. `requireUserId()` still gates every route under
+`app/(app)`, untouched.
+
+---
+
+## 22.7 Blockers
+
+**No change.** 9 open: B3, B4 (P0); B5 partial, B8, B9 (P1); B11–B13 (P2); B14
+(P3).
+
+Sprint 4.1 corrected an identifier and a navigation bug. Neither was a launch
+blocker, and neither closed one.

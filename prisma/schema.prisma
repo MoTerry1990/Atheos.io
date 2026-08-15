@@ -144,24 +144,41 @@ enum SubscriptionStatus {
 /// that changes when marketing changes a number; entitlements must not. The
 /// mapping from price id to tier lives in `services/billing/plans.ts` and is
 /// resolved once, on the way in from a webhook.
-/// The enum name is the stable identifier; the *display* name lives in
-/// `services/billing/catalogue.ts` and has drifted from it. Sprint 25 renamed
-/// the customer-facing labels without renaming the values, because a stored
-/// entitlement must not change meaning when marketing renames a plan:
 ///
-///   STARTER -> "Free"     $0
-///   BASIC   -> "Starter"  $5
-///   STUDIO  -> "Creator"  $15.99
-///   SCALE   -> "Studio"   $35.99
-///   AGENCY  -> "Agency"   $199
+/// ## The values *are* the plan names, since Sprint 4.1
 ///
-/// Read the catalogue, never the enum, when showing a plan to a person.
+/// They used to be `STARTER / BASIC / STUDIO / SCALE / AGENCY`, inherited from
+/// an earlier five-tier line-up and left in place through two renames on the
+/// grounds that a stored entitlement must not change meaning when marketing
+/// renames a plan. That reasoning is right when subscriptions exist. Here none
+/// ever did — Stripe was never configured — so the drift bought nothing and
+/// cost a great deal: by Sprint 4 the enum said `AGENCY` for a plan the
+/// pricing page called Studio, while `STUDIO` meant Creator. Every reader of
+/// this schema had to hold a translation table in their head, and the Sprint 4
+/// report reached the founder saying "AGENCY now represents the $89.99 tier",
+/// which is precisely the sentence nobody should ever have to write.
+///
+/// So the values were rotated to match the product, once, while it was free:
+///
+///   STARTER -> FREE      $0
+///   STUDIO  -> CREATOR   $9.99
+///   SCALE   -> PRO       $34.99
+///   AGENCY  -> STUDIO    $89.99
+///   BASIC   -> dropped   the retired $5 tier, never sold
+///
+/// The rotation is why `20260814000000_financial_safety_and_plan_tiers`
+/// rebuilds the type rather than issuing `ALTER TYPE ... RENAME VALUE`:
+/// `STUDIO` has to become `CREATOR` in the same breath that `AGENCY` becomes
+/// `STUDIO`, and Postgres cannot hold two values of one name in between.
+///
+/// **This window is now closed.** Once a subscription row exists, a value here
+/// is somebody's paid entitlement and renaming it is a data migration with a
+/// customer on the other end. Add a value; never rotate one.
 enum PlanTier {
-  STARTER
-  BASIC
+  FREE
+  CREATOR
+  PRO
   STUDIO
-  SCALE
-  AGENCY
 }
 
 model Subscription {
@@ -178,7 +195,7 @@ model Subscription {
   /// Resolved from `stripePriceId` when the webhook lands. Stored so an
   /// entitlement check is a column read rather than a catalogue lookup that
   /// depends on environment variables being present.
-  planTier PlanTier @default(STARTER)
+  planTier PlanTier @default(FREE)
 
   /// Billing period. Monthly and yearly are the same tier at different
   /// cadences, so this is not part of `PlanTier` — it changes the invoice, not

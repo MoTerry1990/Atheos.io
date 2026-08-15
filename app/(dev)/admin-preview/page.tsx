@@ -134,7 +134,7 @@ function createFixtureApi(now: number, scenario: Scenario): AdminApi {
             pastDue: 0,
             canceling: 0,
             byTier: populated
-              ? [{ tier: "STUDIO" as const, name: "Studio", count: 1 }]
+              ? [{ tier: "CREATOR" as const, name: "Studio", count: 1 }]
               : [],
           },
           community: {

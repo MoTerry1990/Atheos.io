@@ -226,64 +226,49 @@ export const EN: MarketingCopy = {
   },
 
   plans: {
-    STARTER: {
+    FREE: {
       name: "Free",
-      description: "One video and a handful of images, to see if it fits.",
+      description:
+        "A handful of images, to see whether the output is good enough.",
       features: [
-        "1 video or 25 images",
-        "720p video, fast model",
-        "Image upscaling to 4K",
+        "100 credits when you join, one time",
+        "Around 25 images, or 7 on the quality model",
         "Full asset library and projects",
         "Commercial rights to everything you make",
       ],
     },
-    BASIC: {
-      name: "Starter",
-      description: "For the occasional project, without a monthly commitment.",
-      features: [
-        "3 videos or 87 images a month",
-        "720p video, fast model",
-        "Background removal and 4K upscaling",
-        "Full asset library and projects",
-        "Automatic refund when a provider fails",
-        "Commercial rights to everything you make",
-      ],
-    },
-    STUDIO: {
+    CREATOR: {
       name: "Creator",
       description: "For one person publishing on a schedule.",
       features: [
-        "11 videos or 250 images a month",
+        "Both video models, including Motion Pro",
         "1080p video up to 12 seconds",
         "Every aspect ratio — 16:9, 9:16, 1:1, 21:9",
-        "Both video models, including Motion Pro",
         "Image-to-video and reference images",
         "Background removal and 4K upscaling",
-        "Automatic refund when a provider fails",
+        "3 generations at once",
       ],
     },
-    SCALE: {
-      name: "Studio",
-      description: "For channels shipping every day, and small teams.",
+    PRO: {
+      name: "Pro",
+      description: "For channels shipping every day.",
       features: [
-        "33 videos or 750 images a month",
         "Everything in Creator",
+        "5 generations at once",
         "Bulk generation and export",
         "Usage and cost breakdown",
         "Publish to the community gallery",
         "Email support",
       ],
     },
-    AGENCY: {
-      name: "Agency",
-      description: "For studios and agencies producing at volume.",
+    STUDIO: {
+      name: "Studio",
+      description: "For studios producing at volume.",
       features: [
-        "222 videos or 5,000 images a month",
-        "Everything in Studio",
-        "Unused credits roll over for a month",
-        "Bulk generation and export",
+        "Everything in Pro",
+        "8 generations at once",
         "Full usage and cost breakdown per generation",
-        "Email support",
+        "Priority email support",
       ],
     },
   },
@@ -355,13 +340,13 @@ export const EN: MarketingCopy = {
     eyebrow: "Business and enterprise",
     title: "Need seats, SSO or an invoice?",
     body: [
-      "Agency covers the volume — 20,000 credits a month, on a card, no conversation required. What it does not cover is the other half of an enterprise purchase: several people on one balance, single sign-on, procurement, a model we do not offer yet.",
+      "Studio covers the volume, on a card, with no conversation required. What it does not cover is the other half of an enterprise purchase: several people on one balance, single sign-on, procurement, a model we do not offer yet.",
       "Those are being built, and we would rather scope them against a real requirement than guess. Tell us the constraints and we will tell you what it costs and when — or say plainly if we are not the right fit yet.",
     ],
     cta: "Talk to us",
     needsTitle: "Worth a conversation if",
     needs: [
-      "More than 20,000 credits a month",
+      "More volume than the Studio plan carries",
       "Several people working from one balance",
       "Single sign-on for your team",
       "Invoicing rather than a card on file",
