@@ -109,8 +109,14 @@ export function Pricing() {
                       thing a pricing page must never do, because a credit count
                       on this card is what a customer will count against later. */}
                   <p className="mt-1.5 text-xs font-medium text-primary">
+                    {/* The Free grant is one-time; every paid allowance is
+                        still unverified and prints no number at all. There is
+                        no case here that says "credits monthly" — that was the
+                        promise the product withdrew. */}
                     {tier.credits
-                      ? pricing.creditsMonthly(tier.credits)
+                      ? price === 0
+                        ? pricing.creditsOneTime(tier.credits)
+                        : pricing.creditsMonthly(tier.credits)
                       : pricing.creditsPending}
                   </p>
 

@@ -52,6 +52,20 @@ export function GeneratedImage({
         sizes ?? "(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
       }
       priority={priority}
+      /**
+       * 90, not the default 75.
+       *
+       * The files in `public/marketing` are already compressed WebP — several
+       * are 9–18 KB at 1024x1024, which is aggressive. Re-encoding those at
+       * q75 compounds the loss, and compounded lossy compression is what soft,
+       * smeared gradients look like. The sources are small enough that the
+       * extra bytes are marginal, and it is the only sharpness available
+       * without regenerating the assets.
+       *
+       * The real fix is higher-quality originals — see
+       * `docs/HOMEPAGE_MEDIA_REMAINING.md` for the per-file audit.
+       */
+      quality={90}
       className={cn("object-cover", className)}
     />
   );

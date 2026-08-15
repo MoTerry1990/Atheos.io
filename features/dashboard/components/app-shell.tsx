@@ -109,6 +109,10 @@ export function AppShell({
   // to a screen the sidebar already lists. `BrandLink` explains the rule.
   const brand = <BrandLink size="sm" />;
 
+  // The collapsed rail is ~56px of content. `BrandLink` drops the wordmark
+  // rather than truncating the brand name to "Ath…".
+  const brandIconOnly = <BrandLink size="sm" hideLabel />;
+
   const sections = isAdmin ? [...NAV, ADMIN_SECTION] : NAV;
 
   const sidebarFooter = (
@@ -131,7 +135,12 @@ export function AppShell({
 
   return (
     <div className="flex h-dvh overflow-hidden bg-background">
-      <Sidebar sections={sections} header={brand} footer={sidebarFooter} />
+      <Sidebar
+        sections={sections}
+        header={brand}
+        headerCollapsed={brandIconOnly}
+        footer={sidebarFooter}
+      />
 
       <SidebarDrawer
         open={drawerOpen}

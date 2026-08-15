@@ -50,10 +50,21 @@ export function BrandLink({
   className,
   /** The dashboard sidebar renders slightly smaller than the marketing bar. */
   size = "md",
+  /**
+   * Drop the wordmark, keeping the icon and the accessible name.
+   *
+   * For the collapsed sidebar rail, which is 4.5rem wide — about 56px of
+   * content once padding is taken. The 28px icon plus "Atheos.io" does not fit,
+   * and `truncate` would render a clipped fragment of the brand name. The
+   * `aria-label` is unchanged, so a screen reader still hears "Atheos.io home"
+   * in both states.
+   */
+  hideLabel = false,
 }: {
   href?: string;
   className?: string;
   size?: "sm" | "md";
+  hideLabel?: boolean;
 }) {
   return (
     <Link
@@ -76,7 +87,7 @@ export function BrandLink({
       >
         <Sparkles className="size-4 text-white" strokeWidth={2} aria-hidden />
       </span>
-      <span className="truncate">{SITE.name}</span>
+      {hideLabel ? null : <span className="truncate">{SITE.name}</span>}
     </Link>
   );
 }

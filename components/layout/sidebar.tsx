@@ -42,10 +42,15 @@ export interface SidebarProps {
 function SidebarBody({
   sections,
   header,
+  headerCollapsed,
   footer,
   collapsed,
   onNavigate,
-}: SidebarProps & { collapsed: boolean; onNavigate?: () => void }) {
+}: SidebarProps & {
+  collapsed: boolean;
+  headerCollapsed?: ReactNode;
+  onNavigate?: () => void;
+}) {
   return (
     <div className="flex h-full flex-col">
       {header ? (
@@ -55,7 +60,7 @@ function SidebarBody({
             collapsed && "justify-center px-2",
           )}
         >
-          {header}
+          {collapsed && headerCollapsed ? headerCollapsed : header}
         </div>
       ) : null}
 
@@ -77,7 +82,13 @@ function SidebarBody({
 }
 
 /** Persistent rail. Hidden below `lg`, where `SidebarDrawer` takes over. */
-export function Sidebar({ sections, header, footer, className }: SidebarProps) {
+export function Sidebar({
+  sections,
+  header,
+  headerCollapsed,
+  footer,
+  className,
+}: SidebarProps & { headerCollapsed?: ReactNode }) {
   const sidebarOpen = useUIStore((state) => state.sidebarOpen);
   const toggleSidebar = useUIStore((state) => state.toggleSidebar);
   const collapsed = !sidebarOpen;
@@ -95,6 +106,7 @@ export function Sidebar({ sections, header, footer, className }: SidebarProps) {
       <SidebarBody
         sections={sections}
         header={header}
+        headerCollapsed={headerCollapsed}
         footer={footer}
         collapsed={collapsed}
       />

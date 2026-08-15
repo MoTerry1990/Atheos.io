@@ -27,7 +27,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState } from "@/components/ui/state";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { PlanCard } from "@/features/billing/components/plan-card";
 import { UsagePanel } from "@/features/billing/components/usage-panel";
 import { ApiError, type BillingSummary } from "@/features/billing/lib/api";
@@ -90,9 +89,8 @@ export function BillingScreen({
 
   const [data, setData] = useState<BillingSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [interval, setInterval] = useState<BillingInterval>(
-    initialInterval ?? "MONTH",
-  );
+  // Monthly only — see the note beside the Plans heading.
+  const [interval] = useState<BillingInterval>(initialInterval ?? "MONTH");
   const [pendingTier, setPendingTier] = useState<PlanTier | null>(null);
   const [pendingPack, setPendingPack] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<PlanTier | null>(null);
@@ -376,17 +374,13 @@ export function BillingScreen({
           <h2 id="plans-heading" className="text-sm font-medium">
             Plans
           </h2>
-          <ToggleGroup
-            type="single"
-            value={interval}
-            onValueChange={(value) =>
-              value && setInterval(value as BillingInterval)
-            }
-            aria-label="Billing interval"
-          >
-            <ToggleGroupItem value="MONTH">Monthly</ToggleGroupItem>
-            <ToggleGroupItem value="YEAR">Yearly</ToggleGroupItem>
-          </ToggleGroup>
+          {/* No interval selector.
+              Annual billing was retired in Sprint 4 — it takes a year of money
+              against provider costs that have not been measured — and no
+              yearly Stripe price exists to check out against. A toggle whose
+              second option resolves to no price is a button that fails after
+              the click rather than before it. `interval` stays MONTH. */}
+          <p className="text-xs text-muted-foreground">Billed monthly</p>
         </div>
 
         {/* Somebody who chose a plan on the pricing page arrives having already

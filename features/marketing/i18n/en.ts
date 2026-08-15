@@ -99,8 +99,8 @@ export const EN: MarketingCopy = {
     ],
     cta: "Create",
     promptLabel: "Prompt",
-    note: "Free to start — 100 credits a month, no card. Your prompt comes with you.",
-    noteEmpty: "Free to start — 100 credits a month, no card required.",
+    note: "Free to start, no card. Your prompt comes with you.",
+    noteEmpty: "Free to start, no card required.",
   },
 
   made: {
@@ -218,11 +218,12 @@ export const EN: MarketingCopy = {
     perMonth: "/ month",
     forever: "forever",
     creditsMonthly: (credits) => `${credits} credits monthly`,
+    creditsOneTime: (credits) => `${credits} credits, one time`,
     creditsPending: "Credit allowance confirmed at launch",
     ctaFree: "Start free",
     ctaChoose: (plan) => `Choose ${plan}`,
-    ctaPending: "Available at launch",
-    note: "Credits are consumed per generation and priced by modality — video costs more than an image because it costs us more. Unused credits roll over for one month. Cancel any time.",
+    ctaPending: "Coming soon",
+    note: "Credits are consumed per generation and priced by modality — video costs more than an image because it costs us more. The studio shows the exact price before you generate, never after.",
   },
 
   plans: {
@@ -231,8 +232,7 @@ export const EN: MarketingCopy = {
       description:
         "A handful of images, to see whether the output is good enough.",
       features: [
-        "100 credits when you join, one time",
-        "Around 25 images, or 7 on the quality model",
+        "A one-time credit grant when you join",
         "Full asset library and projects",
         "Commercial rights to everything you make",
       ],
@@ -390,7 +390,7 @@ export const EN: MarketingCopy = {
     {
       question: "Is there a free tier?",
       answer:
-        "Yes. The Free plan includes 100 credits a month at no cost, with no card required — one video or twenty-five images. It is enough to decide whether Atheos fits how you work.",
+        "Yes. Joining gives you a one-time grant of credits at no cost, with no card required — enough to run a batch of images and decide whether Atheos fits how you work. It is a welcome grant rather than a monthly allowance.",
     },
     {
       question: "Can I use Atheos today?",

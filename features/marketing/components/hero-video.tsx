@@ -114,15 +114,27 @@ export function HeroVideo({ className }: { className?: string }) {
         </video>
       ) : null}
 
-      {/* Contrast floor for the headline. */}
-      <div className="absolute inset-0 bg-background/70" />
+      {/**
+       * One scrim, not three.
+       *
+       * This was a flat `bg-background/70`, then a `from-background/60` gradient
+       * over it, then a brand tint at 60%. Compounded, the top of the frame was
+       * about 88% obscured — the artwork behind it was effectively invisible,
+       * and the hero read as a dark rectangle with a headline on it. That is
+       * the "too dark and muddy" complaint, and it was three decisions each
+       * reasonable on its own.
+       *
+       * The replacement is a single vertical gradient: light where the art is,
+       * heavy at the bottom where the section has to dissolve into the page.
+       * The headline sits in the upper third against roughly 40% rather than
+       * 88%, which is still a contrast floor — Lighthouse's contrast audit is
+       * the check, and it stays at 100.
+       */}
+      <div className="absolute inset-0 bg-gradient-to-b from-background/40 via-background/45 to-background" />
 
-      {/* Dissolves the section into the page rather than ending on an edge. */}
-      <div className="absolute inset-0 bg-gradient-to-b from-background/60 via-background/30 to-background" />
-
-      {/* Ties the rectangle to the brand. Sits above the scrims so the hue
-          survives them. */}
-      <div className="absolute inset-0 bg-gradient-brand-subtle opacity-60" />
+      {/* Ties the rectangle to the brand. Halved: at 60% it was doing as much
+          obscuring as tinting. */}
+      <div className="absolute inset-0 bg-gradient-brand-subtle opacity-30" />
     </div>
   );
 }

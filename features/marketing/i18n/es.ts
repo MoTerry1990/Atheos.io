@@ -112,8 +112,8 @@ export const ES: MarketingCopy = {
     ],
     cta: "Crear",
     promptLabel: "Prompt",
-    note: "Gratis para empezar: 100 créditos al mes, sin tarjeta. Su prompt le acompaña.",
-    noteEmpty: "Gratis para empezar: 100 créditos al mes, sin tarjeta.",
+    note: "Gratis para empezar, sin tarjeta. Su prompt le acompaña.",
+    noteEmpty: "Gratis para empezar, sin tarjeta.",
   },
 
   made: {
@@ -227,11 +227,12 @@ export const ES: MarketingCopy = {
     perMonth: "/ mes",
     forever: "para siempre",
     creditsMonthly: (credits) => `${credits} créditos al mes`,
+    creditsOneTime: (credits) => `${credits} créditos, por única vez`,
     creditsPending: "Los créditos se confirman al lanzar",
     ctaFree: "Empezar gratis",
     ctaChoose: (plan) => `Elegir ${plan}`,
-    ctaPending: "Disponible al lanzar",
-    note: "Los créditos se consumen por generación y su precio depende de la modalidad: el video cuesta más que una imagen porque a nosotros también nos cuesta más. Los créditos no usados se acumulan durante un mes. Cancele cuando quiera.",
+    ctaPending: "Muy pronto",
+    note: "Los créditos se consumen por generación y su precio depende de la modalidad: el video cuesta más que una imagen porque a nosotros también nos cuesta más. El estudio le muestra el precio exacto antes de generar, nunca después.",
   },
 
   plans: {
@@ -239,8 +240,7 @@ export const ES: MarketingCopy = {
       name: "Gratis",
       description: "Unas cuantas imágenes, para ver si el resultado le sirve.",
       features: [
-        "100 créditos al registrarse, por única vez",
-        "Unas 25 imágenes, o 7 en el modelo de mayor calidad",
+        "Créditos de bienvenida al registrarse, por única vez",
         "Biblioteca completa y proyectos",
         "Derechos comerciales sobre todo lo que cree",
       ],
@@ -398,7 +398,7 @@ export const ES: MarketingCopy = {
     {
       question: "¿Hay un plan gratuito?",
       answer:
-        "Sí. El plan Gratis incluye 100 créditos al mes sin costo y sin tarjeta: un video o veinticinco imágenes. Alcanza para decidir si Atheos encaja con su forma de trabajar.",
+        "Sí. Al registrarse recibe créditos de bienvenida por única vez, sin costo y sin tarjeta: alcanzan para generar un lote de imágenes y decidir si Atheos encaja con su forma de trabajar. Es un regalo de bienvenida, no una cuota mensual.",
     },
     {
       question: "¿Puedo usar Atheos hoy?",

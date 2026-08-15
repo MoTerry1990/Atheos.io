@@ -121,6 +121,12 @@ export interface MarketingCopy {
     forever: string;
     creditsMonthly: (credits: string) => string;
     /**
+     * The Free plan's line. Its grant is **one-time**, so it must never be
+     * rendered with `creditsMonthly` — "100 credits monthly" on the free card
+     * was the exact promise the product stopped making.
+     */
+    creditsOneTime: (credits: string) => string;
+    /**
      * Shown instead of a credit count while a plan's provider costs are still
      * being measured. Never a number — that is the whole point of it existing.
      */
