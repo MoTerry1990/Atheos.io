@@ -30,7 +30,7 @@ configuration **by variable name only**.
 | Security                   |           55 | Good gate discipline; rate limiting is not enforceable               |
 | Monitoring / operations    |           20 | `console` and a health endpoint                                      |
 
-**Launch blockers: 14** (4 × P0, 5 × P1, 3 × P2, 2 × P3)
+**Launch blockers: 13 open** (4 × P0, 4 × P1, 3 × P2, 2 × P3). One closed: B10, credential rotation, verified 2026-08-14.
 
 ## Verdict: **NOT READY**
 
@@ -679,6 +679,49 @@ and the user has nothing.
 endpoint can drive generation at machine speed, and the only brake is a rate
 limiter that does not hold across instances.
 
+## Credential rotation — verified 2026-08-14
+
+The Replicate, Cloudflare R2 and Supabase credentials exposed in a development
+transcript were revoked and replaced by the founder in the respective
+dashboards. This section records the verification, which was conducted by name
+and by match-count only — **no secret value was printed, logged or returned**.
+
+| Check                                                                   | Result                               |
+| ----------------------------------------------------------------------- | ------------------------------------ |
+| Required variable names present locally                                 | ✅ all 8 Replicate/R2/Supabase names |
+| `.env`, `.env.local`, `.env.production`, `.env.development` git-ignored | ✅ all four                          |
+| Any `.env*` tracked in the index                                        | ✅ none but `.env.example`           |
+| Replicate / R2 / Clerk credentials in the **tracked tree**              | ✅ 0 files                           |
+| Replicate / R2 / Clerk credentials in **all git history**               | ✅ 0 files                           |
+| Production database host referenced in any tracked file                 | ✅ none                              |
+| Filenames resembling an env dump ever committed                         | ✅ none                              |
+| Server secrets present in the built **client bundle**                   | ✅ 0 occurrences                     |
+| `prisma` imported from any `"use client"` module                        | ✅ none                              |
+
+**Two matches were investigated and cleared:**
+
+1. Four tracked files matched a Postgres-credential pattern —
+   `.env.example`, `.github/workflows/ci.yml`, `ENVIRONMENT_TEMPLATE.md` and
+   `tests/setup/node.ts`. Their hosts are `localhost` or the literal
+   placeholder `aws-0-REGION.pooler.supabase.com`. None references the
+   production host, so none can carry a live credential.
+
+2. `STRIPE_SECRET_KEY` matched 58 files across history and one in the working
+   tree. The local value is **19 characters** with an `sk_test_` prefix — a
+   placeholder, since a real Stripe test key is roughly 107 characters. The
+   single tracked match is `tests/setup/node.ts`, which sets a dummy so the
+   environment schema validates under test. Not a leak; the 58 historical hits
+   are prior revisions of that one file.
+
+**The rotation is confirmed clean.** Blocker **B10** is closed.
+
+**One residual note, not a leak:** `lib/env.ts` enforces the server/client
+split through `@t3-oss/env-nextjs` rather than the `server-only` package, and
+`lib/prisma.ts` carries no `server-only` import. Both are safe today — the
+schema throws if a server variable is read in the browser, and no client module
+imports Prisma — but `server-only` on `lib/prisma.ts` would make the guarantee
+structural rather than conventional. Cosmetic; not a blocker.
+
 ---
 
 # 16. Monitoring and Operations
@@ -734,9 +777,9 @@ limiter that does not hold across instances.
 **Also required and not present:** GitHub repo secrets `WORKER_TRIGGER_SECRET`
 and `PRODUCTION_URL`, without which the worker workflow fails every run.
 
-**Security note:** credentials for Replicate, R2 and Supabase were exposed in a
-chat transcript during development and **have not been rotated**. That is a
-standing P1 independent of everything else here.
+**Security note:** the Replicate, R2 and Supabase credentials exposed during
+development were **rotated on 2026-08-14** and the rotation was verified — see
+§15. Repository, full git history and the built client bundle all scan clean.
 
 ---
 
