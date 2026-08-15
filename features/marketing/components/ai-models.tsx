@@ -74,41 +74,30 @@ export function AIModels() {
           </ul>
         </div>
 
-        <div>
-          <div className="mb-3 flex items-center gap-2">
-            <h3 className="text-sm font-medium">On the roadmap</h3>
-            <Badge variant="outline" size="sm">
-              {planned.length}
-            </Badge>
-          </div>
-
-          {/* Deliberately quieter than the live grid: three columns, no
-              descriptions, lower contrast. A roadmap presented as loudly as
-              shipped work is a roadmap being used as a claim. */}
-          <ul className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
-            {planned.map((provider) => (
-              <li key={provider.id}>
-                <ProviderCard
-                  name={provider.displayName}
-                  families={provider.families}
-                  live={false}
-                />
-              </li>
-            ))}
-          </ul>
-        </div>
+        {/* The roadmap as one sentence, not a grid.
+        
+            It used to be a five-column card grid with its own heading and
+            count, which gave unbuilt integrations roughly the same space as
+            shipped ones — a roadmap laid out like a product list reads as a
+            product list, whatever the labels say. Naming them in a line keeps
+            the honesty (a buyer looking for a specific vendor still finds out)
+            without letting absence occupy more of the page than presence. */}
+        {planned.length > 0 ? (
+          <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">
+            <span className="text-foreground">Not connected yet:</span>{" "}
+            {planned.map((provider) => provider.displayName).join(", ")}.
+          </p>
+        ) : null}
 
         {/* The line most landing pages will not print. It is here because a
             buyer who discovers it after signing up is a buyer who stops
             trusting everything else on this page. */}
         <p className="max-w-2xl text-xs leading-relaxed text-muted-foreground">
-          Providers marked{" "}
-          <span className="text-foreground">on the roadmap</span> are not
-          connected yet — the engine knows their shape and refuses to route to
-          them until an adapter exists, so nothing here can be selected and
-          silently fail. This list is generated from the engine&rsquo;s own
-          configuration rather than maintained by hand, so it cannot drift from
-          what the product actually does.
+          The engine knows the shape of the providers above and refuses to route
+          to any without an adapter, so nothing listed can be selected and
+          silently fail. Both lists are generated from the engine&rsquo;s own
+          configuration rather than maintained by hand, so neither can drift
+          from what the product actually does.
         </p>
       </div>
     </Section>

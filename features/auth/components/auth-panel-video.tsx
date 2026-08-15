@@ -91,6 +91,7 @@ export function AuthPanelVideo() {
             playing ? "opacity-100" : "opacity-0",
           )}
         >
+          <source src="/marketing/auth.webm" type="video/webm" />
           <source src="/marketing/auth.mp4" type="video/mp4" />
         </video>
       ) : null}

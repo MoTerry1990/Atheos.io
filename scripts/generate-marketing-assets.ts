@@ -20,6 +20,16 @@
  * well under a dollar. Outputs are committed to `public/marketing/`, so this
  * script runs when the imagery should change and never on a build.
  *
+ * ## WebM is encoded by hand, afterwards
+ *
+ * Replicate returns H.264 only. The site serves a VP9/WebM alternate first —
+ * 720 KB against 1,310 KB for the hero — so after regenerating a video, run:
+ *
+ *   ffmpeg -i public/marketing/hero.mp4 -c:v libvpx-vp9 -crf 34 -b:v 0  *     -row-mt 1 -an public/marketing/hero.webm
+ *
+ * Skipping it is not fatal: the browser falls through to the MP4 `<source>`.
+ * It just costs every non-Safari visitor an extra 590 KB.
+ *
  * ## Determinism
  *
  * Every request carries an explicit seed. Re-running reproduces the same

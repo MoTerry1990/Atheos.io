@@ -89,13 +89,27 @@ export function HeroVideo({ className }: { className?: string }) {
           loop
           playsInline
           autoPlay
-          preload="auto"
+          /**
+           * `none`, not `auto`.
+           *
+           * This is decoration behind a headline, and `auto` had it competing
+           * for bandwidth with the LCP element it sits under. The effect only
+           * runs after `play()` is called in the effect below, which is after
+           * paint — so nothing is lost except the head start it was taking
+           * from the text.
+           */
+          preload="none"
           onPlaying={() => setPlaying(true)}
           className={cn(
             "absolute inset-0 size-full object-cover transition-opacity duration-1000 ease-out",
             playing ? "opacity-100" : "opacity-0",
           )}
         >
+          {/* WebM first: VP9 encodes this clip at 720 KB against H.264's
+              1,310 KB — a 45% saving for every browser that accepts it, which
+              is all of them except Safari. The browser picks the first source
+              it can play, so ordering *is* the negotiation. */}
+          <source src="/marketing/hero.webm" type="video/webm" />
           <source src="/marketing/hero.mp4" type="video/mp4" />
         </video>
       ) : null}
