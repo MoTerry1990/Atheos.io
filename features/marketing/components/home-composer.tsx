@@ -124,11 +124,15 @@ export function HomeComposer() {
           <Textarea
             value={prompt}
             onChange={(event) => setPrompt(event.target.value)}
-            placeholder={composer.placeholder}
+            placeholder={composer.placeholders[modality]}
             rows={3}
             maxLength={2000}
             className="resize-y border-0 bg-transparent px-0 text-base focus-visible:ring-0"
-            aria-label={composer.placeholder}
+            // A real label rather than the placeholder as one: the
+            // placeholder changes with the modality and disappears the moment
+            // somebody types, so a screen reader would lose the field's name
+            // exactly when it is being used.
+            aria-label={composer.promptLabel}
           />
 
           {/* Model and ratio. Native selects rather than a styled dropdown:
@@ -173,8 +177,12 @@ export function HomeComposer() {
           </div>
 
           <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
-            {/* Stated before the click, not after it. */}
-            <p className="text-xs text-muted-foreground">{composer.note}</p>
+            {/* Stated before the click, not after it — and only the half that
+                is true. An empty field has no prompt to carry, so promising to
+                carry one would be a claim the next screen disproves. */}
+            <p className="text-xs text-muted-foreground">
+              {prompt.trim() ? composer.note : composer.noteEmpty}
+            </p>
 
             <Button asChild variant="gradient">
               {/* A plain anchor, not `next/link`: `/sign-up` is a Clerk

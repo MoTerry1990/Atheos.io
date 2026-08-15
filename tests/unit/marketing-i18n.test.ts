@@ -5,7 +5,6 @@ import { ES } from "@/features/marketing/i18n/es";
 import { LOCALES, ROUTES, localise } from "@/features/marketing/i18n/locales";
 import {
   FEATURES,
-  GALLERY,
   SHOWCASE,
   STEPS,
   TEMPLATES,
@@ -39,7 +38,6 @@ describe("marketing dictionaries", () => {
       expect(copy.features).toHaveLength(FEATURES.length);
       expect(copy.steps).toHaveLength(STEPS.length);
       expect(copy.templates).toHaveLength(TEMPLATES.length);
-      expect(copy.gallery).toHaveLength(GALLERY.length);
       expect(copy.comparison.rows).toHaveLength(COMPARISON_ROWS.length);
     },
   );

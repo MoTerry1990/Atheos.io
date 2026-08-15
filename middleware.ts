@@ -1,6 +1,11 @@
 import { clerkMiddleware } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 
+import {
+  LOCALE_COOKIE,
+  localeRedirect,
+} from "@/features/marketing/i18n/negotiate";
+
 /**
  * Session context — **not** the authorisation gate.
  *
@@ -33,9 +38,45 @@ import { NextResponse } from "next/server";
  * 2. Records the pathname on a request header, so `requireUserId()` can send
  *    the user back where they were going after signing in.
  *
- * Neither is a security control, which is the point.
+ * 3. Sends a first-time visitor whose browser prefers Spanish to the Spanish
+ *    page, before anything renders.
+ *
+ * Neither of the first two is a security control, which is the point. The third
+ * is not either — it is a redirect, and every condition guarding it is in
+ * `features/marketing/i18n/negotiate.ts` with the reasoning attached.
  */
 export default clerkMiddleware(async (_auth, request) => {
+  /**
+   * Language negotiation, before Clerk does anything expensive.
+   *
+   * A **server** redirect rather than a client one: redirecting after hydration
+   * means the English page paints, the reader starts to read it, and it is
+   * replaced. That is worse than not translating at all.
+   *
+   * `localeRedirect` returns null for almost everything — an explicit cookie,
+   * an already-Spanish path, a non-document request, a page with no Spanish
+   * twin — so the common case costs one header read.
+   */
+  const target = localeRedirect({
+    pathname: request.nextUrl.pathname,
+    acceptLanguage: request.headers.get("accept-language"),
+    cookie: request.cookies.get(LOCALE_COOKIE)?.value,
+    fetchDest: request.headers.get("sec-fetch-dest"),
+  });
+
+  if (target) {
+    const url = request.nextUrl.clone();
+    url.pathname = target;
+    // Query survives the move. A visitor arriving on a campaign link keeps its
+    // parameters, and losing them would break the attribution that paid for
+    // the visit.
+    //
+    // 307 rather than 308: this decision depends on a request header, and a
+    // permanent redirect would be cached by the browser and applied to a later
+    // visitor on the same machine who prefers English.
+    return NextResponse.redirect(url, 307);
+  }
+
   // Next.js does not expose the pathname to Server Components. This is the
   // standard way to make it available, and it is what powers the post-sign-in
   // redirect in `lib/auth.ts`.

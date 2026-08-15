@@ -38,7 +38,16 @@ import { cn } from "@/lib/utils";
 export function Faq() {
   const copy = useCopy();
 
-  const [open, setOpen] = useState<number | null>(0);
+  /**
+   * Everything closed on arrival.
+   *
+   * The first item used to be expanded, which is a common default and the
+   * wrong one here: it makes that one question look answered and the rest look
+   * like a list, and it adds height to a section whose whole job is to be
+   * skimmed. An accordion that starts closed also gives the reader the shape
+   * of what is available before any of it costs them scrolling.
+   */
+  const [open, setOpen] = useState<number | null>(null);
 
   return (
     <Section id="faq">

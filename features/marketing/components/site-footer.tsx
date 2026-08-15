@@ -1,6 +1,7 @@
 import { Sparkles } from "lucide-react";
 import Link from "next/link";
 
+import { LanguageLink } from "@/features/marketing/components/language-link";
 import { SITE } from "@/features/marketing/content";
 import { getCopy } from "@/features/marketing/i18n/dictionaries";
 import {
@@ -82,7 +83,12 @@ export function SiteFooter({ locale }: { locale: Locale }) {
           <p className="text-xs text-muted-foreground">
             © {year} {SITE.name}. {copy.footer.rights}
           </p>
-          <p className="text-xs text-muted-foreground">{copy.footer.note}</p>
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+            <p className="text-xs text-muted-foreground">{copy.footer.note}</p>
+            {/* The site's only language control, now that a Spanish-preferring
+                visitor is routed automatically. See language-link.tsx. */}
+            <LanguageLink className="text-xs" />
+          </div>
         </div>
       </div>
     </footer>

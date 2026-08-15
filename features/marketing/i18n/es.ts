@@ -53,13 +53,6 @@ export const ES: MarketingCopy = {
       description:
         "Estructuras de prompt con los parámetros listos para lograr un look. Edite lo que quiera: son puntos de partida, no rieles.",
     },
-    gallery: {
-      eyebrow: "Galería",
-      title: "Un vistazo a la superficie",
-      description:
-        "El lenguaje visual de Atheos: color sobre negro y la luz tratada como algo que se emite, no que se pinta.",
-      note: "Todas las imágenes de esta página las generó Atheos, con los mismos modelos que usted recibe. Pase el cursor sobre una para leer el prompt que la produjo.",
-    },
     faq: {
       eyebrow: "Preguntas",
       title: "Las preguntas que vale la pena responder",
@@ -105,22 +98,29 @@ export const ES: MarketingCopy = {
   },
 
   composer: {
-    placeholder:
-      "Una figura solitaria en una calle mojada, reflejos de neón, anamórfico",
+    placeholders: {
+      image:
+        "Una figura solitaria en una calle mojada, reflejos de neón, anamórfico",
+      video:
+        "Avance lento por un bosque con niebla al amanecer, haces de luz, bruma",
+      audio: "Banda sonora ambiental cálida, sintetizadores suaves, sin prisa",
+    },
     modalities: [
       { id: "image", label: "Imagen" },
       { id: "video", label: "Video" },
       { id: "audio", label: "Audio" },
     ],
-    cta: "Empezar con esto",
+    cta: "Crear",
+    promptLabel: "Prompt",
     note: "Gratis para empezar: 100 créditos al mes, sin tarjeta. Su prompt le acompaña.",
+    noteEmpty: "Gratis para empezar: 100 créditos al mes, sin tarjeta.",
   },
 
   made: {
     eyebrow: "Hecho con Atheos",
-    title: "Resultados reales, con el prompt que los produjo",
+    title: "Las ideas se vuelven imagen, movimiento y sonido.",
     description:
-      "Todo lo que ve aquí salió de los modelos que incluye el plan gratuito. Pase el cursor para reproducir y lleve cualquier prompt al estudio.",
+      "Creaciones reales de los modelos del plan gratuito: imágenes fijas y clips cortos. Lleve cualquier prompt a su propio espacio de trabajo.",
     tryThis: "Probar esto",
     play: "Reproducir vista previa",
   },
@@ -170,14 +170,6 @@ export const ES: MarketingCopy = {
       body: "Sin suscripciones separadas que cuadrar. Gaste de un único saldo, vea exactamente cuánto costó cada generación y reciba el reembolso automático cuando un proveedor falla.",
     },
     {
-      title: "Sin dependencia de un proveedor",
-      body: "Los proveedores viven detrás de una sola interfaz. Cuando sale un modelo mejor, aparece como una opción más, no como un proyecto de migración.",
-    },
-    {
-      title: "Pensado para comparar",
-      body: "El mismo prompt en varios modelos, uno al lado del otro. La única forma confiable de elegir un modelo es verlos discrepar.",
-    },
-    {
       title: "Sus archivos, en nuestro almacenamiento",
       body: "El material generado se copia a nuestro almacenamiento de inmediato. Los enlaces de los proveedores caducan, y una biblioteca llena de enlaces muertos una semana después no es una biblioteca.",
     },
@@ -195,10 +187,6 @@ export const ES: MarketingCopy = {
     {
       title: "Elija sus modelos",
       body: "Elija uno o varios. Ejecutar el mismo prompt en varios proveedores cuesta más créditos y responde la pregunta que realmente tiene: ¿cuál de estos sirve para este trabajo?",
-    },
-    {
-      title: "Déjelo correr",
-      body: "Los trabajos corren en segundo plano. Cierre la pestaña si quiere. Los créditos se descuentan al terminar bien y se devuelven automáticamente cuando el fallo es del proveedor.",
     },
     {
       title: "Quédese con lo que funciona",
@@ -223,31 +211,10 @@ export const ES: MarketingCopy = {
       body: "Luz principal suave, separación de contorno, color neutro.",
     },
     {
-      title: "Escena isométrica",
-      category: "Ilustración",
-      body: "Geometría limpia, paleta plana, ángulo de luz constante.",
-    },
-    {
       title: "Bucle en movimiento",
       category: "Video",
       body: "Ciclo continuo de cuatro segundos para fondos y cabeceras.",
     },
-    {
-      title: "Locución en off",
-      category: "Audio",
-      body: "Tono calmado, registro medio, sin prisa, para narración explicativa.",
-    },
-  ],
-
-  gallery: [
-    "Luz volumétrica entre la niebla, anamórfico",
-    "Cromo líquido, reflejo de estudio",
-    "Aurora sobre agua negra, larga exposición",
-    "Lluvia de neón, poca profundidad de campo",
-    "Ciudad isométrica, paleta de atardecer",
-    "Llamarada solar, detalle macro",
-    "Nebulosa del espacio profundo, negros puros",
-    "Bioluminiscencia, bajo el agua",
   ],
 
   pricing: {

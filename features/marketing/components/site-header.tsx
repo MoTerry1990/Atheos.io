@@ -14,7 +14,6 @@ import {
 } from "@/components/ui/sheet";
 import { SITE } from "@/features/marketing/content";
 import { useCopy, useHref, useLocale } from "@/features/marketing/i18n";
-import { LanguageSwitcher } from "@/features/marketing/components/language-switcher";
 import { pathFor } from "@/features/marketing/i18n/locales";
 import { cn } from "@/lib/utils";
 
@@ -96,12 +95,6 @@ export function SiteHeader() {
         </ul>
 
         <div className="ml-auto flex items-center gap-2 lg:ml-0">
-          {/* Hidden on the narrowest screens: at that width the header is
-              already the wordmark plus two buttons plus a menu trigger, and a
-              fourth control pushes the sign-up CTA off the row. It stays
-              reachable in the mobile sheet below. */}
-          <LanguageSwitcher className="hidden sm:flex" />
-
           <Button
             variant="ghost"
             size="sm"
@@ -180,15 +173,6 @@ export function SiteHeader() {
                     {copy.auth.signUp}
                   </Link>
                 </Button>
-              </div>
-
-              {/* The switcher is hidden in the header below `sm`; this is where
-                  it lives at that width. */}
-              <div className="mt-6 border-t border-border px-5 pt-5 sm:hidden">
-                <p className="text-xs font-medium text-muted-foreground">
-                  {copy.language.label}
-                </p>
-                <LanguageSwitcher className="mt-2 w-fit" />
               </div>
             </SheetContent>
           </Sheet>

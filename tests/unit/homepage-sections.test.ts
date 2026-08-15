@@ -2,9 +2,13 @@ import { describe, expect, it } from "vitest";
 
 import {
   COMPOSER_MODALITIES,
+  FEATURES,
   MADE_WITH_ATHEOS,
   SHOWCASE,
+  STEPS,
+  TEMPLATES,
 } from "@/features/marketing/content";
+
 import { getCopy } from "@/features/marketing/i18n/dictionaries";
 import { LOCALES } from "@/features/marketing/i18n/locales";
 
@@ -91,6 +95,47 @@ describe("made with atheos", () => {
       // The prompt is the card's whole claim to being real output.
       expect(item.prompt.trim().length).toBeGreaterThan(10);
     }
+  });
+});
+
+describe("homepage consolidation", () => {
+  it("keeps templates to four, each with its own prompt", () => {
+    expect(TEMPLATES.length).toBeLessThanOrEqual(4);
+
+    // Six cards that look different and all link to the same place teach the
+    // reader that the difference is cosmetic. Each must carry its own prompt.
+    const prompts = new Set(TEMPLATES.map((template) => template.prompt));
+    expect(prompts.size).toBe(TEMPLATES.length);
+
+    for (const template of TEMPLATES) {
+      expect(template.prompt.trim().length).toBeGreaterThan(10);
+      expect(["image", "video"]).toContain(template.modality);
+    }
+  });
+
+  it("keeps the explanation to three steps and the benefits to four", () => {
+    expect(STEPS).toHaveLength(3);
+    expect(FEATURES.length).toBeLessThanOrEqual(4);
+  });
+
+  it("no longer ships the standalone Gallery section", async () => {
+    /**
+     * Asserted against the module's exports, not against the composition.
+     *
+     * A first attempt read `landing.tsx` as text and matched for `<Gallery`.
+     * It failed while the file plainly contained the right markup — the path
+     * resolved somewhere unexpected under vitest, so the test was reporting on
+     * a file nobody had edited. A test that can pass or fail for reasons
+     * unrelated to its assertion is worse than no test.
+     *
+     * The section is genuinely gone rather than merely unmounted: the
+     * component file is deleted and its `GALLERY` data with it, so this cannot
+     * be satisfied by a component that simply stopped being rendered.
+     */
+    const content = await import("@/features/marketing/content");
+
+    expect(Object.keys(content)).not.toContain("GALLERY");
+    expect(Object.keys(content)).toContain("MADE_WITH_ATHEOS");
   });
 });
 

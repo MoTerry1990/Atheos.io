@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { headers } from "next/headers";
 import { Geist, Geist_Mono } from "next/font/google";
 
 import { env } from "@/lib/env";
@@ -54,16 +55,31 @@ export const viewport: Viewport = {
   ],
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  /**
+   * The document language, taken from the path.
+   *
+   * Hardcoding `en` here meant `/es` served Spanish prose inside an
+   * English-declared document: a screen reader pronounces it with an English
+   * voice, and a crawler is told both trees are the same language — which
+   * undercuts the `hreflang` pairs that exist precisely to say otherwise.
+   *
+   * The pathname comes from the header `middleware.ts` already sets, because
+   * Next does not expose it to a layout. Falling back to English when the
+   * header is missing is the right default: it is the canonical language.
+   */
+  const pathname = (await headers()).get("x-pathname") ?? "";
+  const lang = pathname === "/es" || pathname.startsWith("/es/") ? "es" : "en";
+
   return (
     // suppressHydrationWarning is required by next-themes: it writes the theme
     // class onto <html> before React hydrates, so server and client markup
     // legitimately differ on this one element. Scoped here and nowhere else.
-    <html lang="en" suppressHydrationWarning>
+    <html lang={lang} suppressHydrationWarning>
       <body
         className={`${geistSans.variable} ${geistMono.variable} min-h-dvh antialiased`}
       >

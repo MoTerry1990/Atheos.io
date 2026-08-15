@@ -39,7 +39,6 @@ export interface MarketingCopy {
     features: SectionCopy;
     howItWorks: SectionCopy;
     templates: SectionCopy;
-    gallery: SectionCopy;
     faq: SectionCopy;
   };
 
@@ -73,13 +72,19 @@ export interface MarketingCopy {
    * pretending to generate. See `home-composer.tsx`.
    */
   composer: {
-    placeholder: string;
+    /** One per modality — a video prompt and an audio prompt are not alike. */
+    placeholders: Record<"image" | "video" | "audio", string>;
     modalities: readonly {
       id: "image" | "video" | "audio";
       label: string;
     }[];
     cta: string;
+    /** Accessible name for the prompt field. */
+    promptLabel: string;
+    /** Shown once something has been typed. */
     note: string;
+    /** Shown while the field is empty — promises nothing about a prompt. */
+    noteEmpty: string;
   };
 
   /** The "Made with Atheos" gallery. */
@@ -106,9 +111,6 @@ export interface MarketingCopy {
   steps: readonly { title: string; body: string }[];
 
   templates: readonly { title: string; category: string; body: string }[];
-
-  /** Prompt captions on the gallery tiles. */
-  gallery: readonly string[];
 
   pricing: {
     eyebrow: string;

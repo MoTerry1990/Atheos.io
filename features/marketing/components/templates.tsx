@@ -50,12 +50,29 @@ export function Templates({ locale }: { locale: Locale }) {
               // tier. `redirect_url` is what Clerk returns to after sign-up,
               // so somebody who clicked a template lands in the studio rather
               // than on a dashboard wondering where it went.
-              href="/sign-up?redirect_url=%2Fstudio"
+              /**
+               * Each card carries its own prompt.
+               *
+               * Every one of these used to be the same link — first `#pricing`,
+               * then a bare `/studio`. Six cards that look different and do the
+               * same thing is worse than one card, because the reader learns
+               * the difference is cosmetic.
+               *
+               * Double-encoded on purpose: `URLSearchParams` protects the
+               * prompt inside the studio query, and `encodeURIComponent`
+               * protects that whole string as Clerk's `redirect_url`.
+               */
+              href={`/sign-up?redirect_url=${encodeURIComponent(
+                `/studio?${new URLSearchParams({
+                  prompt: template.prompt,
+                  modality: template.modality,
+                })}`,
+              )}`}
               className="group block h-full overflow-hidden rounded-2xl border border-border bg-card transition-all duration-300 hover:-translate-y-1 hover:border-primary/30 focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:outline-none motion-reduce:hover:translate-y-0"
             >
               <div className="relative aspect-[4/3] w-full overflow-hidden">
                 <GeneratedImage
-                  src={`template-${index + 1}`}
+                  src={template.image}
                   prompt={copy.templates[index]?.body ?? ""}
                   sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
                   className="transition-transform duration-500 group-hover:scale-105 motion-reduce:group-hover:scale-100"

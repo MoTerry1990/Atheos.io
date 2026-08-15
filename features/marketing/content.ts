@@ -1,7 +1,5 @@
 import {
-  Boxes,
   Coins,
-  GitBranch,
   Layers,
   Lock,
   Music,
@@ -109,8 +107,6 @@ export interface Feature {
 export const FEATURES: readonly Feature[] = [
   { icon: Layers, wide: true, image: "feature-library" },
   { icon: Coins },
-  { icon: GitBranch },
-  { icon: Boxes },
   { icon: Lock },
   { icon: Wand2, wide: true, image: "feature-craft" },
 ] as const;
@@ -129,7 +125,6 @@ export const STEPS = [
   { number: "01" },
   { number: "02" },
   { number: "03" },
-  { number: "04" },
 ] as const;
 
 /* -------------------------------------------------------------------------- */
@@ -138,45 +133,53 @@ export const STEPS = [
 
 export interface Template {
   hue: number;
+  /** The still under `public/marketing`, without the extension. */
+  image: string;
+  /** Carried into the studio, so the card makes what it shows. */
+  modality: "image" | "video";
+  prompt: string;
 }
 
-export const TEMPLATES: readonly Template[] = [
-  { hue: 303 },
-  { hue: 262 },
-  { hue: 237 },
-  { hue: 162 },
-  { hue: 70 },
-  { hue: 25 },
-] as const;
-
-/* -------------------------------------------------------------------------- */
-/* Gallery                                                                     */
-/* -------------------------------------------------------------------------- */
-
 /**
- * Gallery tiles.
+ * Four, not six.
  *
- * These were procedural SVG blobs for twenty-five sprints, because showing
- * AI-generated images we had not actually generated would have misrepresented
- * the product. That constraint is now satisfied the right way round: every
- * tile is a real generation, committed under `public/marketing/gallery-N.webp`
- * and produced by `scripts/generate-marketing-assets.ts` on the same pinned
- * model versions the product runs.
+ * `prompt` and `modality` are what a card is *for*: clicking one used to send
+ * every visitor to the same `/studio` with nothing carried, which made six
+ * distinct-looking cards six identical links. Now each one opens the studio
+ * with its own prompt already in the field.
  *
- * The `seed` is the one passed to the model, so a tile can be reproduced
- * exactly. The `hue` survives as the placeholder tint behind the image while
- * it loads. The caption — which is the prompt — is in the dictionaries at the
- * matching index.
+ * The prompts match `template-N.webp` in `public/marketing`, which are the
+ * images these cards show — so the card previews what it will make.
  */
-export const GALLERY = [
-  { hue: 303, seed: 11 },
-  { hue: 237, seed: 27 },
-  { hue: 162, seed: 43 },
-  { hue: 328, seed: 58 },
-  { hue: 262, seed: 71 },
-  { hue: 45, seed: 89 },
-  { hue: 280, seed: 97 },
-  { hue: 190, seed: 103 },
+export const TEMPLATES: readonly Template[] = [
+  {
+    hue: 303,
+    image: "template-1",
+    modality: "image",
+    prompt:
+      "A matte black perfume bottle on a seamless backdrop, studio lighting, controlled reflections, product photography",
+  },
+  {
+    hue: 262,
+    image: "template-2",
+    modality: "image",
+    prompt:
+      "Cinematic film still, lone figure in a corridor, anamorphic framing, practical light, shallow depth of field",
+  },
+  {
+    hue: 237,
+    image: "template-3",
+    modality: "image",
+    prompt:
+      "Editorial portrait, soft key light, rim separation, neutral colour science, magazine cover quality",
+  },
+  {
+    hue: 162,
+    image: "template-5",
+    modality: "video",
+    prompt:
+      "Abstract looping motion graphic, flowing ribbons of light, seamless cycle",
+  },
 ] as const;
 
 /* -------------------------------------------------------------------------- */
