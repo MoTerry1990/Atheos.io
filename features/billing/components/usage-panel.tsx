@@ -39,7 +39,8 @@ export function UsagePanel({
 }: {
   usage: UsageReport;
   /** Credits the current plan grants per period. */
-  allowance: number;
+  /** Null while a plan's credit allowance has not been settled. */
+  allowance: number | null;
   balance: number;
 }) {
   const used = usage.creditsSpent;
@@ -69,7 +70,11 @@ export function UsagePanel({
 
       <div className="space-y-1.5">
         <ProgressBar
-          value={allowance > 0 ? Math.min(100, (used / allowance) * 100) : 0}
+          value={
+            allowance && allowance > 0
+              ? Math.min(100, (used / allowance) * 100)
+              : 0
+          }
           label="Credits used this period"
         />
         <p className="flex flex-wrap justify-between gap-2 text-xs text-muted-foreground tabular-nums">
@@ -77,14 +82,16 @@ export function UsagePanel({
             <span className="font-medium text-foreground">
               {used.toLocaleString("en-US")}
             </span>{" "}
-            of {allowance.toLocaleString("en-US")} credits used
+            {allowance === null
+              ? "credits used this period"
+              : `of ${allowance.toLocaleString("en-US")} credits used`}
           </span>
           <span>{balance.toLocaleString("en-US")} remaining</span>
         </p>
         {/* Balance and allowance are different numbers and people conflate
             them. Rollover and credit packs both make the balance exceed the
             allowance, which looks like a bug unless it is explained. */}
-        {balance > allowance ? (
+        {allowance !== null && balance > allowance ? (
           <p className="text-2xs text-muted-foreground">
             Your balance is above this period&rsquo;s allowance — rollover and
             credit packs both add to it.

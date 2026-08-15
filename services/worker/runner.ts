@@ -2,7 +2,8 @@ import "server-only";
 
 import { randomUUID } from "node:crypto";
 
-import { grantFreeMonthlyCredits } from "@/services/billing/free-grant";
+import { auditFreeGrants } from "@/services/billing/free-grant";
+import { sweepRateLimitBuckets } from "@/lib/rate-limit";
 
 import { prisma } from "@/lib/prisma";
 import { pollWithHealth } from "@/services/ai/manager";
@@ -80,7 +81,18 @@ export interface TickResult {
    * a tick that grants nothing is still distinguishable from one that never
    * tried.
    */
-  freeGrants: { granted: number; skipped: number; alreadyGranted: number };
+  /**
+   * The one-time signup grants, counted rather than issued.
+   *
+   * Sprint 4 removed the monthly renewal — see `services/billing/free-grant.ts`
+   * for why a perpetual free allowance is the one cost that grows with signups
+   * and not with revenue. What is left is an invariant check: `duplicated`
+   * should always be zero, and `missing` should be zero unless provisioning
+   * failed for somebody.
+   */
+  freeGrants: { granted: number; missing: number; duplicated: number };
+  /** Expired rate-limit windows deleted. */
+  rateLimitRowsSwept: number;
   durationMs: number;
 }
 
@@ -111,21 +123,34 @@ export async function runTick(): Promise<TickResult> {
     retrying: 0,
     webhooksDelivered: 0,
     depth: { queued: 0, running: 0, retrying: 0 },
-    freeGrants: { granted: 0, skipped: 0, alreadyGranted: 0 },
+    freeGrants: { granted: 0, missing: 0, duplicated: 0 },
+    rateLimitRowsSwept: 0,
     durationMs: 0,
   };
 
-  // First, and outside the job loop's time budget: the monthly free allowance
-  // must not be skipped because the queue happened to be busy. It is a no-op on
-  // every run after the first of the month, so the cost of doing it early is a
-  // single indexed query.
-  //
-  // Failure here must not take the queue down with it — a missed top-up is
-  // recoverable tomorrow, a stalled worker is not.
+  // Housekeeping first, outside the job loop's time budget, and each guarded
+  // separately. Neither may take the queue down: a missed audit is recoverable
+  // tomorrow and a missed sweep costs a few stale rows, while a stalled worker
+  // means nobody's generations finish.
   try {
-    result.freeGrants = await grantFreeMonthlyCredits();
+    result.freeGrants = await auditFreeGrants();
+
+    if (result.freeGrants.duplicated > 0) {
+      // Should be impossible — the idempotency key is unique-constrained. If it
+      // ever fires, credits have been granted twice and the constraint is not
+      // doing its job, which is worth a loud line rather than a metric.
+      console.error(
+        `worker tick: ${result.freeGrants.duplicated} accounts hold more than one signup grant`,
+      );
+    }
   } catch (error) {
-    console.error("worker tick: free grant sweep failed", error);
+    console.error("worker tick: free grant audit failed", error);
+  }
+
+  try {
+    result.rateLimitRowsSwept = await sweepRateLimitBuckets();
+  } catch (error) {
+    console.error("worker tick: rate limit sweep failed", error);
   }
 
   const jobs = await claimJobs(workerId, BATCH_SIZE);

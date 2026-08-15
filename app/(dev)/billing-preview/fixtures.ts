@@ -113,7 +113,7 @@ export function createFixtureApi(now: number, scenario: Scenario): BillingApi {
         periodStart: subscribed ? periodStart : now - 30 * day,
         periodEnd: subscribed ? periodEnd : now,
         creditsSpent: subscribed ? 860 : 82,
-        creditsGranted: plan.monthlyCredits,
+        creditsGranted: plan.monthlyCredits ?? 0,
         generations: subscribed ? 47 : 9,
         byModality: subscribed
           ? [

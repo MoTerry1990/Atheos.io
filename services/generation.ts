@@ -5,6 +5,25 @@ import { isAdmin } from "@/services/admin/auth";
 import { prisma } from "@/lib/prisma";
 import { estimateCost } from "@/services/ai/cost";
 import {
+  captureReservation,
+  releaseReservation,
+  reserveWithin,
+} from "@/services/billing/ledger";
+import {
+  costEntry,
+  worstCaseCostMicroUsd,
+} from "@/services/billing/model-costs";
+import { isFreeTier, planConfigFor } from "@/services/billing/plan-config";
+import {
+  blockMessage,
+  gateGeneration,
+  recordSpend,
+} from "@/services/billing/spending";
+import {
+  checkGenerationLimits,
+  limitMessage,
+} from "@/services/limits/generation-limits";
+import {
   findModel,
   isUsingMockProvider,
   priceFor,
@@ -35,23 +54,46 @@ import type {
  *   submit    validate → debit credits → call provider → persist the job
  *   poll      ask the provider → on success copy to storage → on failure refund
  *
- * ## Why credits are debited before the provider is called
+ * ## Reserve, capture, release — Sprint 4
+ *
+ * Credits move through three steps rather than one, and the mechanics live in
+ * `services/billing/ledger.ts`:
+ *
+ *   **reserve**  atomically, in the same transaction that creates the
+ *                generation row, *before* the provider is called. The debit is
+ *                a conditional UPDATE, so two simultaneous requests cannot
+ *                both spend the same credits — the failure this replaces.
+ *   **capture**  once the provider has accepted the work. From here it is
+ *                billable and no longer refundable.
+ *   **release**  when submission fails before any billable provider work. The
+ *                customer pays nothing for a request that never ran.
+ *
+ * ## Why credits are reserved before the provider is called
  *
  * The alternative — charge on success — sounds fairer and is unworkable. A
  * provider call that succeeds while our response is lost would produce work we
- * never charged for, and there is no way to reconcile it afterwards. Debiting
- * first means the worst case is a refund, which is a recoverable state we
+ * never charged for, and there is no way to reconcile it afterwards. Reserving
+ * first means the worst case is a release, which is a recoverable state we
  * control.
  *
- * The debit and the generation row commit in **one transaction**. A debit with
- * no generation is theft; a generation with no debit is free inference.
+ * The reservation and the generation row commit in **one transaction**. A debit
+ * with no generation is theft; a generation with no debit is free inference.
  *
- * ## Refunds are idempotent
+ * ## Failures after capture are not refunded automatically
+ *
+ * Replicate bills for GPU time whether or not the output was usable. Refunding
+ * a post-capture failure means Atheos pays for the run *and* returns the money,
+ * which is the one policy that loses money on every single occurrence. Those
+ * generations are flagged for review instead. Pre-capture failures — a rejected
+ * request, a disabled model, a network error before acceptance — are released
+ * in full, because nothing was billed.
+ *
+ * ## Everything is idempotent, by database constraint
  *
  * A failing job may be polled many times — by several open tabs, or by a client
- * retrying. The refund carries `idempotencyKey = refund:{generationId}`, which
- * is unique-constrained, so the second attempt is rejected by the database
- * rather than by application logic somebody forgets to write.
+ * retrying. Every financial write carries a unique `idempotencyKey`, so the
+ * second attempt is rejected by Postgres rather than by application logic
+ * somebody forgets to write.
  */
 
 const OPERATION_TO_DB: Record<GenerationOperation, DbOperation> = {
@@ -80,11 +122,28 @@ export class GenerationError extends Error {
     message: string,
     readonly status: number = 400,
     readonly code: string = "invalid_request",
+    /**
+     * Seconds until the caller should retry. Rendered as `Retry-After`.
+     *
+     * Only set on 429s. A client that is told to back off and given no number
+     * either gives up or retries immediately, and both are wrong.
+     */
+    readonly retryAfterSeconds?: number,
   ) {
     super(message);
     this.name = "GenerationError";
   }
 }
+
+/**
+ * Thrown inside the reservation transaction purely to roll it back.
+ *
+ * Never leaves this module: the `.catch` on the transaction converts it into a
+ * `GenerationError` with the balance the caller needs to see. It exists because
+ * a rollback has to be an exception, and a `GenerationError` thrown from inside
+ * would be indistinguishable from a real one thrown by a nested call.
+ */
+class InsufficientCredits extends Error {}
 
 export interface SubmitInput {
   operation: GenerationOperation;
@@ -162,65 +221,143 @@ export async function submitGeneration(input: SubmitInput) {
   );
 
   const durationSeconds = resolveDuration(model, input.durationSeconds);
+
+  /**
+   * The price, decided here and nowhere else.
+   *
+   * Never read from the request. A client that can name its own price is a
+   * client that will name zero, and `/api/mcp` plus API keys mean the client is
+   * not always a browser we shipped.
+   */
   const cost = priceFor(input.modelId, outputs, durationSeconds);
 
-  if (user.creditBalance < cost) {
+  // ---- Plan, spending controls, abuse controls -------------------------
+  //
+  // All three run *before* any credit moves. A request that is going to be
+  // refused should be refused without a ledger write, because every avoidable
+  // financial mutation is one more chance for its reversal to be the thing
+  // that fails.
+  const subscription = await prisma.subscription.findUnique({
+    where: { userId: user.id },
+    select: { planTier: true, status: true },
+  });
+
+  // A subscription that is past due, unpaid or cancelled is not an entitlement.
+  // Reading `planTier` without reading `status` is how somebody keeps a paid
+  // tier's concurrency after their card stops working.
+  const entitledTier =
+    subscription && ["ACTIVE", "TRIALING"].includes(subscription.status)
+      ? subscription.planTier
+      : "STARTER";
+
+  const plan = planConfigFor(entitledTier);
+  const free = isFreeTier(entitledTier);
+
+  if (!plan.eligibleModalities.includes(model.modality)) {
     throw new GenerationError(
-      `This needs ${cost} credits and you have ${user.creditBalance}.`,
-      402,
-      "insufficient_credits",
+      `${model.displayName} is not included in the ${plan.displayName} plan.`,
+      403,
+      "plan_ineligible",
     );
   }
 
-  // Debit and record together, or not at all.
-  const generation = await prisma.$transaction(async (tx) => {
-    const created = await tx.generation.create({
-      data: {
-        userId: user.id,
-        modality: model.modality,
-        operation: OPERATION_TO_DB[input.operation],
-        provider: model.providerId,
-        model: model.id,
-        prompt: input.prompt,
-        negativePrompt: input.negativePrompt || null,
-        parentId: input.parentId ?? null,
-        // Stored verbatim so a generation can be replayed exactly, even after
-        // our own parameter mapping changes.
-        parameters: {
-          operation: input.operation,
-          aspectRatio: input.aspectRatio,
-          seed: input.seed,
-          outputs,
-          inputImageUrls: input.inputImageUrls ?? [],
-          inputStrength: input.inputStrength,
-          scale: input.scale,
-          durationSeconds,
-          cameraMotion: input.cameraMotion,
-          collectionId: input.collectionId,
-        },
-        creditsCost: cost,
-        status: "QUEUED",
-      },
-    });
-
-    const updated = await tx.user.update({
-      where: { id: user.id },
-      data: { creditBalance: { decrement: cost } },
-    });
-
-    await tx.creditTransaction.create({
-      data: {
-        userId: user.id,
-        amount: -cost,
-        reason: "GENERATION_SPEND",
-        balanceAfter: updated.creditBalance,
-        generationId: created.id,
-        idempotencyKey: `spend:${created.id}`,
-      },
-    });
-
-    return created;
+  const entry = costEntry(input.modelId);
+  const gate = await gateGeneration({
+    modelId: input.modelId,
+    provider: model.providerId,
+    isFree: free,
+    requestCostMicroUsd: entry ? worstCaseCostMicroUsd(entry) : null,
   });
+
+  if (!gate.allowed) {
+    // 503 rather than 402: nothing is wrong with the request or the account.
+    // The service has declined to spend, which is a server-side condition.
+    throw new GenerationError(blockMessage(gate.reason!), 503, gate.reason!);
+  }
+
+  const limits = await checkGenerationLimits({
+    userId: user.id,
+    tier: entitledTier,
+  });
+
+  if (!limits.allowed) {
+    throw new GenerationError(
+      limitMessage(limits),
+      429,
+      limits.reason!,
+      limits.retryAfterSeconds,
+    );
+  }
+
+  // ---- Reserve and record together, or not at all ----------------------
+  //
+  // `insufficientBalance` is carried out of the transaction rather than thrown
+  // from inside it, because throwing is how the generation row is rolled back
+  // and the caller still needs to know *why* it was rolled back.
+  let insufficientBalance: number | null = null;
+
+  const generation = await prisma
+    .$transaction(async (tx) => {
+      const created = await tx.generation.create({
+        data: {
+          userId: user.id,
+          modality: model.modality,
+          operation: OPERATION_TO_DB[input.operation],
+          provider: model.providerId,
+          model: model.id,
+          prompt: input.prompt,
+          negativePrompt: input.negativePrompt || null,
+          parentId: input.parentId ?? null,
+          // Stored verbatim so a generation can be replayed exactly, even after
+          // our own parameter mapping changes.
+          parameters: {
+            operation: input.operation,
+            aspectRatio: input.aspectRatio,
+            seed: input.seed,
+            outputs,
+            inputImageUrls: input.inputImageUrls ?? [],
+            inputStrength: input.inputStrength,
+            scale: input.scale,
+            durationSeconds,
+            cameraMotion: input.cameraMotion,
+            collectionId: input.collectionId,
+          },
+          creditsCost: cost,
+          status: "QUEUED",
+        },
+      });
+
+      const reserved = await reserveWithin(tx, {
+        userId: user.id,
+        generationId: created.id,
+        amount: cost,
+        metadata: {
+          modelId: model.id,
+          outputs,
+          durationSeconds,
+          tier: entitledTier,
+        },
+      });
+
+      if (!reserved.ok) {
+        insufficientBalance = reserved.balance;
+        // Rolls the generation row back with it. A generation nobody paid for
+        // must not survive the request that failed to pay for it.
+        throw new InsufficientCredits();
+      }
+
+      return created;
+    })
+    .catch((error: unknown) => {
+      if (error instanceof InsufficientCredits) {
+        throw new GenerationError(
+          `This needs ${cost} credits and you have ${insufficientBalance ?? 0}.`,
+          402,
+          "insufficient_credits",
+        );
+      }
+      throw error;
+    });
 
   // Provider call happens *outside* the transaction. Holding a database
   // transaction open across a network call to a third party is how connection
@@ -251,6 +388,29 @@ export async function submitGeneration(input: SubmitInput) {
         startedAt: new Date(),
       },
     });
+
+    /**
+     * The provider has accepted the work. Capture.
+     *
+     * This is the line that divides refundable from billable. Everything before
+     * it can be released in full; everything after it has GPU time attached
+     * that Replicate will invoice whether or not the output is any good.
+     *
+     * The month's spend estimate is incremented here rather than on success for
+     * the same reason: a job that fails after acceptance still costs money, and
+     * a breaker that only counts successes undercounts exactly the runs that
+     * are going wrong.
+     */
+    const estimate = estimateCost(model, outputs, { durationSeconds });
+
+    await captureReservation({
+      userId: user.id,
+      generationId: generation.id,
+      amount: cost,
+      providerCostMicroUsd: estimate.costMicroUsd,
+    });
+
+    await recordSpend({ costMicroUsd: estimate.costMicroUsd, isFree: free });
 
     // A synchronous provider (OpenAI) is already finished. Settle it now rather
     // than making the client poll for something we already have.
@@ -290,6 +450,23 @@ export async function submitGeneration(input: SubmitInput) {
         ? "The provider account is out of credit — top it up at replicate.com/account/billing. (Shown because you are an admin; other users see a generic message.)"
         : publicMessage;
 
+    /**
+     * Submission failed, so the provider never accepted the work.
+     *
+     * Nothing was billed and the credits go back in full. `releaseReservation`
+     * checks for a capture row before paying out, so if the failure somehow
+     * happened *after* acceptance — a network error reading a response to a
+     * request the provider already queued — it refuses, and the generation is
+     * left for manual review rather than being refunded for work we owe money
+     * for.
+     */
+    await releaseReservation({
+      userId: user.id,
+      generationId: generation.id,
+      amount: cost,
+      reason: providerFailure?.code ?? "provider_submit_failed",
+    });
+
     // The *stored* failure keeps the public wording: it is read back on the
     // generation row by whoever opens it, admin or not.
     await failGeneration(generation.id, publicMessage);
@@ -303,36 +480,84 @@ export async function submitGeneration(input: SubmitInput) {
 }
 
 /**
- * Refund, once.
+ * Give credits back, once, and only when we are not on the hook for them.
  *
- * The unique `idempotencyKey` is what makes "once" true. Without it, a job
- * polled by three open tabs refunds three times.
+ * ## What changed in Sprint 4
+ *
+ * This used to refund unconditionally. Every failed generation returned the
+ * customer's credits — including the ones that failed *after* Replicate had
+ * accepted the job and started billing us for GPU time. Atheos paid for the run
+ * and handed the money back, so the worst-behaved generations were the most
+ * expensive ones, and a model in a bad state cost twice per attempt.
+ *
+ * `releaseReservation` now checks for a capture row first and refuses if one
+ * exists. That refusal is deliberate and it is not silent: it emits
+ * `credit.release.refused`, and the generation becomes reviewable through
+ * `listCapturedFailures()` below.
+ *
+ * The decision belongs in the ledger rather than here because there are three
+ * call sites — failure, cancellation and the worker — and a policy enforced in
+ * three places is a policy enforced in two.
+ *
+ * Generations created before this sprint carry a `spend:` key and no `capture:`
+ * row, so they release normally. The change is not retroactive.
  */
-async function refund(generationId: string, userId: string, amount: number) {
+async function refund(
+  generationId: string,
+  userId: string,
+  amount: number,
+  reason: string,
+) {
   if (amount <= 0) return;
 
-  try {
-    await prisma.$transaction(async (tx) => {
-      const updated = await tx.user.update({
-        where: { id: userId },
-        data: { creditBalance: { increment: amount } },
-      });
+  await releaseReservation({ userId, generationId, amount, reason });
+}
 
-      await tx.creditTransaction.create({
-        data: {
-          userId,
-          amount,
-          reason: "GENERATION_REFUND",
-          balanceAfter: updated.creditBalance,
-          generationId,
-          idempotencyKey: `refund:${generationId}`,
-        },
-      });
-    });
-  } catch {
-    // Unique violation: already refunded. Not an error — it is the constraint
-    // doing exactly its job.
-  }
+/**
+ * Failed generations we were billed for and did not refund.
+ *
+ * The review queue, derived rather than stored: a generation is on it when it
+ * has a capture row, no release row, and a terminal failure status. Deriving it
+ * means there is no flag to forget to set and no flag to forget to clear.
+ *
+ * Read by the admin dashboard. Refunding one is a `manual_adjustment`, made
+ * deliberately by a person who has looked at it — which is the correct amount
+ * of friction for money we have already spent.
+ */
+export async function listCapturedFailures(limit = 50) {
+  const failures = await prisma.generation.findMany({
+    where: { status: { in: ["FAILED", "CANCELED"] } },
+    orderBy: { createdAt: "desc" },
+    take: Math.min(limit, 200),
+    select: {
+      id: true,
+      userId: true,
+      model: true,
+      creditsCost: true,
+      error: true,
+      createdAt: true,
+    },
+  });
+
+  if (failures.length === 0) return [];
+
+  const keys = failures.flatMap((generation) => [
+    `capture:${generation.id}`,
+    `release:${generation.id}`,
+  ]);
+
+  const rows = await prisma.creditTransaction.findMany({
+    where: { idempotencyKey: { in: keys } },
+    select: { idempotencyKey: true },
+  });
+
+  const seen = new Set(rows.map((row) => row.idempotencyKey));
+
+  return failures.filter(
+    (generation) =>
+      seen.has(`capture:${generation.id}`) &&
+      !seen.has(`release:${generation.id}`),
+  );
 }
 
 async function failGeneration(generationId: string, message: string) {
@@ -347,7 +572,12 @@ async function failGeneration(generationId: string, message: string) {
     data: { status: "FAILED", error: message, completedAt: new Date() },
   });
 
-  await refund(generationId, generation.userId, generation.creditsCost);
+  await refund(
+    generationId,
+    generation.userId,
+    generation.creditsCost,
+    "generation_failed",
+  );
 }
 
 /**
@@ -627,7 +857,12 @@ export async function pollGeneration(generationId: string) {
       where: { id: generation.id },
       data: { status: "CANCELED", completedAt: new Date() },
     });
-    await refund(generation.id, user.id, generation.creditsCost);
+    await refund(
+      generation.id,
+      user.id,
+      generation.creditsCost,
+      "provider_canceled",
+    );
   } else if (job.state === "running" && generation.status !== "RUNNING") {
     await prisma.generation.update({
       where: { id: generation.id },
@@ -679,7 +914,7 @@ export async function cancelGeneration(generationId: string) {
     data: { status: "CANCELED", completedAt: new Date() },
   });
 
-  await refund(generation.id, user.id, generation.creditsCost);
+  await refund(generation.id, user.id, generation.creditsCost, "user_canceled");
 
   return prisma.generation.findFirstOrThrow({ where: { id: generationId } });
 }

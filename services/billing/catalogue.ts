@@ -37,12 +37,29 @@ export interface PlanDefinition {
   description: string;
   /** Per month, billed monthly. Minor units. */
   monthly: number;
-  /** Per month, billed yearly. Minor units. */
-  yearly: number;
-  /** Credits granted at the start of each billing period. */
-  monthlyCredits: number;
+  /**
+   * Credits granted at the start of each billing period.
+   *
+   * **Null means not yet decided.** Four of the six sellable models still carry
+   * estimated or unknown provider costs (`services/billing/model-costs.ts`), and
+   * an allowance derived from an estimate is a promise the backend might not be
+   * able to keep. Nothing may render a number from a null — the pricing page
+   * shows the plan as not yet available instead, which is true.
+   *
+   * `services/billing/plan-config.ts` holds the provisional figure and the
+   * arithmetic behind it, server-side, where it carries no promise.
+   */
+  monthlyCredits: number | null;
   features: readonly string[];
   featured?: boolean;
+  /**
+   * Whether this plan can be bought today.
+   *
+   * `launch_disabled` plans are configured, priced and deliberately not
+   * offered. They are excluded from the pricing page rather than shown greyed
+   * out, because a plan a visitor cannot buy is not a plan, it is a rumour.
+   */
+  status: "active" | "launch_disabled" | "retired";
 }
 
 export const CURRENCY = "usd";
@@ -50,7 +67,19 @@ export const CURRENCY = "usd";
 /**
  * The plans.
  *
- * **Every feature line here must be true today.** Sequences, audio and the
+ * ## Four, monthly, no annual, no Agency — Sprint 4
+ *
+ * The $5 Starter and the $199 Agency are gone: the first was marginal after
+ * Stripe took $0.45 of it, and the second sold volume nobody had asked for.
+ * Annual billing is gone too — it takes a year's money against costs that have
+ * not been measured yet, which is the wrong direction to be wrong in.
+ *
+ * `AGENCY` now labels the $89.99 top tier. The enum value is reused rather than
+ * migrated, which is only safe because nothing has ever been sold; see
+ * `services/billing/plan-config.ts` for the full note and the pre-flight check.
+ *
+ * ## Every feature line here must be true today.
+ * Sequences, audio and the
  * editor are specified and not built; naming them on a pricing page would be
  * selling something that does not exist, and the first customer to look for it
  * stops believing the rest of the list. They go in when they ship.
@@ -64,95 +93,84 @@ export const PLAN_DEFINITIONS: readonly PlanDefinition[] = [
   {
     tier: "STARTER",
     name: "Free",
-    description: "One video and a handful of images, to see if it fits.",
+    description:
+      "A handful of images, to see whether the output is good enough.",
     monthly: 0,
-    yearly: 0,
-    // 100 credits is exactly one video on the fast model, or 25 images. At
-    // measured provider rates that is ~$0.10 per signup — a cheap way to let
-    // somebody find out whether the output is good enough for them.
+    // **One-time.** Not a monthly allowance — Sprint 4 removed the renewal, and
+    // the wording here changed with it. A free tier that renews forever is a
+    // cost that grows with signups and never with revenue, which on a $500
+    // ceiling is the one shape that cannot be managed.
     monthlyCredits: 100,
     features: [
-      "1 video or 25 images",
-      "720p video, fast model",
-      "Image upscaling to 4K",
+      "100 credits when you join, one time",
+      "Around 25 images, or 7 on the quality model",
       "Full asset library and projects",
       "Commercial rights to everything you make",
     ],
-  },
-  {
-    tier: "BASIC",
-    name: "Starter",
-    description: "For the occasional project, without a monthly commitment.",
-    monthly: 500,
-    yearly: 400,
-    // 350 credits is roughly three videos or eighty-seven images. Priced to be
-    // an easy yes rather than to be profitable per seat: at ~$0.001 a credit it
-    // costs us about $0.39 to serve, and Stripe takes $0.45 of the $5.
-    monthlyCredits: 350,
-    features: [
-      "3 videos or 87 images a month",
-      "720p video, fast model",
-      "Background removal and 4K upscaling",
-      "Full asset library and projects",
-      "Automatic refund when a provider fails",
-      "Commercial rights to everything you make",
-    ],
+    status: "active",
   },
   {
     tier: "STUDIO",
     name: "Creator",
     description: "For one person publishing on a schedule.",
-    monthly: 1599,
-    yearly: 1299,
-    monthlyCredits: 1000,
+    monthly: 999,
+    monthlyCredits: null,
     features: [
-      "11 videos or 250 images a month",
+      "Both video models, including Motion Pro",
       "1080p video up to 12 seconds",
       "Every aspect ratio — 16:9, 9:16, 1:1, 21:9",
-      "Both video models, including Motion Pro",
       "Image-to-video and reference images",
       "Background removal and 4K upscaling",
-      "Automatic refund when a provider fails",
+      "3 generations at once",
     ],
     featured: true,
+    status: "launch_disabled",
   },
   {
     tier: "SCALE",
-    name: "Studio",
-    description: "For channels shipping every day, and small teams.",
-    monthly: 3599,
-    yearly: 2899,
-    monthlyCredits: 3000,
+    name: "Pro",
+    description: "For channels shipping every day.",
+    monthly: 3499,
+    monthlyCredits: null,
     features: [
-      "33 videos or 750 images a month",
       "Everything in Creator",
+      "5 generations at once",
       "Bulk generation and export",
       "Usage and cost breakdown",
       "Publish to the community gallery",
       "Email support",
     ],
+    status: "launch_disabled",
   },
   {
     tier: "AGENCY",
-    name: "Agency",
-    description: "For studios and agencies producing at volume.",
-    monthly: 19900,
-    yearly: 15900,
-    monthlyCredits: 20000,
-    // Deliberately a *volume* tier and nothing more. Team seats, SSO, invoicing
-    // and a support SLA are what usually justify a price like this, and none of
-    // them are built — so none of them are listed. Everything below is a
-    // capability the product has today, at six times the Studio allowance.
-    // People who need the seats-and-procurement version get the contact card
-    // further down the page instead, which is honest about being a conversation.
+    name: "Studio",
+    description: "For studios producing at volume.",
+    monthly: 8999,
+    monthlyCredits: null,
     features: [
-      "222 videos or 5,000 images a month",
-      "Everything in Studio",
-      "Unused credits roll over for a month",
-      "Bulk generation and export",
+      "Everything in Pro",
+      "8 generations at once",
       "Full usage and cost breakdown per generation",
-      "Email support",
+      "Priority email support",
     ],
+    status: "launch_disabled",
+  },
+  {
+    /**
+     * Retired, and kept only so a historical `BASIC` row resolves to something
+     * rather than crashing a billing screen. Never shown, never sold.
+     *
+     * Deleting the entry would be tidier and would turn any surviving row into
+     * a lookup failure on a page somebody is trying to read.
+     */
+    tier: "BASIC",
+    name: "Starter",
+    description: "No longer offered.",
+    monthly: 500,
+    monthlyCredits: null,
+    features: [],
+    status: "retired",
   },
 ] as const;
 
@@ -184,7 +202,40 @@ export const PACK_DEFINITIONS: readonly PackDefinition[] = [
 ] as const;
 
 /** Credits granted once, when an account is created. Matches Starter. */
+/**
+ * What a new account receives, **once**.
+ *
+ * Not monthly. `services/billing/free-grant.ts` holds the reasoning and the
+ * abuse analysis; the grant itself happens in `services/users/provision.ts`,
+ * inside the transaction that creates the user, keyed on the Clerk id so a
+ * retried webhook cannot double it.
+ *
+ * At $0.005 a credit this is $0.50 of retail value. The real exposure is lower:
+ * video is not reachable from the Free plan, so the worst case is about seven
+ * quality images, or $0.18 of provider spend.
+ */
 export const SIGNUP_GRANT = 100;
+
+/** Plans that may be bought today. */
+export function sellablePlanDefinitions(): readonly PlanDefinition[] {
+  return PLAN_DEFINITIONS.filter((plan) => plan.status === "active");
+}
+
+/**
+ * Plans the pricing page renders.
+ *
+ * Includes `launch_disabled` — a plan whose *price and capabilities* are
+ * settled and whose *credit allowance* is not. Showing it is honest: the price
+ * is real, the features are real, and the one number that is still being
+ * measured is the one the card declines to print. Hiding the paid plans
+ * entirely would suggest the product has no paid tier, which is a different and
+ * larger untruth.
+ *
+ * Excludes `retired`, which is a row that exists only for lookups.
+ */
+export function visiblePlanDefinitions(): readonly PlanDefinition[] {
+  return PLAN_DEFINITIONS.filter((plan) => plan.status !== "retired");
+}
 
 export function planDefinitionFor(tier: PlanTier): PlanDefinition {
   return (

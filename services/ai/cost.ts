@@ -1,6 +1,7 @@
 import "server-only";
 
 import { creditsFor } from "@/services/ai/pricing";
+import { MICRO_USD, costEntry } from "@/services/billing/model-costs";
 import type { ProviderId, ProviderModel } from "@/services/ai/types";
 
 /**
@@ -38,8 +39,18 @@ import type { ProviderId, ProviderModel } from "@/services/ai/types";
  * already applied to recorded revenue (§ 6).
  */
 
-/** One US dollar, in micro-USD. */
-export const MICRO_USD = 1_000_000;
+/**
+ * ## One source, since Sprint 4
+ *
+ * This file used to hold its own `COST_BASIS` map. `services/billing/model-costs.ts`
+ * now owns those figures, because the margin check needs them next to the
+ * credit price and two maps of provider costs would eventually disagree — with
+ * the margin report reading one and the pricing gate reading the other.
+ *
+ * What stays here is the *estimator*: turning a basis plus a request into a
+ * number, which is a different job from deciding what the basis is.
+ */
+export { MICRO_USD } from "@/services/billing/model-costs";
 
 export interface ModelCostBasis {
   /** What the vendor charges per output, in micro-USD. */
@@ -57,63 +68,24 @@ export interface ModelCostBasis {
 }
 
 /**
- * Cost basis per model.
+ * The basis for a model, or null when it has none.
  *
- * Keyed by the model id used in the catalogue. A model absent from this map has
- * **unknown** cost, which is reported as such rather than assumed to be zero —
- * assuming zero is how a loss-making model looks like the most profitable one
- * in the table.
+ * A model absent from the configuration has **unknown** cost, which is reported
+ * as such rather than assumed to be zero — assuming zero is how a loss-making
+ * model looks like the most profitable one in the table.
  */
-const COST_BASIS: Record<string, ModelCostBasis> = {
-  // Placeholder Replicate versions; the costs are the published list prices for
-  // the models those placeholders stand for.
-  "replicate/flux-schnell": { perOutputMicroUsd: 3_000, checked: "2026-08" },
-  "replicate/flux-dev": { perOutputMicroUsd: 25_000, checked: "2026-08" },
-  "replicate/real-esrgan": { perOutputMicroUsd: 2_300, checked: "2026-08" },
-  "replicate/remove-bg": { perOutputMicroUsd: 1_500, checked: "2026-08" },
-  // Both video rates are **measured**, not published — derived from a real
-  // Replicate invoice on 2026-08-13: $0.75 across four clips, one upscale and
-  // four images, apportioned by each model's share of GPU time.
-  //
-  // The earlier figure here was 90_000/sec, which made a five-second clip
-  // $0.45. The real cost is roughly a fifth of that. Guessing high is the
-  // safer direction to be wrong in, and it was still wrong enough to have
-  // priced the product badly.
-  //
-  // Per second of *output*, not of render. Seedance takes 5-7x longer to
-  // render than the fast model and does not cost 5-7x more, because Replicate
-  // bills its official models by output rather than by GPU time. That
-  // distinction is the whole reason Motion Pro is viable.
-  "replicate/video-gen": {
-    perOutputMicroUsd: 0,
-    perSecondMicroUsd: 20_000, // ~$0.10 per 5s clip
-    checked: "2026-08-13 (measured)",
-  },
-  "replicate/video-pro": {
-    perOutputMicroUsd: 0,
-    perSecondMicroUsd: 54_000, // ~$0.27 per 5s clip
-    checked: "2026-08-13 (measured)",
-  },
-  // Audio, added Sprint 27. Both bill by GPU time rather than per output, so
-  // the rate is per *generated* second and the numbers below are conservative
-  // — an 8s musicgen run took well under a minute of A100 time.
-  "replicate/music": {
-    perOutputMicroUsd: 0,
-    perSecondMicroUsd: 3_000, // ~$0.024 for 8s
-    checked: "2026-08-13 (estimated from run time)",
-  },
-  "replicate/sfx": {
-    perOutputMicroUsd: 0,
-    perSecondMicroUsd: 2_000, // ~$0.010 for 5s
-    checked: "2026-08-13 (estimated from run time)",
-  },
-  "openai/gpt-image-1": { perOutputMicroUsd: 40_000, checked: "2026-08" },
+function basisFor(modelId: string): ModelCostBasis | null {
+  const entry = costEntry(modelId);
+  if (!entry || entry.perOutputMicroUsd === null) return null;
 
-  // The mock costs nothing. Recorded explicitly so it does not fall into the
-  // "unknown" bucket and pollute a margin report with a null.
-  "mock/image": { perOutputMicroUsd: 0, checked: "n/a" },
-  "mock/video": { perOutputMicroUsd: 0, checked: "n/a" },
-};
+  return {
+    perOutputMicroUsd: entry.perOutputMicroUsd,
+    ...(entry.perSecondMicroUsd !== undefined
+      ? { perSecondMicroUsd: entry.perSecondMicroUsd }
+      : {}),
+    checked: entry.checked,
+  };
+}
 
 export interface CostEstimate {
   /** Null when the model has no recorded basis. Never silently zero. */
@@ -147,7 +119,7 @@ export function estimateCost(
   } = {},
 ): CostEstimate {
   const credits = creditsFor(model, outputs, options.durationSeconds);
-  const basis = COST_BASIS[model.id];
+  const basis = basisFor(model.id);
 
   if (!basis) {
     return {
@@ -180,7 +152,7 @@ export function estimateCost(
 export function modelsWithoutCostBasis(
   models: readonly ProviderModel[],
 ): readonly string[] {
-  return models.filter((m) => !COST_BASIS[m.id]).map((m) => m.id);
+  return models.filter((m) => !basisFor(m.id)).map((m) => m.id);
 }
 
 /**

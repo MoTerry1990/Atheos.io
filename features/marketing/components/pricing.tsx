@@ -1,8 +1,6 @@
 "use client";
 
-import { motion } from "motion/react";
 import { Check } from "lucide-react";
-import { useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,18 +12,18 @@ import {
   Section,
   SectionHeading,
 } from "@/features/marketing/components/section";
-import { duration, easing } from "@/components/ui/motion";
 import { cn } from "@/lib/utils";
 
 /**
  * Pricing.
  *
- * ## The billing toggle
+ * ## Monthly only — Sprint 4
  *
- * A two-state segmented control, not a switch. A switch implies on/off and
- * gives no affordance for reading the alternative before committing to it —
- * users have to flip it to find out what the other option costs. The sliding
- * `layoutId` pill is the same technique as the showcase tabs.
+ * The annual toggle is gone. Annual billing collects a year of money against
+ * provider costs that have not been measured yet, which is the wrong direction
+ * to be wrong in for a self-funded business: a mispriced monthly plan is
+ * corrected next month, and a mispriced annual plan is a year of it plus the
+ * refunds.
  *
  * ## The price
  *
@@ -41,7 +39,6 @@ import { cn } from "@/lib/utils";
  */
 export function Pricing() {
   const { pricing, plans } = useCopy();
-  const [yearly, setYearly] = useState(false);
 
   return (
     <Section id="pricing">
@@ -51,54 +48,12 @@ export function Pricing() {
         description={pricing.description}
       />
 
-      <Reveal delay={0.05} className="mt-10">
-        <div
-          role="radiogroup"
-          aria-label="Billing period"
-          className="mx-auto flex w-fit gap-1 rounded-full border border-border bg-surface-sunken p-1"
-        >
-          {[
-            { id: "monthly", label: pricing.monthly, value: false },
-            { id: "yearly", label: pricing.yearly, value: true },
-          ].map((option) => {
-            const selected = yearly === option.value;
-            return (
-              <button
-                key={option.id}
-                type="button"
-                role="radio"
-                aria-checked={selected}
-                onClick={() => setYearly(option.value)}
-                className={cn(
-                  "relative rounded-full px-4 py-1.5 text-sm font-medium transition-colors",
-                  "focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:outline-none",
-                  selected
-                    ? "text-foreground"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                {selected ? (
-                  <motion.span
-                    layoutId="billing-pill"
-                    className="absolute inset-0 rounded-full bg-card elevation-raised"
-                    transition={{ duration: duration.normal, ease: easing.out }}
-                  />
-                ) : null}
-                <span className="relative">{option.label}</span>
-                {option.value ? (
-                  <span className="relative ml-1.5 text-xs text-primary">
-                    {pricing.yearlySave}
-                  </span>
-                ) : null}
-              </button>
-            );
-          })}
-        </div>
-      </Reveal>
-
-      <div className="mt-12 grid items-start gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+      <div className="mt-12 grid items-start gap-6 sm:grid-cols-2 lg:grid-cols-4">
         {PRICING.map((tier, index) => {
-          const price = yearly ? tier.yearly : tier.monthly;
+          const price = tier.monthly;
+          // A plan whose credit allowance is still being measured. Priced and
+          // described honestly; not buyable, and saying so on the button.
+          const pending = tier.status === "launch_disabled";
           // Names, blurbs and bullets are translated; every number comes from
           // the billing catalogue, which has exactly one version.
           const plan = plans[tier.tier];
@@ -148,25 +103,15 @@ export function Pricing() {
                     </span>
                   </div>
 
-                  {/* The yearly figure above is per month. This is the amount
-                      that is actually charged, once, for the year — and the
-                      saving against paying monthly, in money rather than in a
-                      percentage nobody converts in their head. Reserved height
-                      on the monthly view so the cards do not jump on toggle. */}
-                  <p className="mt-1.5 min-h-4 text-xs text-muted-foreground">
-                    {yearly && price > 0 ? (
-                      <>
-                        {formatMoney(tier.yearlyTotal)} {pricing.billedYearly}
-                        <span className="text-primary">
-                          {` · ${pricing.save} `}
-                          {formatMoney(tier.monthly * 12 - tier.yearlyTotal)}
-                        </span>
-                      </>
-                    ) : null}
-                  </p>
-
+                  {/* The credit line, or an honest substitute for it.
+                      `tier.credits` is null while a plan's provider costs are
+                      still being measured — printing a guess here is the one
+                      thing a pricing page must never do, because a credit count
+                      on this card is what a customer will count against later. */}
                   <p className="mt-1.5 text-xs font-medium text-primary">
-                    {pricing.creditsMonthly(tier.credits)}
+                    {tier.credits
+                      ? pricing.creditsMonthly(tier.credits)
+                      : pricing.creditsPending}
                   </p>
 
                   {/* Straight to sign-up, carrying the chosen plan.
@@ -176,7 +121,7 @@ export function Pricing() {
                       the plan they already chose. The free tier needs no plan
                       at all — signing up *is* the free tier. */}
                   <Button
-                    variant={tier.featured ? "gradient" : "outline"}
+                    variant={tier.featured && !pending ? "gradient" : "outline"}
                     size="lg"
                     block
                     className="mt-6"
@@ -187,13 +132,15 @@ export function Pricing() {
                         price === 0
                           ? "/sign-up"
                           : `/sign-up?redirect_url=${encodeURIComponent(
-                              `/settings/billing?plan=${tier.id}&interval=${yearly ? "YEAR" : "MONTH"}`,
+                              `/settings/billing?plan=${tier.id}`,
                             )}`
                       }
                     >
                       {price === 0
                         ? pricing.ctaFree
-                        : pricing.ctaChoose(plan.name)}
+                        : pending
+                          ? pricing.ctaPending
+                          : pricing.ctaChoose(plan.name)}
                     </a>
                   </Button>
 

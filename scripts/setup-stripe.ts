@@ -171,17 +171,10 @@ async function main() {
       envVar: `STRIPE_PRICE_${plan.tier}_MONTHLY`,
     });
 
-    await ensurePrice({
-      lookupKey: `atheos_${tier}_year`,
-      productName: `Atheos ${plan.name}`,
-      productDescription: plan.description,
-      // The catalogue stores the per-month figure on a yearly plan; Stripe
-      // charges the whole year at once. Getting this wrong bills somebody
-      // twelve times too little, which is the expensive direction.
-      amount: plan.yearly * 12,
-      interval: "year",
-      envVar: `STRIPE_PRICE_${plan.tier}_YEARLY`,
-    });
+    // No yearly price. Sprint 4 retired annual billing: it takes a year of
+    // money against provider costs that have not been measured, and the
+    // correction for a mispriced annual plan is a year of refunds rather than
+    // a better number next month.
   }
 
   console.log("\nCredit packs");

@@ -116,17 +116,19 @@ export interface MarketingCopy {
     eyebrow: string;
     title: string;
     description: string;
-    monthly: string;
-    yearly: string;
-    yearlySave: string;
     mostPopular: string;
     perMonth: string;
     forever: string;
-    billedYearly: string;
-    save: string;
     creditsMonthly: (credits: string) => string;
+    /**
+     * Shown instead of a credit count while a plan's provider costs are still
+     * being measured. Never a number — that is the whole point of it existing.
+     */
+    creditsPending: string;
     ctaFree: string;
     ctaChoose: (plan: string) => string;
+    /** CTA for a plan that is priced and not yet buyable. */
+    ctaPending: string;
     note: string;
   };
 
@@ -164,6 +166,8 @@ export interface MarketingCopy {
       community: string;
       email: string;
       allSix: string;
+      /** Renders where a credit allowance has not been settled yet. */
+      pending: string;
     };
   };
 

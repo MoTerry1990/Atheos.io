@@ -26,7 +26,7 @@ import { cn } from "@/lib/utils";
  */
 export function PlanCard({
   plan,
-  interval,
+  interval: _interval,
   currentTier,
   scheduledTier,
   cancelAtPeriodEnd,
@@ -40,8 +40,7 @@ export function PlanCard({
     name: string;
     description: string;
     monthly: number;
-    yearly: number;
-    monthlyCredits: number;
+    monthlyCredits: number | null;
     features: readonly string[];
     featured?: boolean;
   };
@@ -57,7 +56,12 @@ export function PlanCard({
 }) {
   const isCurrent = plan.tier === currentTier;
   const isScheduled = scheduledTier === plan.tier;
-  const amount = interval === "YEAR" ? plan.yearly : plan.monthly;
+  // Monthly only since Sprint 4. `_interval` is still accepted because a
+  // pre-existing yearly subscription must still render a card, and it renders
+  // at the monthly rate rather than at a price that no longer exists. The
+  // parameter is kept rather than removed so the call sites do not have to
+  // change back when annual billing is reconsidered.
+  const amount = plan.monthly;
 
   const direction =
     rankOf(plan.tier) > rankOf(currentTier)
@@ -75,9 +79,6 @@ export function PlanCard({
       : plan.tier === "STARTER"
         ? "Cancel subscription"
         : `Downgrade to ${plan.name}`;
-
-  const yearlySaving =
-    plan.monthly > 0 ? Math.round((1 - plan.yearly / plan.monthly) * 100) : 0;
 
   return (
     <div
@@ -119,14 +120,15 @@ export function PlanCard({
         ) : null}
       </p>
 
-      {interval === "YEAR" && yearlySaving > 0 ? (
-        <p className="mt-0.5 text-2xs text-muted-foreground">
-          Billed yearly · save {yearlySaving}%
-        </p>
-      ) : null}
-
+      {/* A null allowance is a plan whose provider costs are still being
+          measured. It says so rather than printing a guess — see
+          `services/billing/catalogue.ts`. */}
       <p className="mt-3 text-xs font-medium tabular-nums">
-        {plan.monthlyCredits.toLocaleString("en-US")} credits monthly
+        {plan.monthlyCredits === null
+          ? "Credit allowance confirmed at launch"
+          : plan.tier === "STARTER"
+            ? `${plan.monthlyCredits.toLocaleString("en-US")} credits, one time`
+            : `${plan.monthlyCredits.toLocaleString("en-US")} credits monthly`}
       </p>
 
       <ul className="mt-4 flex-1 space-y-1.5">

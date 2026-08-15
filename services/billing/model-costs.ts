@@ -1,0 +1,505 @@
+import "server-only";
+
+import type { Modality } from "@/lib/generated/prisma/enums";
+import type { ProviderId } from "@/services/ai/types";
+
+/**
+ * What every model costs **us**, what we charge for it, and whether that gap is
+ * wide enough to survive.
+ *
+ * ## Why this file exists
+ *
+ * `REVENUE_READINESS_AUDIT.md` § 8 found that Motion Pro cost more to run than
+ * it earned — a subscription that loses money faster the more the customer
+ * enjoys it. The cause was structural rather than arithmetic: credit prices
+ * lived in the provider adapters, provider costs lived in `services/ai/cost.ts`,
+ * and nothing anywhere compared the two. A price could drift below cost and no
+ * test, type or review step would notice.
+ *
+ * This module is that comparison, made mandatory. Every enabled model declares
+ * both numbers and the margin it must clear, and `tests/unit/model-costs.test.ts`
+ * fails the build if any of them stops clearing it.
+ *
+ * ## `server-only`, and why that is not decoration
+ *
+ * These are supplier costs. Shipping them to the browser tells every customer
+ * and every competitor exactly what Atheos pays per clip and exactly how much
+ * margin is in each plan. The import on line 1 makes that a build error rather
+ * than a code-review habit.
+ *
+ * ## The credit is the unit of account, and it needed a value
+ *
+ * Credits are a product abstraction — they exist so a customer never reasons
+ * about eleven vendors' price lists. But "is this price safe?" cannot be
+ * answered in credits, only in money, so a credit needs an exchange rate.
+ *
+ * `CREDIT_VALUE_MICRO_USD` is that rate, and it is *chosen*, not measured. The
+ * derivation is written out below so a future change is an argument about the
+ * assumption rather than a silent edit to a magic number.
+ */
+
+/** One US dollar, in micro-USD. Re-exported so callers need one import. */
+export const MICRO_USD = 1_000_000;
+
+/**
+ * What one credit is worth in real money: **$0.005**.
+ *
+ * ## Where the number comes from
+ *
+ * Not from what credits cost to produce — from what a subscription can afford
+ * to give away. The audit's § 8 target is a provider allowance of **≤ $2.50 per
+ * month on the $9.99 Creator plan**, which is a 73% gross margin after Stripe's
+ * 2.9% + $0.30.
+ *
+ * The rate then falls out of the *most expensive* thing a plan can reach, not
+ * the cheapest. Motion Pro at 180 credits must cover $0.27 of provider spend at
+ * a 3× margin:
+ *
+ *   180 credits x rate  >=  3 x $0.27      =>  rate >= $0.0045
+ *
+ * Rounded up to $0.005 for a round number and a little headroom. The audit's
+ * own table used $0.0011; that figure came from dividing an allowance by a
+ * guessed credit count, which is the circular direction. This runs it the other
+ * way — from the worst unit cost outward — which is the direction that cannot
+ * produce a negative margin.
+ *
+ * ## What it deliberately does *not* change
+ *
+ * The existing credit prices, and therefore every existing balance. Picking the
+ * rate to fit the catalogue rather than rescaling the catalogue to fit a round
+ * rate means the 100 credits sitting in an account today buy exactly what they
+ * bought yesterday. A rescale would have needed a balance backfill, and a
+ * backfill of live money is a risk taken for cosmetics.
+ *
+ * Two models did have to move — see `flux-dev` and `gpt-image-1` below.
+ */
+export const CREDIT_VALUE_MICRO_USD = 5_000;
+
+/**
+ * How confident we are in a cost figure. Drives what the model is allowed to do.
+ *
+ *   `verified`   reconciled against the provider's own invoice or a metered run
+ *   `estimated`  derived from published list prices or observed run time
+ *   `unknown`    no figure at all
+ *
+ * There is no fourth value meaning "probably fine". A cost we have not
+ * established is `unknown`, and an unknown cost cannot be sold — rule 1 of the
+ * sprint brief and the only rule here that has no exceptions.
+ */
+export type CostVerification = "verified" | "estimated" | "unknown";
+
+/**
+ * How the provider charges.
+ *
+ * `per_second` models are the dangerous ones: their cost scales with a number
+ * the *customer* picks, so a safe price has to be checked against the longest
+ * duration the model offers rather than the default one.
+ */
+export type BillingUnit = "per_output" | "per_second" | "free";
+
+export interface ModelCostEntry {
+  /** Catalogue model id — the join key to `services/ai/registry.ts`. */
+  modelId: string;
+  provider: ProviderId | "mock";
+  modality: Modality;
+
+  /**
+   * Fixed cost per output, in micro-USD. Null when the cost is unknown.
+   *
+   * Null and zero are different claims: zero says "the vendor charges nothing",
+   * null says "we have not found out". Conflating them is how a loss-making
+   * model shows up as the most profitable row in a margin report.
+   */
+  perOutputMicroUsd: number | null;
+
+  /** Additional cost per second of output, for duration-priced models. */
+  perSecondMicroUsd?: number;
+
+  billingUnit: BillingUnit;
+
+  /**
+   * The assumptions a cost figure depends on. Recorded because a cost is only
+   * meaningful alongside them — "$0.27" means nothing without "for 5 seconds".
+   */
+  assumptions?: {
+    /** Longest duration the catalogue offers. The worst case is priced on it. */
+    maxDurationSeconds?: number;
+    resolution?: string;
+    note?: string;
+  };
+
+  /** What the customer pays, per output at the model's *base* duration. */
+  creditCost: number;
+
+  /**
+   * Whether the model may run at all.
+   *
+   * Disabled models stay in the catalogue rather than being deleted, so the
+   * reason they are off is visible next to the cost that caused it.
+   */
+  enabled: boolean;
+
+  /**
+   * Whether a Free-plan account may run it.
+   *
+   * Every video model is `false` regardless of margin. Margin protects the
+   * *unit*; it does nothing about volume, and the free plan's whole exposure is
+   * volume by people who have paid nothing. § 9 of the audit rates parallel
+   * free video generation as Critical.
+   */
+  freeTierEligible: boolean;
+
+  /**
+   * Revenue must be at least this multiple of worst-case cost.
+   *
+   * 2.5x is the audit's stated exit criterion — a 60% gross margin. Video sits
+   * at 3.0x because its cost is measured from a single invoice and scales with
+   * a customer-chosen duration, so it has the most room to be wrong.
+   */
+  minimumMarginMultiple: number;
+
+  verification: CostVerification;
+
+  /** When the figure was last checked, and against what. */
+  checked: string;
+}
+
+/**
+ * The catalogue, financially.
+ *
+ * Ordered by modality. Every model the registry can resolve must appear here —
+ * `tests/unit/model-costs.test.ts` asserts the two lists agree, so adding a
+ * model without a cost entry fails the build rather than shipping an unpriced
+ * generation.
+ */
+export const MODEL_COSTS: readonly ModelCostEntry[] = [
+  // ------------------------------------------------------------------------
+  // Image
+  // ------------------------------------------------------------------------
+  {
+    modelId: "replicate/flux-schnell",
+    provider: "replicate",
+    modality: "IMAGE",
+    perOutputMicroUsd: 3_000,
+    billingUnit: "per_output",
+    assumptions: { resolution: "1024x1024" },
+    creditCost: 4,
+    enabled: true,
+    freeTierEligible: true,
+    minimumMarginMultiple: 2.5,
+    verification: "estimated",
+    checked: "2026-08 (Replicate published list price)",
+  },
+  {
+    modelId: "replicate/flux-dev",
+    provider: "replicate",
+    modality: "IMAGE",
+    perOutputMicroUsd: 25_000,
+    billingUnit: "per_output",
+    assumptions: { resolution: "1024x1024" },
+    // Was 12. At 12 credits the margin was 2.4x — under the 2.5x floor, which
+    // is the smaller half of B5: not a loss, but thinner than the plan
+    // allowances were built on. 13 restores it with nothing to spare, which is
+    // the honest number rather than a comfortable one.
+    creditCost: 13,
+    enabled: true,
+    freeTierEligible: true,
+    minimumMarginMultiple: 2.5,
+    verification: "estimated",
+    checked: "2026-08 (Replicate published list price)",
+  },
+  {
+    modelId: "replicate/real-esrgan",
+    provider: "replicate",
+    modality: "IMAGE",
+    perOutputMicroUsd: 2_300,
+    billingUnit: "per_output",
+    creditCost: 3,
+    enabled: true,
+    freeTierEligible: true,
+    minimumMarginMultiple: 2.5,
+    verification: "estimated",
+    checked: "2026-08 (Replicate published list price)",
+  },
+  {
+    modelId: "replicate/remove-bg",
+    provider: "replicate",
+    modality: "IMAGE",
+    perOutputMicroUsd: 1_500,
+    billingUnit: "per_output",
+    creditCost: 2,
+    enabled: true,
+    freeTierEligible: true,
+    minimumMarginMultiple: 2.5,
+    verification: "estimated",
+    checked: "2026-08 (Replicate published list price)",
+  },
+  {
+    modelId: "openai/gpt-image-1",
+    provider: "openai",
+    modality: "IMAGE",
+    perOutputMicroUsd: 40_000,
+    billingUnit: "per_output",
+    assumptions: { resolution: "1024x1024, quality=medium" },
+    // Was 16, a 2.0x margin — the worst image ratio in the catalogue and the
+    // one most likely to be chosen, because it is the model people recognise.
+    // 20 credits is the floor at 2.5x.
+    creditCost: 20,
+    enabled: true,
+    freeTierEligible: false,
+    minimumMarginMultiple: 2.5,
+    verification: "estimated",
+    checked: "2026-08 (OpenAI published list price)",
+  },
+  {
+    modelId: "google/gemini-2.5-flash-image",
+    provider: "google",
+    modality: "IMAGE",
+    // Never established. Not zero, not "probably cheap" — unknown.
+    perOutputMicroUsd: null,
+    billingUnit: "per_output",
+    creditCost: 8,
+    // Rule 1: an unknown cost cannot be offered for money. Eight credits might
+    // be generous or it might be a loss, and there is no way to tell from here.
+    // One metered run closes this; until then it is off.
+    enabled: false,
+    freeTierEligible: false,
+    minimumMarginMultiple: 2.5,
+    verification: "unknown",
+    checked: "never",
+  },
+
+  // ------------------------------------------------------------------------
+  // Video — the expensive modality, and the one B5 was about
+  // ------------------------------------------------------------------------
+  {
+    modelId: "replicate/video-gen",
+    provider: "replicate",
+    modality: "VIDEO",
+    perOutputMicroUsd: 0,
+    perSecondMicroUsd: 20_000,
+    billingUnit: "per_second",
+    assumptions: {
+      maxDurationSeconds: 7.5,
+      note: "wan-2.2 caps at 121 frames @ 16fps; 7.5s is the model's ceiling, not a policy",
+    },
+    creditCost: 90,
+    enabled: true,
+    freeTierEligible: false,
+    minimumMarginMultiple: 3.0,
+    verification: "verified",
+    checked: "2026-08-13 (apportioned from a real Replicate invoice)",
+  },
+  {
+    modelId: "replicate/video-pro",
+    provider: "replicate",
+    modality: "VIDEO",
+    perOutputMicroUsd: 0,
+    perSecondMicroUsd: 54_000,
+    billingUnit: "per_second",
+    assumptions: { maxDurationSeconds: 12 },
+    creditCost: 180,
+    enabled: true,
+    freeTierEligible: false,
+    minimumMarginMultiple: 3.0,
+    verification: "verified",
+    checked: "2026-08-13 (apportioned from a real Replicate invoice)",
+  },
+
+  // ------------------------------------------------------------------------
+  // Audio
+  // ------------------------------------------------------------------------
+  {
+    modelId: "replicate/music",
+    provider: "replicate",
+    modality: "AUDIO",
+    perOutputMicroUsd: 0,
+    perSecondMicroUsd: 3_000,
+    billingUnit: "per_second",
+    assumptions: { maxDurationSeconds: 30 },
+    creditCost: 20,
+    enabled: true,
+    freeTierEligible: true,
+    minimumMarginMultiple: 2.5,
+    verification: "estimated",
+    checked:
+      "2026-08-13 (inferred from observed A100 run time, not an invoice)",
+  },
+  {
+    modelId: "replicate/sfx",
+    provider: "replicate",
+    modality: "AUDIO",
+    perOutputMicroUsd: 0,
+    perSecondMicroUsd: 2_000,
+    billingUnit: "per_second",
+    assumptions: { maxDurationSeconds: 8 },
+    creditCost: 10,
+    enabled: true,
+    freeTierEligible: true,
+    minimumMarginMultiple: 2.5,
+    verification: "estimated",
+    checked:
+      "2026-08-13 (inferred from observed A100 run time, not an invoice)",
+  },
+
+  // ------------------------------------------------------------------------
+  // Mock — costs nothing, and says so explicitly rather than by omission
+  // ------------------------------------------------------------------------
+  {
+    modelId: "mock/standard",
+    provider: "mock",
+    modality: "IMAGE",
+    perOutputMicroUsd: 0,
+    billingUnit: "free",
+    creditCost: 4,
+    enabled: true,
+    freeTierEligible: true,
+    minimumMarginMultiple: 0,
+    verification: "verified",
+    checked: "n/a — no provider call is made",
+  },
+  {
+    modelId: "mock/motion",
+    provider: "mock",
+    modality: "VIDEO",
+    perOutputMicroUsd: 0,
+    perSecondMicroUsd: 0,
+    billingUnit: "free",
+    assumptions: { maxDurationSeconds: 10 },
+    creditCost: 40,
+    enabled: true,
+    // The mock is how the pipeline is exercised without spending money, and a
+    // free account is exactly who should be able to do that.
+    freeTierEligible: true,
+    minimumMarginMultiple: 0,
+    verification: "verified",
+    checked: "n/a — no provider call is made",
+  },
+];
+
+const BY_ID = new Map(MODEL_COSTS.map((entry) => [entry.modelId, entry]));
+
+export function costEntry(modelId: string): ModelCostEntry | null {
+  return BY_ID.get(modelId) ?? null;
+}
+
+/**
+ * The most this model can cost for one output, in micro-USD.
+ *
+ * Null when the cost is unknown. **Priced on the longest duration offered**,
+ * never the default: the customer chooses the duration, so the default is the
+ * cheapest case rather than the safe one. Checking margin against a 5-second
+ * clip on a model that also offers 12 is how B5 stayed invisible.
+ */
+export function worstCaseCostMicroUsd(entry: ModelCostEntry): number | null {
+  if (entry.perOutputMicroUsd === null) return null;
+
+  const seconds = entry.assumptions?.maxDurationSeconds ?? 0;
+  return entry.perOutputMicroUsd + (entry.perSecondMicroUsd ?? 0) * seconds;
+}
+
+/**
+ * Revenue for one output at the model's worst case, in micro-USD.
+ *
+ * Mirrors `creditsFor()` in `services/ai/pricing.ts`: credits scale with
+ * duration by the same ratio the cost does, so a long clip earns proportionally
+ * more. The two have to be computed the same way or the margin check is
+ * comparing a long clip's cost against a short clip's price.
+ *
+ * The base duration is not stored here — it comes from the catalogue's
+ * `durations[0]`, and the caller passes it. Duplicating it would give the
+ * ratio two sources that could disagree.
+ */
+export function worstCaseRevenueMicroUsd(
+  entry: ModelCostEntry,
+  baseDurationSeconds: number | undefined,
+): number {
+  const max = entry.assumptions?.maxDurationSeconds;
+  const multiplier =
+    max && baseDurationSeconds && baseDurationSeconds > 0
+      ? Math.max(1, max / baseDurationSeconds)
+      : 1;
+
+  return Math.ceil(entry.creditCost * multiplier) * CREDIT_VALUE_MICRO_USD;
+}
+
+export interface SafetyVerdict {
+  safe: boolean;
+  /** Revenue ÷ cost at the worst case. Null when either side is unknown. */
+  marginMultiple: number | null;
+  /** The smallest credit price that would clear the floor. Null if unknown. */
+  minimumSafeCredits: number | null;
+  reason: string;
+}
+
+/**
+ * Is this model's price safe to sell at?
+ *
+ * The single question the whole module exists to answer, and the one the test
+ * suite runs over every enabled model.
+ */
+export function assessPrice(
+  entry: ModelCostEntry,
+  baseDurationSeconds: number | undefined,
+): SafetyVerdict {
+  const cost = worstCaseCostMicroUsd(entry);
+
+  if (cost === null) {
+    return {
+      safe: false,
+      marginMultiple: null,
+      minimumSafeCredits: null,
+      reason: "provider cost is unknown, so no price can be shown to be safe",
+    };
+  }
+
+  // Free to run. Any price clears any margin, and dividing by zero to prove it
+  // would produce Infinity rather than an answer.
+  if (cost === 0) {
+    return {
+      safe: true,
+      marginMultiple: null,
+      minimumSafeCredits: 0,
+      reason: "no provider cost",
+    };
+  }
+
+  const revenue = worstCaseRevenueMicroUsd(entry, baseDurationSeconds);
+  const marginMultiple = revenue / cost;
+
+  const max = entry.assumptions?.maxDurationSeconds;
+  const durationMultiplier =
+    max && baseDurationSeconds && baseDurationSeconds > 0
+      ? Math.max(1, max / baseDurationSeconds)
+      : 1;
+
+  const minimumSafeCredits = Math.ceil(
+    (cost * entry.minimumMarginMultiple) /
+      CREDIT_VALUE_MICRO_USD /
+      durationMultiplier,
+  );
+
+  return {
+    safe: marginMultiple >= entry.minimumMarginMultiple,
+    marginMultiple,
+    minimumSafeCredits,
+    reason: `worst-case margin ${marginMultiple.toFixed(2)}x against a ${entry.minimumMarginMultiple}x floor`,
+  };
+}
+
+/** Models the registry must refuse to run. */
+export function disabledModelIds(): readonly string[] {
+  return MODEL_COSTS.filter((entry) => !entry.enabled).map(
+    (entry) => entry.modelId,
+  );
+}
+
+/** Whether a Free-plan account may reach this model. Unknown model: no. */
+export function isFreeTierEligible(modelId: string): boolean {
+  return costEntry(modelId)?.freeTierEligible ?? false;
+}
+
+/** Whether the model may run at all. Unknown model: no. */
+export function isModelEnabled(modelId: string): boolean {
+  return costEntry(modelId)?.enabled ?? false;
+}

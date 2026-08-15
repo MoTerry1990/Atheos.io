@@ -52,9 +52,14 @@ describe("marketing dictionaries", () => {
         expect(entry.features.length).toBeGreaterThan(0);
       }
       // A card is rendered per PRICING row, so a stray tier would render blank.
-      expect(Object.keys(copy.plans).sort()).toEqual(
-        PRICING.map((tier) => tier.tier).sort(),
-      );
+      // A superset, not an exact match. `copy.plans` is keyed by `PlanTier`,
+      // so it must carry an entry for the retired BASIC tier too — a historical
+      // subscription still renders a card, and a missing key would crash the
+      // billing screen of the one person it applies to. What must not happen is
+      // a *rendered* tier with no name, which is what this checks.
+      for (const tier of PRICING) {
+        expect(Object.keys(copy.plans)).toContain(tier.tier);
+      }
     },
   );
 

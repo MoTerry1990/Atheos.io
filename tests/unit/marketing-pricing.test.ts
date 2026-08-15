@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   PACK_DEFINITIONS,
   PLAN_DEFINITIONS,
+  SIGNUP_GRANT,
+  visiblePlanDefinitions,
   formatMoney,
   isUpgrade,
   rankOf,
@@ -21,26 +23,55 @@ import { COMPARISON_ROWS } from "@/features/marketing/plan-comparison-rows";
 
 describe("plan catalogue", () => {
   it("has a free tier first and prices ascending after it", () => {
-    expect(PLAN_DEFINITIONS[0]?.monthly).toBe(0);
+    const visible = visiblePlanDefinitions();
+    expect(visible[0]?.monthly).toBe(0);
 
-    const paid = PLAN_DEFINITIONS.slice(1).map((p) => p.monthly);
+    const paid = visible.slice(1).map((p) => p.monthly);
     expect(paid).toEqual([...paid].sort((a, b) => a - b));
   });
 
-  it("grants more credits at every step up", () => {
-    const credits = PLAN_DEFINITIONS.map((p) => p.monthlyCredits);
-    expect(credits).toEqual([...credits].sort((a, b) => a - b));
+  it("prices the four launch plans exactly as agreed", () => {
+    // Free $0 / Creator $9.99 / Pro $34.99 / Studio $89.99, monthly only.
+    // Pinned because these are the numbers the founder committed to, and a
+    // pricing page is the one surface where a typo is a contract.
+    expect(visiblePlanDefinitions().map((p) => [p.name, p.monthly])).toEqual([
+      ["Free", 0],
+      ["Creator", 999],
+      ["Pro", 3499],
+      ["Studio", 8999],
+    ]);
   });
 
-  it("never charges more per month on the yearly plan", () => {
-    for (const plan of PLAN_DEFINITIONS) {
-      expect(plan.yearly).toBeLessThanOrEqual(plan.monthly);
+  it("never advertises a credit allowance it has not settled", () => {
+    // The whole point of the null: an unverified provider cost must not become
+    // a number on a pricing card. Only the Free grant is settled today.
+    for (const plan of visiblePlanDefinitions()) {
+      if (plan.monthlyCredits !== null) {
+        expect(plan.tier).toBe("STARTER");
+        expect(plan.monthlyCredits).toBe(SIGNUP_GRANT);
+      } else {
+        expect(plan.status).toBe("launch_disabled");
+      }
     }
   });
 
-  it("ranks every tier, in catalogue order", () => {
-    const ranks = PLAN_DEFINITIONS.map((p) => rankOf(p.tier));
-    expect(ranks).toEqual(PLAN_DEFINITIONS.map((_, i) => i));
+  it("sells no annual billing and no plan above Studio", () => {
+    for (const plan of PLAN_DEFINITIONS) {
+      expect(Object.keys(plan)).not.toContain("yearly");
+    }
+    // The $199 Agency tier is gone; AGENCY now labels the $89.99 top plan.
+    expect(visiblePlanDefinitions().map((p) => p.name)).not.toContain("Agency");
+    expect(visiblePlanDefinitions()).toHaveLength(4);
+  });
+
+  it("ranks every tier, ascending with price", () => {
+    // Not "in catalogue order" any more: BASIC is retired and sits last in the
+    // array while still ranking second. What must hold is that rank rises with
+    // price, because `isUpgrade` decides whether a change takes effect now or
+    // at the end of the period.
+    const visible = visiblePlanDefinitions();
+    const ranks = visible.map((p) => rankOf(p.tier));
+    expect(ranks).toEqual([...ranks].sort((a, b) => a - b));
     expect(isUpgrade("STARTER", "AGENCY")).toBe(true);
     expect(isUpgrade("AGENCY", "STARTER")).toBe(false);
     expect(isUpgrade("BASIC", "BASIC")).toBe(false);
@@ -50,7 +81,7 @@ describe("plan catalogue", () => {
     // Two products, same money, same credits, same page. Whichever one the
     // reader picks they will wonder what the other did, which is a worse
     // outcome than not offering the choice.
-    const planPrices = new Set(PLAN_DEFINITIONS.map((p) => p.monthly));
+    const planPrices = new Set(visiblePlanDefinitions().map((p) => p.monthly));
     for (const pack of PACK_DEFINITIONS) {
       expect(planPrices.has(pack.amount)).toBe(false);
     }
@@ -63,27 +94,28 @@ describe("plan catalogue", () => {
 });
 
 describe("marketing pricing cards", () => {
-  it("carries one card per plan", () => {
-    expect(PRICING).toHaveLength(PLAN_DEFINITIONS.length);
+  it("carries one card per visible plan, and none for the retired one", () => {
+    expect(PRICING).toHaveLength(visiblePlanDefinitions().length);
+    expect(PRICING.map((tier) => tier.tier)).not.toContain("BASIC");
   });
 
-  it("bills exactly twelve months on the yearly total", () => {
+  it("carries no yearly figure at all", () => {
     for (const tier of PRICING) {
-      expect(tier.yearlyTotal).toBe(tier.yearly * 12);
+      expect(Object.keys(tier)).not.toContain("yearly");
+      expect(Object.keys(tier)).not.toContain("yearlyTotal");
     }
   });
 
-  it("shows a saving on every paid tier, never on the free one", () => {
+  it("leaves the credit line null wherever the allowance is unsettled", () => {
     for (const tier of PRICING) {
-      const saving = tier.monthly * 12 - tier.yearlyTotal;
-      expect(saving).toBeGreaterThan(tier.monthly === 0 ? -1 : 0);
+      expect(tier.credits === null).toBe(tier.status === "launch_disabled");
     }
   });
 
   it("formats money without dropping cents", () => {
-    expect(formatMoney(1599)).toBe("$15.99");
-    expect(formatMoney(19900)).toBe("$199");
-    expect(formatMoney(15900 * 12)).toBe("$1,908");
+    expect(formatMoney(999)).toBe("$9.99");
+    expect(formatMoney(3499)).toBe("$34.99");
+    expect(formatMoney(8999)).toBe("$89.99");
   });
 });
 
@@ -93,7 +125,7 @@ describe("plan comparison table", () => {
       expect(
         row.values,
         `row "${row.label}" has ${row.values.length} cells`,
-      ).toHaveLength(PLAN_DEFINITIONS.length);
+      ).toHaveLength(visiblePlanDefinitions().length);
     }
   });
 

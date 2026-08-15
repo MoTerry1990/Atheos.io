@@ -70,7 +70,11 @@ const MODELS: (ProviderModel & { version: string })[] = [
     providerId: "replicate",
     displayName: "FLUX Dev",
     modality: "IMAGE",
-    creditCost: 12,
+    // 13, not 12, since Sprint 4. At 12 the worst-case margin was 2.4x against
+    // a 2.5x floor — thin rather than negative, and thinner than the plan
+    // allowances were built on. `services/billing/model-costs.ts` holds the
+    // arithmetic and `tests/unit/model-costs.test.ts` is what caught it.
+    creditCost: 13,
     version: "6e4a938f85952bdabcc15aa329178c4d681c52bf25a0342403287dc26944661d",
     capabilities: {
       supportsNegativePrompt: false,

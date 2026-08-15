@@ -323,7 +323,8 @@ export function BillingScreen({
               </p>
             ) : (
               <p className="mt-1 text-xs text-muted-foreground">
-                No subscription — the free allowance renews monthly.
+                No subscription — the Free plan&rsquo;s credits are a one-time
+                welcome grant.
               </p>
             )}
           </div>

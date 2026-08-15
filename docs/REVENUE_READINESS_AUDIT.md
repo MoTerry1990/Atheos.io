@@ -1,7 +1,8 @@
 # Revenue Readiness Audit — Atheos.io
 
-**Type:** audit only. No code changed, no migration applied, no Stripe object
-created, **no paid generation run**, no secret value printed or read.
+**Type:** audit, plus a Sprint 4 addendum (§ 21) recording what was built
+against it. No migration applied to production, no Stripe object created,
+**no paid generation run**, no secret value printed or read.
 
 **Commit:** `b8c874b5c9e58ddbd85f6d807f4932f5006317cb`
 **Working tree:** clean at audit start
@@ -14,25 +15,42 @@ configuration **by variable name only**.
 
 # 1. Executive Summary
 
-| Area                       |        Score | Note                                                                 |
-| -------------------------- | -----------: | -------------------------------------------------------------------- |
-| Overall product completion |      **72%** | Feature-complete surface; the money layer is the gap                 |
-| **Paid-beta readiness**    | **41 / 100** |                                                                      |
-| Auth                       |           80 | Works; the Clerk webhook is still unwired                            |
-| Studio                     |           75 | Generates, polls, stores, refunds                                    |
-| Image generation           |           85 | Verified end to end against a real provider                          |
-| Video generation           |           70 | Verified; serial chaining; slow model is expensive                   |
-| Audio generation           |           55 | Models verified live; costs **estimated, not measured**              |
-| Credit system              |       **35** | Ledger is auditable but **not concurrency-safe**                     |
-| Stripe                     |           45 | Code complete; nothing configured; annual/Agency contradict the plan |
-| Storage / library          |           60 | Isolated by query, but the bucket is **public**                      |
-| **Financial safety**       |       **10** | No budget, no ceiling, no kill switch, no cost counter               |
-| Security                   |           55 | Good gate discipline; rate limiting is not enforceable               |
-| Monitoring / operations    |           20 | `console` and a health endpoint                                      |
+| Area                       |             Score | Note                                                                 |
+| -------------------------- | ----------------: | -------------------------------------------------------------------- |
+| Overall product completion |           **72%** | Feature-complete surface; the money layer is the gap                 |
+| **Paid-beta readiness**    | **41 → 58 / 100** | After Sprint 4. See § 21 for what moved and what did not             |
+| Auth                       |                80 | Works; the Clerk webhook is still unwired                            |
+| Studio                     |                75 | Generates, polls, stores, refunds                                    |
+| Image generation           |                85 | Verified end to end against a real provider                          |
+| Video generation           |                70 | Verified; serial chaining; slow model is expensive                   |
+| Audio generation           |                55 | Models verified live; costs **estimated, not measured**              |
+| Credit system              |       **35 → 80** | Atomic reserve/capture/release; non-negative constraint (§ 21)       |
+| Stripe                     |                45 | Code complete; nothing configured; annual/Agency contradict the plan |
+| Storage / library          |                60 | Isolated by query, but the bucket is **public**                      |
+| **Financial safety**       |       **10 → 70** | Eight-rung breaker, four kill switches; spend figure is still manual |
+| Security                   |       **60 → 70** | Rate limiting is now enforceable across instances                    |
+| Monitoring / operations    |                20 | `console` and a health endpoint                                      |
 
-**Launch blockers: 13 open** (4 × P0, 4 × P1, 3 × P2, 2 × P3). One closed: B10, credential rotation, verified 2026-08-14.
+**Launch blockers: 9 open** (2 × P0, 3 × P1, 3 × P2, 1 × P3) — down from 14.
+**Closed:** B10 (rotation, 2026-08-14), then B1, B2, B6 and B7 in Sprint 4.
+**B5 is partially closed** and stays open: every enabled model now clears a
+tested margin floor, but four of the six provider costs are still estimates
+rather than invoices, so the paid credit allowances remain unset.
 
-## Verdict: **NOT READY**
+## Verdict: **NOT READY — but for a different reason than before**
+
+The original verdict was that nothing in the codebase could stop it spending
+money. That is no longer true: § 21 records the breaker, the atomic ledger and
+the distributed limiter that now sit in front of every provider call.
+
+What remains is B3 (the worker has never run in production) and the entire
+Stripe path, which is Sprint 5. Nothing can be **sold** yet, so nothing can be
+overspent by a customer — and the free tier, which is the only thing anyone can
+reach today, is bounded at every level.
+
+The verdict below is preserved as written on 2026-08-14.
+
+## Original verdict: **NOT READY**
 
 Not because the product does not work — it does. Because **there is no
 mechanism, anywhere in this codebase, that can stop it spending money.**
@@ -785,22 +803,22 @@ development were **rotated on 2026-08-14** and the rotation was verified — see
 
 # 18. Launch Blockers
 
-| ID      | Sev    | Area       | Problem                                                                 | User impact             | Financial impact                  | Sprint | Acceptance                                                                                         |
-| ------- | ------ | ---------- | ----------------------------------------------------------------------- | ----------------------- | --------------------------------- | ------ | -------------------------------------------------------------------------------------------------- |
-| **B1**  | **P0** | Spending   | No budget, ceiling, counter or kill switch anywhere                     | None visible            | **Unbounded to card limit**       | 4      | Budget checked before every `provider.submit()`; thresholds fire; kill switch works without deploy |
-| **B2**  | **P0** | Credits    | Balance check outside the debit transaction; no non-negative constraint | Can overspend           | **Parallel free abuse**           | 4      | Conditional update; 20-way concurrency test leaves balance ≥ 0                                     |
-| **B3**  | **P0** | Jobs       | `WORKER_TRIGGER_SECRET` unset; worker has never run in production       | Job stalls on tab close | Provider billed, output lost      | 4      | Secret set; workflow green; job completes with tab closed                                          |
-| **B4**  | **P0** | Stripe     | No webhook secret, no price IDs                                         | Cannot pay              | **Charge grants nothing**         | 5      | Test-mode transaction grants credits exactly once                                                  |
-| **B5**  | **P1** | Pricing    | Video loses money at current credit rate; 4 of 6 model costs unverified | —                       | Negative margin per clip          | 4      | All costs measured; every model ≥ 60% margin worst-case                                            |
-| **B6**  | **P1** | Free tier  | Renews monthly; plan calls for one-time                                 | —                       | Perpetual liability               | 4      | One-time grant; no renewal                                                                         |
-| **B7**  | **P1** | Abuse      | Rate limiter in-memory, ineffective on serverless                       | —                       | Free-tier drain                   | 4      | Redis-backed; limit holds across instances                                                         |
-| **B8**  | **P1** | Stripe     | Refunds and disputes unhandled                                          | —                       | Credits kept after reversal       | 5      | `charge.refunded` + `dispute.created` claw back                                                    |
-| **B9**  | **P1** | Auth       | Clerk appears to be a development instance                              | Handshake redirects     | —                                 | 5      | Production instance confirmed                                                                      |
-| **B10** | **P1** | Security   | Provider credentials exposed in a transcript, unrotated                 | —                       | Third-party spend on our accounts | 4      | All rotated                                                                                        |
-| **B11** | **P2** | Storage    | Deleted assets never removed from R2                                    | —                       | Slow cost growth                  | 6      | Cleanup job                                                                                        |
-| **B12** | **P2** | Monitoring | No error tracking or alerts                                             | Failures invisible      | Slow detection                    | 6      | Sentry + budget alert                                                                              |
-| **B13** | **P2** | Storage    | Objects publicly readable if the key is known                           | Low                     | —                                 | 6      | Signed URLs                                                                                        |
-| **B14** | **P3** | Studio     | Mobile Studio unverified; model comparison advertised but absent        | Confusion               | —                                 | 7      | Verified or claim removed                                                                          |
+| ID         | Sev    | Area       | Problem                                                                                           | User impact             | Financial impact                  | Sprint | Acceptance                                                                                                                                                         |
+| ---------- | ------ | ---------- | ------------------------------------------------------------------------------------------------- | ----------------------- | --------------------------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| ~~**B1**~~ | **P0** | Spending   | ~~No budget, ceiling, counter or kill switch anywhere~~ **CLOSED — Sprint 4**                     | None visible            | Breaker on every submit           | 4      | ✅ Eight-rung ladder + 4 kill switches; `spend.*` events; spend figure still manual                                                                                |
+| ~~**B2**~~ | **P0** | Credits    | ~~Balance check outside the debit transaction; no non-negative constraint~~ **CLOSED — Sprint 4** | —                       | —                                 | 4      | ✅ Conditional UPDATE + CHECK; 20-way sequential proof on real PG; parallel proof gated on `TEST_DATABASE_URL`                                                     |
+| **B3**     | **P0** | Jobs       | `WORKER_TRIGGER_SECRET` unset; worker has never run in production                                 | Job stalls on tab close | Provider billed, output lost      | 4      | Secret set; workflow green; job completes with tab closed                                                                                                          |
+| **B4**     | **P0** | Stripe     | No webhook secret, no price IDs                                                                   | Cannot pay              | **Charge grants nothing**         | 5      | Test-mode transaction grants credits exactly once                                                                                                                  |
+| ~~**B5**~~ | **P1** | Pricing    | ~~Video loses money; 4 of 6 costs unverified~~ **PARTIALLY CLOSED — Sprint 4**                    | —                       | —                                 | 4 / 5  | ⚠️ Every enabled model now clears its margin floor and it is tested. **Four costs are still estimates**, and the paid allowances stay null until they are measured |
+| ~~**B6**~~ | **P1** | Free tier  | ~~Renews monthly; plan calls for one-time~~ **CLOSED — Sprint 4**                                 | —                       | —                                 | 4      | ✅ Renewal deleted; grant is one-time on the Clerk id; the cron now audits instead of granting                                                                     |
+| ~~**B7**~~ | **P1** | Abuse      | ~~Rate limiter in-memory, ineffective on serverless~~ **CLOSED — Sprint 4**                       | —                       | —                                 | 4      | ✅ Postgres-backed, not Redis — see `docs/OPERATIONS.md` § 8 for the trade and the upgrade path                                                                    |
+| **B8**     | **P1** | Stripe     | Refunds and disputes unhandled                                                                    | —                       | Credits kept after reversal       | 5      | `charge.refunded` + `dispute.created` claw back                                                                                                                    |
+| **B9**     | **P1** | Auth       | Clerk appears to be a development instance                                                        | Handshake redirects     | —                                 | 5      | Production instance confirmed                                                                                                                                      |
+| **B10**    | **P1** | Security   | Provider credentials exposed in a transcript, unrotated                                           | —                       | Third-party spend on our accounts | 4      | All rotated                                                                                                                                                        |
+| **B11**    | **P2** | Storage    | Deleted assets never removed from R2                                                              | —                       | Slow cost growth                  | 6      | Cleanup job                                                                                                                                                        |
+| **B12**    | **P2** | Monitoring | No error tracking or alerts                                                                       | Failures invisible      | Slow detection                    | 6      | Sentry + budget alert                                                                                                                                              |
+| **B13**    | **P2** | Storage    | Objects publicly readable if the key is known                                                     | Low                     | —                                 | 6      | Signed URLs                                                                                                                                                        |
+| **B14**    | **P3** | Studio     | Mobile Studio unverified; model comparison advertised but absent                                  | Confusion               | —                                 | 7      | Verified or claim removed                                                                                                                                          |
 
 ---
 
@@ -914,3 +932,304 @@ No paid generation was run. No payment method was charged. No Stripe object was
 created. No migration was applied. No production data was modified. No secret
 value was read, printed or logged — environment variables were inspected **by
 name only**.
+
+---
+
+# 21. Sprint 4 Addendum — What Was Built
+
+**Date:** 2026-08-15. **Scope:** B1, B2, B5, B6, B7.
+**Not touched:** Stripe (no object created), production database (no migration
+applied), Replicate (no paid generation, no top-up).
+
+---
+
+## 21.1 Blockers
+
+| ID     | Before                                          | After                                                                                                      |
+| ------ | ----------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| **B1** | Nothing knew what had been spent                | **Closed.** Eight-rung breaker on every submit; four kill switches; spend accumulated per month            |
+| **B2** | Read-then-write race; balance could go negative | **Closed.** One conditional UPDATE plus `CHECK (creditBalance >= 0)`                                       |
+| **B5** | Motion Pro below cost; margins unmeasurable     | **Partial.** Every enabled model clears a tested floor; two were re-priced; four costs are still estimates |
+| **B6** | Free credits renewed monthly, forever           | **Closed.** One-time grant; the renewal job is now an audit                                                |
+| **B7** | In-memory limiter, ineffective on Vercel        | **Closed.** Postgres-backed, shared across instances                                                       |
+
+**Still open:** B3 (worker never run in production), B4, B8, B9 (Sprint 5),
+B11–B13 (Sprint 6), B14 (Sprint 7).
+
+---
+
+## 21.2 Schema and migration
+
+**Migration:** `prisma/migrations/20260814000000_financial_safety/`
+**Applied to production:** **No.** Pre-flight steps are in `docs/OPERATIONS.md` § 6.
+
+| Change                                                                              | Why                                                |
+| ----------------------------------------------------------------------------------- | -------------------------------------------------- |
+| `CreditReason` gains `GENERATION_RESERVATION`, `_CAPTURE`, `_RELEASE`               | The lifecycle. Additive; old reasons keep working  |
+| `CHECK (users."creditBalance" >= 0)`                                                | Backstop behind the conditional update             |
+| New table `budget_usage`                                                            | The breaker's input, readable inside a transaction |
+| New table `rate_limit_buckets`                                                      | Counters shared across serverless instances        |
+| `credit_transactions` indexes on `(generationId, reason)` and `(userId, createdAt)` | The release lookup and the billing history         |
+
+**Balance preservation.** No balance is rescaled and no allowance is changed.
+Any negative balance — expected: none, since no generation has run in
+production — is written off to zero _before_ the constraint is added, with a
+`MANUAL_ADJUSTMENT` ledger row per account. The insert is keyed
+`sprint4-clamp:{userId}` and guarded by `ON CONFLICT DO NOTHING`, so the whole
+migration is safe to rerun.
+
+---
+
+## 21.3 The credit lifecycle
+
+```
+        +-- reserve --+                 balance -= cost, in the SAME
+        |             |                 transaction that creates the
+    submit         (fails)              generation row
+        |             +--> 402, generation row rolled back
+        v
+  provider.submit()
+        |
+        +-- accepted --> capture --> amount-0 row; spend counter += estimate
+        |                            from here it is BILLABLE
+        |
+        +-- rejected --> release --> balance += cost, in full
+                                     (refused if a capture row exists)
+```
+
+**Reserving debits immediately** rather than holding a separate `reserved`
+column. One number moves, `balance = SUM(amount)` stays true at every instant,
+and a user cannot spend the same credits twice while a job is in flight.
+
+**Capture writes `amount: 0`.** It changes no balance. It records the moment a
+reservation stopped being reversible, without mutating the immutable row that
+created it.
+
+**Post-capture failures are not refunded automatically.** Replicate bills for
+GPU time whether or not the output was usable, so refunding there means paying
+for the run _and_ returning the money — a guaranteed loss, worst on the models
+failing most. Those generations surface through `listCapturedFailures()` and are
+refunded by hand as a `MANUAL_ADJUSTMENT`. This is a deliberate policy change
+from Sprint 6's unconditional refund, and the comparison table's "automatic
+refund on provider failure" row was rewritten to match.
+
+---
+
+## 21.4 Idempotency
+
+Every financial mutation carries a unique key. Not an `if` somebody remembers to
+write — a database constraint, because the callers are webhooks, pollers and
+three browser tabs on the same job, all of which retry by design.
+
+| Key                         | At most one per | On collision                                   |
+| --------------------------- | --------------- | ---------------------------------------------- |
+| `reserve:{generationId}`    | generation      | `already_reserved`, treated as success         |
+| `capture:{generationId}`    | generation      | `false`, safe for a poller to call             |
+| `release:{generationId}`    | generation      | `released: false`, balance unchanged           |
+| `signup-grant:{clerkId}`    | account, ever   | Grant refused — this is what makes it one-time |
+| `invoice:{stripeInvoiceId}` | invoice         | Existing balance returned                      |
+| `sprint4-clamp:{userId}`    | account         | Migration rerun writes nothing                 |
+
+---
+
+## 21.5 Spending controls
+
+| Threshold | Level                  | Effect                                       |
+| --------: | ---------------------- | -------------------------------------------- |
+|      $100 | `review`               | Logged only                                  |
+|      $175 | `alert`                | Logged only                                  |
+|      $225 | `free_stopped`         | Free-plan generations on paid providers      |
+|      $275 | `expensive_restricted` | Video, everyone                              |
+|      $350 | `nonessential_paused`  | Upscale, background removal                  |
+|      $425 | `economical_only`      | Video and free usage; cheap images still run |
+|      $475 | `emergency`            | Everything                                   |
+|      $500 | ceiling                | Never reached; $475 exists so it is not      |
+
+Paid customers keep working until $425 — a subscriber whose generations stop has
+been sold something undelivered, while a throttled free user has lost nothing
+they paid for.
+
+**Manual switches**, all environment-only so no request can reach them:
+`ATHEOS_KILL_SWITCH`, `ATHEOS_FREE_GENERATION_DISABLED`,
+`ATHEOS_DISABLED_PROVIDERS`, `ATHEOS_DISABLED_MODELS`.
+
+**Fail-safe:** an unreadable `budget_usage` row yields `emergency`, not
+`normal`. A breaker that cannot see its input assumes the worst.
+
+### The spend figure is honest about what it is
+
+There is **no automatic provider spend synchronisation**, and none was faked.
+The breaker reads the sum of three things:
+
+- `budget_usage.spentMicroUsd` — our own estimate, accumulated on capture
+- `budget_usage.manualBaselineMicroUsd` — a per-month operator correction
+- `ATHEOS_MANUAL_SPEND_USD` — what the operator read off the invoice
+
+Our estimate is built from cost figures that are mostly inferred rather than
+invoiced, so it can read low. The manual terms are what correct it, without a
+deploy. Wiring Replicate's billing API is **Sprint 5**.
+
+---
+
+## 21.6 Rate limiting and concurrency
+
+Counters live in `rate_limit_buckets`, incremented by one atomic upsert. The
+previous `Map` was per-instance, so the effective limit was the configured one
+multiplied by the instance count — and it loosened under load.
+
+**Redis was not adopted.** It is a second paid dependency on the budget this
+system exists to protect, and one Postgres upsert per request is well inside
+Supabase's capacity at this scale. The trade, and Upstash as the documented
+upgrade (roughly $0–10 a month), are in `docs/OPERATIONS.md` § 8.
+
+| Plan    | At once | Per minute | Per hour |
+| ------- | ------: | ---------: | -------: |
+| Free    |       1 |          3 |       10 |
+| Creator |       3 |         12 |       60 |
+| Pro     |       5 |         20 |      200 |
+| Studio  |       8 |         40 |      500 |
+
+**Concurrency is the free tier's real defence.** A limit of twelve a minute
+permits twelve _simultaneously_, which is the audit's § 9 Critical finding. A
+cap of one turns a burst into a queue.
+
+**Fail mode is per policy.** Generation, enhancement, billing and sign-up fail
+**closed** with a 5-second `Retry-After`; reads fail **open**, degrading to
+per-instance counting. A limiter that gives up during a database incident is
+the one an attacker is waiting for.
+
+---
+
+## 21.7 Unresolved provider-cost assumptions
+
+**This is the honest gap, and it is why B5 is only partially closed.**
+
+| Model                           | Cost basis     | Verification                             | Enabled |
+| ------------------------------- | -------------- | ---------------------------------------- | ------- |
+| `replicate/video-gen`           | $0.020/s       | **verified** (invoice, 2026-08-13)       | Yes     |
+| `replicate/video-pro`           | $0.054/s       | **verified** (invoice, 2026-08-13)       | Yes     |
+| `replicate/flux-schnell`        | $0.003/output  | estimated (list price)                   | Yes     |
+| `replicate/flux-dev`            | $0.025/output  | estimated (list price)                   | Yes     |
+| `replicate/real-esrgan`         | $0.0023/output | estimated (list price)                   | Yes     |
+| `replicate/remove-bg`           | $0.0015/output | estimated (list price)                   | Yes     |
+| `openai/gpt-image-1`            | $0.040/output  | estimated (list price)                   | Yes     |
+| `replicate/music`               | $0.003/s       | estimated (run time, **not an invoice**) | Yes     |
+| `replicate/sfx`                 | $0.002/s       | estimated (run time, **not an invoice**) | Yes     |
+| `google/gemini-2.5-flash-image` | **none**       | **unknown**                              | **No**  |
+
+### What follows from that
+
+- **The credit value is $0.005**, derived from the most expensive enabled model
+  at a 3× margin — not chosen to make a plan look generous. Deriving it from the
+  worst unit outward is the direction that cannot produce a negative margin.
+- **Two models were re-priced**: `flux-dev` 12 → 13 credits (2.4× → 2.6×) and
+  `gpt-image-1` 16 → 20 (2.0× → 2.5×). Both were under the floor, and the test
+  suite is what found them.
+- **No existing balance changed.** The rate was picked to fit the catalogue
+  rather than rescaling the catalogue to fit a round rate, so the 100 credits in
+  an account today buy what they bought yesterday and no backfill was needed.
+- **Paid credit allowances are `null`.** Provisional figures — Creator 500, Pro
+  1,800, Studio 4,800 — are recorded server-side with their arithmetic, and the
+  pricing page prints "Credit allowance confirmed at launch" instead of a
+  number. A credit count on a pricing card is what a customer counts against
+  later.
+- **The audio costs are the weakest.** They come from watching how long a run
+  took, not from a bill. If they are wrong by 3× they are still inside their
+  margin; by 8× they are not.
+
+Closing this needs about **$0.40**: one metered run per unverified model, then
+`checked` and `verification` updated. `tests/unit/model-costs.test.ts` fails if a
+corrected cost pushes a model under its floor — which is the signal to raise its
+credit price, not to lower the floor.
+
+---
+
+## 21.8 Free-tier abuse — what is and is not solved
+
+One grant per **account** is not one grant per **person**, and nothing here
+pretends otherwise. A Clerk user id is available to anybody with an email
+address, and disposable addresses are free.
+
+| Signal                    | Status    | Worth                                                  |
+| ------------------------- | --------- | ------------------------------------------------------ |
+| Unique email              | Clerk     | Stops the laziest duplication; `+` aliasing defeats it |
+| Bot detection             | Clerk     | Stops naive automation                                 |
+| Sign-up rate limit per IP | **Added** | 5/hour — an afternoon's farm becomes a month's         |
+| Free concurrency cap of 1 | **Added** | Caps any single account's burst value                  |
+| No video on Free          | **Added** | Caps unit value: about $0.18 worst case per account    |
+| Global spend breaker      | **Added** | Caps the aggregate — the number that matters           |
+
+The last row is the real answer. Per-person identity is not achievable without
+measures this product should not take: device fingerprinting, phone
+verification, or a card from somebody who has not agreed to pay. So the design
+does not make each account unprofitable to farm — it makes the **total**
+bounded. A thousand farmed accounts cannot pass $225, because at $225 free
+generation stops.
+
+**Deliberately not built:** IP-based grant denial (one NAT blocks a whole
+office), email-domain blocklists (stale weekly, catch real users), any
+fingerprinting.
+
+**Cheapest remaining improvement:** require a verified email before generating.
+Recommended for Sprint 5 rather than smuggled in here.
+
+---
+
+## 21.9 Verification
+
+| Check              | Result                               |
+| ------------------ | ------------------------------------ |
+| `prettier --check` | clean                                |
+| `eslint`           | clean                                |
+| `tsc --noEmit`     | clean                                |
+| `vitest`           | 33 files, **407 passing, 3 skipped** |
+| `next build`       | compiled successfully                |
+
+**The 3 skipped are the parallel-concurrency tests**, and the run says so in the
+reporter output rather than hiding it:
+
+> `NOT VERIFIED — TEST_DATABASE_URL is unset, so the parallel tests were
+skipped; only the sequential proof in credit-ledger.test.ts ran`
+
+PGlite is a single connection, so genuinely simultaneous transactions cannot be
+exercised there. What **was** verified against real Postgres, sequentially: the
+conditional UPDATE affects zero rows on an insufficient balance; twenty attempts
+at 90 credits against 100 leave exactly one success and a balance of 10; the
+CHECK constraint rejects an unguarded decrement; and every idempotency key
+collides on its second insert.
+
+To run the parallel proof:
+
+```bash
+docker run --rm -e POSTGRES_PASSWORD=x -p 5433:5432 postgres:16
+```
+
+```bash
+TEST_DATABASE_URL=postgres://postgres:x@localhost:5433/postgres npx vitest run tests/db
+```
+
+---
+
+## 21.10 Recommended Sprint 5
+
+**In priority order.**
+
+1. **Close B3 — the worker has never run in production.** Set
+   `WORKER_TRIGGER_SECRET`, confirm the cron fires, and watch one video
+   generation complete with the browser closed. Everything else in this file
+   assumes jobs finish.
+2. **Measure the seven unverified costs.** About $0.40 and one afternoon. Then
+   set the paid credit allowances, flip the three plans from `launch_disabled`
+   to `active`, and delete "confirmed at launch" from the pricing page.
+3. **Stripe, end to end (B4).** Products, prices, webhook secret; one test
+   transaction that grants credits exactly once; refunds and disputes clawing
+   back (B8).
+4. **Replicate spend synchronisation.** Replace the manual baseline with the
+   billing API so the breaker reads a real number.
+5. **Clerk production instance (B9).**
+6. **Email verification before generating** — the cheapest remaining free-tier
+   defence.
+7. **Admin spending panel.** The breaker's state is only visible in logs today.
+
+**Not Sprint 5:** R2 lifecycle (B11), Sentry (B12), signed URLs (B13), mobile
+Studio (B14).

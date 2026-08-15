@@ -91,7 +91,21 @@ export async function POST(request: NextRequest) {
     if (error instanceof GenerationError) {
       return NextResponse.json(
         { error: error.message, code: error.code },
-        { status: error.status },
+        {
+          status: error.status,
+          /**
+           * `Retry-After` on a 429, and only on a 429.
+           *
+           * A client told to back off with no number either gives up or
+           * retries immediately, and both are wrong — the second is what turns
+           * one impatient user into the load the limiter was defending
+           * against. The value comes from the limiter's own window, so it is
+           * the real answer rather than a guess.
+           */
+          headers: error.retryAfterSeconds
+            ? { "Retry-After": String(error.retryAfterSeconds) }
+            : undefined,
+        },
       );
     }
 

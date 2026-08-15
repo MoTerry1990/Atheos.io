@@ -1,5 +1,8 @@
 import "server-only";
 
+import { emit } from "@/lib/events";
+import { prisma } from "@/lib/prisma";
+
 /**
  * Rate limiting.
  *
@@ -23,23 +26,47 @@ import "server-only";
  * roughly half of what the endpoint could actually survive, so twice the limit
  * is still safe.
  *
- * ## In-memory, and honest about it
+ * ## Postgres, not memory — B7
  *
- * There is no Redis in this project. `MemoryStore` is per-process, which means:
+ * Until Sprint 4 the only store was `MemoryStore`, a `Map` in the lambda's
+ * heap. On Vercel that is not a weak limiter, it is **not a limiter**:
  *
- *   - On one long-lived server it is correct.
- *   - On N instances behind a load balancer each holds its own count, so the
- *     effective limit is N x the configured one.
- *   - On serverless, a cold start begins at zero.
+ *   - Every concurrent instance holds its own count, so the effective limit is
+ *     `configured x instances`.
+ *   - Instances multiply with load, so the limit loosens exactly when it
+ *     matters.
+ *   - A cold start begins at zero, and an attacker generating traffic causes
+ *     cold starts.
  *
- * That is a real weakness and it is written down rather than hidden. It is also
- * still enormously better than nothing: the attack it stops — one client
- * hammering one endpoint — is stopped on whichever instance receives the
- * traffic, and a caller cannot choose their instance.
+ * The audit rated it ineffective and it was. `PostgresStore` replaces it. The
+ * count lives in one row that every instance contends for, incremented by a
+ * single atomic upsert, so twelve requests are twelve wherever they land.
  *
- * `RateLimitStore` exists so that swapping in Redis is one implementation and
- * one line in `createLimiter`, with no call site changing. That is the intended
- * production fix and it is named in `SECURITY_REPORT.md`.
+ * ## Why not Redis
+ *
+ * Redis is the textbook answer. It is also a second paid dependency on a
+ * budget whose absolute ceiling is $500 a month, and the thing being defended
+ * here *is* that budget. Postgres is already provisioned, already
+ * transactional, and one upsert per request is far inside what Supabase serves
+ * at this scale.
+ *
+ * The trade is real and it is written up in `docs/OPERATIONS.md`: the limiter
+ * adds a round trip to every guarded request, and if request volume ever makes
+ * that the bottleneck, Upstash Redis (~$0–10/month at this size) is the
+ * documented upgrade — one `RateLimitStore` implementation, no call site
+ * changed.
+ *
+ * ## Failing safe means different things on different endpoints
+ *
+ * If the store cannot be reached, a limiter has to choose. Failing open lets an
+ * attack through; failing closed turns a database hiccup into an outage.
+ *
+ * The answer depends on what the endpoint costs. A read that fails open costs
+ * nothing anybody will notice. A **generation** that fails open spends real
+ * money at machine speed, so `failMode: "closed"` is set on every policy that
+ * can reach a provider or a payment processor. That choice is per-policy and
+ * visible in the table below rather than being one global default that is wrong
+ * for half the routes.
  */
 
 export interface RateLimitResult {
@@ -129,19 +156,89 @@ class MemoryStore implements RateLimitStore {
 }
 
 /**
- * Shared across every limiter, and cached on `globalThis` for the same reason
- * the Prisma client is: Next.js re-evaluates modules on hot reload, and a fresh
- * map per reload would reset every counter while developing.
+ * The shared counter, in Postgres.
+ *
+ * ## One statement, no read-then-write
+ *
+ * The whole increment is an upsert with a conditional reset. Reading the row
+ * and then updating it would reintroduce the same race the credit ledger was
+ * just rescued from — two instances reading 11, both writing 12, and the
+ * twelfth request through the door being the twenty-second.
+ *
+ * `ON CONFLICT DO UPDATE` takes a row lock, so the `CASE` below evaluates
+ * against whatever the previous writer committed. The window resets in place
+ * rather than by creating a new row per window, which keeps the table at one
+ * row per caller per policy instead of one per caller per minute.
+ */
+class PostgresStore implements RateLimitStore {
+  async hit(key: string, windowMs: number) {
+    const expires = new Date(Date.now() + windowMs);
+
+    const rows = await prisma.$queryRaw<{ count: number; expiresAt: Date }[]>`
+      INSERT INTO rate_limit_buckets ("key", "count", "expiresAt")
+      VALUES (${key}, 1, ${expires})
+      ON CONFLICT ("key") DO UPDATE
+        SET "count" = CASE
+              WHEN rate_limit_buckets."expiresAt" <= now() THEN 1
+              ELSE rate_limit_buckets."count" + 1
+            END,
+            "expiresAt" = CASE
+              WHEN rate_limit_buckets."expiresAt" <= now() THEN EXCLUDED."expiresAt"
+              ELSE rate_limit_buckets."expiresAt"
+            END
+      RETURNING "count", "expiresAt"
+    `;
+
+    const row = rows[0];
+    if (!row) throw new Error("rate limit upsert returned no row");
+
+    return { count: row.count, resetAt: row.expiresAt.getTime() };
+  }
+}
+
+/**
+ * Cached on `globalThis` for the same reason the Prisma client is: Next.js
+ * re-evaluates modules on hot reload, and a fresh map per reload would reset
+ * every counter while developing.
  */
 const globalForRateLimit = globalThis as unknown as {
   rateLimitStore: RateLimitStore | undefined;
+  rateLimitFallback: RateLimitStore | undefined;
 };
 
+/**
+ * Tests get the memory store.
+ *
+ * Not because memory is good enough there, but because the alternative is every
+ * unit test needing a live database to assert on something unrelated. The
+ * database-backed behaviour has its own test in `tests/db/`, against real
+ * Postgres, which is the only place it can be checked truthfully.
+ */
 const store: RateLimitStore =
-  globalForRateLimit.rateLimitStore ?? new MemoryStore();
+  globalForRateLimit.rateLimitStore ??
+  (process.env.NODE_ENV === "test" ? new MemoryStore() : new PostgresStore());
+
+/**
+ * Used only when Postgres is unreachable, and only for policies that fail open.
+ *
+ * A degraded limiter that still counts within one instance is better than no
+ * limiter at all — it is exactly the pre-Sprint-4 behaviour, which was
+ * inadequate as a design and is perfectly reasonable as an emergency floor.
+ */
+const fallback: RateLimitStore =
+  globalForRateLimit.rateLimitFallback ?? new MemoryStore();
 
 if (process.env.NODE_ENV !== "production") {
   globalForRateLimit.rateLimitStore = store;
+  globalForRateLimit.rateLimitFallback = fallback;
+}
+
+/** Drop windows that ended long ago. Called by the daily worker. */
+export async function sweepRateLimitBuckets(): Promise<number> {
+  const { count } = await prisma.rateLimitBucket.deleteMany({
+    where: { expiresAt: { lt: new Date(Date.now() - 60 * 60_000) } },
+  });
+  return count;
 }
 
 export interface LimitPolicy {
@@ -150,6 +247,18 @@ export interface LimitPolicy {
   windowMs: number;
   /** Namespace, so two policies never share a counter for the same caller. */
   name: string;
+  /**
+   * What to do when the store cannot be reached.
+   *
+   * `"closed"` on anything that spends money — a limiter that gives up during a
+   * database incident is the limiter an attacker was waiting for. `"open"` on
+   * reads, where the cost of a false block outweighs the cost of a missed one.
+   *
+   * Defaults to `"open"` when omitted, matching the pre-Sprint-4 behaviour, so
+   * a policy added without thinking about it degrades the way the old one did
+   * rather than taking a route down.
+   */
+  failMode?: "open" | "closed";
 }
 
 /**
@@ -166,7 +275,12 @@ export const POLICIES = {
    * quota. Twelve a minute is faster than anyone can meaningfully evaluate
    * results, and a loop hits it in seconds.
    */
-  generate: { name: "generate", limit: 12, windowMs: 60_000 },
+  generate: {
+    name: "generate",
+    limit: 12,
+    windowMs: 60_000,
+    failMode: "closed",
+  },
 
   /**
    * Prompt enhancement. Free to the user, so the limit is the only thing
@@ -174,7 +288,12 @@ export const POLICIES = {
    * minute is far more than a person editing one prompt at a time needs, and
    * far less than a script wants.
    */
-  enhance: { name: "enhance", limit: 20, windowMs: 60_000 },
+  enhance: {
+    name: "enhance",
+    limit: 20,
+    windowMs: 60_000,
+    failMode: "closed",
+  },
 
   /** Uploads. Bandwidth and storage, both paid by us. */
   upload: { name: "upload", limit: 20, windowMs: 60_000 },
@@ -184,7 +303,12 @@ export const POLICIES = {
    * and Stripe rate-limits us in turn — being throttled by our payment
    * processor during someone's checkout is the worst possible time.
    */
-  billing: { name: "billing", limit: 10, windowMs: 60_000 },
+  billing: {
+    name: "billing",
+    limit: 10,
+    windowMs: 60_000,
+    failMode: "closed",
+  },
 
   /**
    * Anything that writes on behalf of a signed-in user: projects, folders,
@@ -212,7 +336,29 @@ export const POLICIES = {
    *
    * Deliberately the tightest policy here.
    */
-  sensitive: { name: "sensitive", limit: 20, windowMs: 60_000 },
+  sensitive: {
+    name: "sensitive",
+    limit: 20,
+    windowMs: 60_000,
+    failMode: "closed",
+  },
+
+  /**
+   * Sign-up. Keyed by IP, because there is no user id yet — that is the whole
+   * point of the endpoint.
+   *
+   * The audit's § 9 lists "unlimited free credits per email" as Critical with
+   * no protection at all. This does not solve it — see the limitations note in
+   * `services/billing/free-grant.ts` — but it turns a scripted farm of a
+   * thousand accounts into a scripted farm of five an hour per address, which
+   * is the difference between an afternoon and a month.
+   */
+  signup: {
+    name: "signup",
+    limit: 5,
+    windowMs: 60 * 60_000,
+    failMode: "closed",
+  },
 
   /**
    * Admin. Not because admins are a threat, but because a stolen admin session
@@ -234,17 +380,53 @@ export async function checkRateLimit(
   policy: LimitPolicy,
   identifier: string,
 ): Promise<RateLimitResult> {
-  const { count, resetAt } = await store.hit(
-    `${policy.name}:${identifier}`,
-    policy.windowMs,
-  );
+  const key = `${policy.name}:${identifier}`;
 
-  return {
-    ok: count <= policy.limit,
-    limit: policy.limit,
-    remaining: Math.max(0, policy.limit - count),
-    resetAt,
-  };
+  try {
+    const { count, resetAt } = await store.hit(key, policy.windowMs);
+
+    const result = {
+      ok: count <= policy.limit,
+      limit: policy.limit,
+      remaining: Math.max(0, policy.limit - count),
+      resetAt,
+    };
+
+    if (!result.ok) {
+      // The identifier is a user id or an IP. Neither is a secret, and without
+      // one the log cannot answer "who was blocked".
+      emit("limit.rate_blocked", { policy: policy.name, identifier, count });
+    }
+
+    return result;
+  } catch (error) {
+    emit("limit.store_unavailable", {
+      policy: policy.name,
+      failMode: policy.failMode ?? "open",
+      error: error instanceof Error ? error.name : "unknown",
+    });
+
+    if (policy.failMode === "closed") {
+      // Refuse. `resetAt` is short so a recovered database recovers the route
+      // within seconds rather than leaving callers backing off for a minute.
+      return {
+        ok: false,
+        limit: policy.limit,
+        remaining: 0,
+        resetAt: Date.now() + 5_000,
+      };
+    }
+
+    // Degrade to per-instance counting rather than to nothing at all.
+    const { count, resetAt } = await fallback.hit(key, policy.windowMs);
+
+    return {
+      ok: count <= policy.limit,
+      limit: policy.limit,
+      remaining: Math.max(0, policy.limit - count),
+      resetAt,
+    };
+  }
 }
 
 /** Standard headers so a well-behaved client can back off on its own. */

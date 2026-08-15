@@ -128,6 +128,42 @@ export const env = createEnv({
     // enables a provider, and the app must build and run with none of them.
     GOOGLE_AI_API_KEY: z.string().min(1).optional(),
 
+    // ---- Financial circuit breakers (Sprint 4) --------------------------
+    //
+    // These live in the environment rather than in the database on purpose.
+    // A kill switch whose off position is a database row can be flipped by
+    // anything that can write to the database — including, in the worst case,
+    // the bug you are trying to stop. The environment is the one surface no
+    // request, no browser and no compromised session can reach, and changing
+    // it needs a deploy or a dashboard login.
+    //
+    // All optional. Absent means "not tripped", so the safe default is the one
+    // that requires no configuration to be correct.
+
+    // Stops every generation, immediately, for everyone. "1" to arm.
+    ATHEOS_KILL_SWITCH: z.enum(["0", "1"]).optional(),
+
+    // Stops Free-plan generations only. Paid users are unaffected. The first
+    // lever to pull when spend climbs, because free usage earns nothing.
+    ATHEOS_FREE_GENERATION_DISABLED: z.enum(["0", "1"]).optional(),
+
+    // Comma-separated provider ids to refuse, e.g. "replicate,openai".
+    ATHEOS_DISABLED_PROVIDERS: z.string().optional(),
+
+    // Comma-separated model ids to refuse, e.g. "replicate/video-pro".
+    ATHEOS_DISABLED_MODELS: z.string().optional(),
+
+    // What the provider has actually invoiced this month, in US dollars.
+    //
+    // Atheos accumulates its own *estimate* of spend as generations run. That
+    // estimate is built from four unverified cost figures and is not an
+    // invoice, so the breaker reads estimate + this number. Set it from the
+    // provider dashboard during reconciliation; see docs/OPERATIONS.md.
+    //
+    // A string rather than a number because every environment variable is a
+    // string, and coercing here keeps the parse failure at boot.
+    ATHEOS_MANUAL_SPEND_USD: z.coerce.number().min(0).optional(),
+
     // ---- Object storage (Cloudflare R2) ---------------------------------
     R2_ACCOUNT_ID: z.string().min(1).optional(),
     R2_ACCESS_KEY_ID: z.string().min(1).optional(),
@@ -196,6 +232,12 @@ export const env = createEnv({
     ENABLE_DEV_PREVIEWS: process.env.ENABLE_DEV_PREVIEWS,
 
     ADMIN_USER_IDS: process.env.ADMIN_USER_IDS,
+    ATHEOS_KILL_SWITCH: process.env.ATHEOS_KILL_SWITCH,
+    ATHEOS_FREE_GENERATION_DISABLED:
+      process.env.ATHEOS_FREE_GENERATION_DISABLED,
+    ATHEOS_DISABLED_PROVIDERS: process.env.ATHEOS_DISABLED_PROVIDERS,
+    ATHEOS_DISABLED_MODELS: process.env.ATHEOS_DISABLED_MODELS,
+    ATHEOS_MANUAL_SPEND_USD: process.env.ATHEOS_MANUAL_SPEND_USD,
 
     REPLICATE_API_TOKEN: process.env.REPLICATE_API_TOKEN,
     OPENAI_API_KEY: process.env.OPENAI_API_KEY,

@@ -207,6 +207,26 @@ model Subscription {
   @@map("subscriptions")
 }
 
+/// Why credits moved.
+///
+/// `GENERATION_SPEND` and `GENERATION_REFUND` are the pre-Sprint-4 pair, kept
+/// because the ledger is append-only and historical rows still carry them. New
+/// work uses the reservation lifecycle below.
+///
+/// ## The lifecycle, and where the balance actually moves
+///
+///   RESERVATION  balance -= cost   taken *before* the provider is called
+///   CAPTURE      balance unchanged  marks the reservation final
+///   RELEASE      balance += cost    returns it when nothing was billable
+///
+/// Reserving debits immediately rather than holding a separate "reserved"
+/// column. One number moves, `balance = sum(amount)` stays true, and a user
+/// cannot spend the same credits twice while a job is in flight — which is the
+/// whole failure this replaces.
+///
+/// CAPTURE writes an `amount: 0` row. It changes no balance and exists so the
+/// ledger records *when* a reservation stopped being reversible, without
+/// mutating the immutable row that created it.
 enum CreditReason {
   SIGNUP_GRANT
   SUBSCRIPTION_GRANT
@@ -214,6 +234,9 @@ enum CreditReason {
   GENERATION_SPEND
   GENERATION_REFUND
   MANUAL_ADJUSTMENT
+  GENERATION_RESERVATION
+  GENERATION_CAPTURE
+  GENERATION_RELEASE
 }
 
 /// Append-only. Never updated, never deleted — a correction is a new row with
@@ -1109,4 +1132,76 @@ model Scene {
   @@unique([sequenceId, index])
   @@index([sequenceId])
   @@map("scenes")
+}
+
+/// Provider spend for one calendar month, and the circuit breaker's input.
+///
+/// ## Why a table and not a metric
+///
+/// The threshold check runs inside the same transaction as the credit
+/// reservation, immediately before the provider is called. That has to be a
+/// read the database can serve transactionally; an external metrics store
+/// would be eventually consistent, which is the one property a spending
+/// ceiling cannot have.
+///
+/// ## `manualBaselineMicroUsd` is the honest part
+///
+/// Atheos records what it *believes* each generation cost, from
+/// `services/ai/cost.ts`. Four of those figures are unverified and none is the
+/// provider's own invoice. So the counter tracks our estimate, and the manual
+/// baseline is where the operator writes down what the provider actually
+/// billed — reconciled by hand until a provider spend API is wired.
+///
+/// The breaker reads `spentMicroUsd + manualBaselineMicroUsd`, so an
+/// underestimate can always be corrected upward without a deploy.
+model BudgetUsage {
+  /// `YYYY-MM`, UTC. The primary key, so the month is the identity.
+  period String @id
+
+  /// Accumulated from our own cost estimates, in micro-USD.
+  spentMicroUsd BigInt @default(0)
+
+  /// Operator-entered correction, from the provider's real invoice.
+  manualBaselineMicroUsd BigInt @default(0)
+
+  /// Split out so the free tier can be stopped without touching paid users.
+  freeSpentMicroUsd BigInt @default(0)
+
+  updatedAt DateTime @updatedAt
+
+  @@map("budget_usage")
+}
+
+/// One rate-limit window, in the database rather than in memory.
+///
+/// ## Why Postgres and not Redis
+///
+/// The previous limiter was a `Map` in the lambda's memory, which on Vercel
+/// means every concurrent instance kept its own counter — the effective limit
+/// was `configured x instances`, and it loosened exactly when load made it
+/// matter. It could not enforce anything.
+///
+/// Redis is the textbook answer and it is a second paid dependency on a
+/// $500-a-month budget. Postgres is already here, already transactional, and
+/// one upsert per request is well within Supabase's capacity at this scale.
+/// The trade is written up in `docs/OPERATIONS.md`; Upstash is the documented
+/// upgrade if request volume ever makes this the bottleneck.
+///
+/// Rows are disposable — a cleanup sweep drops expired windows.
+model RateLimitBucket {
+  /// `{policy}:{identifier}` — one row per caller per policy.
+  ///
+  /// The window start is *not* in the key. Encoding it would create a new row
+  /// every window and leave the old ones to be swept; instead the upsert resets
+  /// `count` and `expiresAt` in place when it finds an expired row. One row per
+  /// caller per policy, forever, which is a bounded set.
+  key String @id
+
+  count Int @default(0)
+
+  /// When this window ends. Rows past it are dead and swept.
+  expiresAt DateTime
+
+  @@index([expiresAt])
+  @@map("rate_limit_buckets")
 }

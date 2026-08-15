@@ -10,7 +10,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-import { PLAN_DEFINITIONS } from "@/services/billing/catalogue";
+import { visiblePlanDefinitions } from "@/services/billing/catalogue";
 import type { PlanTier } from "@/lib/generated/prisma/enums";
 
 /**
@@ -192,20 +192,18 @@ export interface PricingTier {
   tier: PlanTier;
   /** Per month, billed monthly. **Minor units** — format at the point of use. */
   monthly: number;
-  /** Per month, billed yearly. **Minor units.** */
-  yearly: number;
   /**
-   * What the card actually charges on a yearly plan, for the whole year.
+   * The allowance, already grouped — "1,800". The unit noun is translated.
    *
-   * Carried explicitly rather than left to the card to multiply. The number a
-   * yearly buyer is agreeing to is the one that leaves their account, and a
-   * page that shows only the divided-by-twelve figure is technically true and
-   * practically a surprise at the checkout screen.
+   * **Null when it has not been settled yet.** The card renders a "confirmed at
+   * launch" line instead of a number. A pricing page that prints a credit count
+   * the backend cannot safely honour is a promise, and the first customer to
+   * count their credits is the one who finds out it was a guess.
    */
-  yearlyTotal: number;
-  /** The allowance, already grouped — "20,000". The unit noun is translated. */
-  credits: string;
+  credits: string | null;
   featured?: boolean;
+  /** `launch_disabled` plans show a price and cannot be bought yet. */
+  status: "active" | "launch_disabled" | "retired";
 }
 
 /**
@@ -221,15 +219,16 @@ export interface PricingTier {
  * Money stays in minor units all the way to the component, which formats it
  * once. Names and feature bullets come from the dictionary, keyed by `tier`.
  */
-export const PRICING: readonly PricingTier[] = PLAN_DEFINITIONS.map((plan) => ({
-  id: plan.tier.toLowerCase(),
-  tier: plan.tier,
-  monthly: plan.monthly,
-  yearly: plan.yearly,
-  yearlyTotal: plan.yearly * 12,
-  credits: plan.monthlyCredits.toLocaleString("en-US"),
-  featured: plan.featured,
-}));
+export const PRICING: readonly PricingTier[] = visiblePlanDefinitions().map(
+  (plan) => ({
+    id: plan.tier.toLowerCase(),
+    tier: plan.tier,
+    monthly: plan.monthly,
+    credits: plan.monthlyCredits?.toLocaleString("en-US") ?? null,
+    featured: plan.featured,
+    status: plan.status,
+  }),
+);
 
 export { Sparkles };
 

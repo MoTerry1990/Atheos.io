@@ -198,7 +198,14 @@ export async function getOverview(): Promise<AdminOverview> {
 
       if (row.reason === "SUBSCRIPTION_GRANT" && tier) {
         const plan = planDefinitionFor(tier);
-        return total + (interval === "YEAR" ? plan.yearly * 12 : plan.monthly);
+        // Annual billing was retired in Sprint 4 and the per-month yearly
+        // price went with it. A historical yearly grant is valued at twelve
+        // months of the monthly price, which slightly *overstates* it — the
+        // yearly rate was discounted. Overstating recognised revenue in a
+        // dashboard is the wrong direction, so it is named here rather than
+        // left to be discovered: the figure is an upper bound on any pre-Sprint-4
+        // annual subscription, of which there are none.
+        return total + plan.monthly * (interval === "YEAR" ? 12 : 1);
       }
 
       return total;

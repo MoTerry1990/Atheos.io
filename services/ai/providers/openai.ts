@@ -41,7 +41,10 @@ const MODELS: ProviderModel[] = [
     providerId: "openai",
     displayName: "GPT Image 1",
     modality: "IMAGE",
-    creditCost: 16,
+    // 20, not 16, since Sprint 4. $0.04 an image against 16 credits was a 2.0x
+    // margin — the worst image ratio in the catalogue, on the model people are
+    // most likely to pick because it is the one they recognise.
+    creditCost: 20,
     capabilities: {
       supportsNegativePrompt: false,
       supportsImageInput: true,

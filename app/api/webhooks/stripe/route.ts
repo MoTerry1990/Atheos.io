@@ -286,8 +286,28 @@ async function onInvoicePaid(invoice: Stripe.Invoice): Promise<void> {
 
   // A yearly subscription invoices once and is entitled to twelve months of
   // allowance. Granting one month would quietly sell them a twelfth of what
-  // the pricing page promised.
+  // the pricing page promised. Annual billing is no longer offered, but a
+  // historical yearly subscription would still invoice, so the arithmetic
+  // stays.
   const months = resolved.interval === "YEAR" ? 12 : 1;
+
+  /**
+   * A null allowance means Sprint 4 has not settled this plan's credits yet.
+   *
+   * Refusing to grant is the safe direction: granting a guessed number gives
+   * away inventory whose cost is unknown, and the customer can be topped up by
+   * hand the moment the figure is confirmed. The reverse — clawing credits back
+   * from somebody who has already spent them — is not recoverable.
+   *
+   * This cannot fire today: Stripe is not configured, so no invoice exists to
+   * reach this line. It is the guard for the day one does.
+   */
+  if (plan.monthlyCredits === null) {
+    console.error(
+      `stripe webhook: invoice ${invoice.id} is on tier ${resolved.tier}, whose credit allowance is not yet set — no credits granted`,
+    );
+    return;
+  }
 
   await grantCredits({
     userId: user.id,
