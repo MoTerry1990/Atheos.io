@@ -26,6 +26,7 @@ import {
   usePanelSize,
 } from "@/features/studio/components/resizable";
 import { useShortcuts, type Shortcut } from "@/features/studio/lib/shortcuts";
+import { useSeedFromUrl } from "@/features/studio/lib/use-seed-from-url";
 import {
   AdvancedSettings,
   OutputSettings,
@@ -470,6 +471,10 @@ export function StudioWorkspace() {
   // re-attach to jobs that were already running when this tab opened.
   const { generate, submitting, track } = useGenerationRunner();
   const { error } = useStudioBootstrap(track);
+
+  // Picks up ?prompt= and ?modality= from the landing composer. Without it the
+  // homepage promises the prompt travels and the studio arrives empty.
+  useSeedFromUrl();
   const usingMock = useStudioStore((state) => state.usingMockProvider);
   const [view, setView] = useState<StudioView>("compose");
 

@@ -66,6 +66,19 @@ export interface MarketingCopy {
     stats: readonly { value: string; label: string }[];
   };
 
+  /**
+   * The composer that sits under the hero.
+   *
+   * `note` is not decoration — it is the sentence that stops the field
+   * pretending to generate. See `home-composer.tsx`.
+   */
+  composer: {
+    placeholder: string;
+    modalities: readonly { id: "image" | "video"; label: string }[];
+    cta: string;
+    note: string;
+  };
+
   trustedBy: { label: string };
 
   showcase: readonly {

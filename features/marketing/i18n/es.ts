@@ -102,6 +102,17 @@ export const ES: MarketingCopy = {
     ],
   },
 
+  composer: {
+    placeholder:
+      "Una figura solitaria en una calle mojada, reflejos de neón, anamórfico",
+    modalities: [
+      { id: "image", label: "Imagen" },
+      { id: "video", label: "Video" },
+    ],
+    cta: "Empezar con esto",
+    note: "Gratis para empezar: 100 créditos al mes, sin tarjeta. Su prompt le acompaña.",
+  },
+
   trustedBy: { label: "Construido sobre infraestructura que ya conoce" },
 
   showcase: [

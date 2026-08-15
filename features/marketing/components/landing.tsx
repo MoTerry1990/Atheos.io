@@ -5,6 +5,7 @@ import { Faq } from "@/features/marketing/components/faq";
 import { Features } from "@/features/marketing/components/features";
 import { Gallery } from "@/features/marketing/components/gallery";
 import { Hero } from "@/features/marketing/components/hero";
+import { HomeComposer } from "@/features/marketing/components/home-composer";
 import { HowItWorks } from "@/features/marketing/components/how-it-works";
 import { Pricing } from "@/features/marketing/components/pricing";
 import { Templates } from "@/features/marketing/components/templates";
@@ -51,6 +52,15 @@ export function Landing({ locale }: { locale: Locale }) {
   return (
     <>
       <Hero />
+
+      {/* One field, directly under the fold.
+      
+          It generates nothing — it carries the prompt into sign-up and on to
+          the studio. Placed here because the question a visitor has after the
+          hero is "what do I do", and a text field answers that faster than any
+          paragraph. See home-composer.tsx for why it is worded to avoid
+          looking like it will generate. */}
+      <HomeComposer />
 
       {/* The demo sits directly after the fold. A visitor who has read the hero
           is asking "what is it actually like", and answering that before

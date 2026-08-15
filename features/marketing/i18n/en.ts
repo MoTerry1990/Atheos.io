@@ -82,6 +82,17 @@ export const EN: MarketingCopy = {
     ],
   },
 
+  composer: {
+    placeholder:
+      "A lone figure on a rain-slick street, neon reflections, anamorphic",
+    modalities: [
+      { id: "image", label: "Image" },
+      { id: "video", label: "Video" },
+    ],
+    cta: "Start with this",
+    note: "Free to start — 100 credits a month, no card. Your prompt comes with you.",
+  },
+
   trustedBy: { label: "Built on infrastructure you already trust" },
 
   showcase: [
