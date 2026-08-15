@@ -28,17 +28,46 @@ import { LOCALES } from "@/features/marketing/i18n/locales";
  * anchor, which is the right direction to be wrong in.
  */
 const SECTION_IDS = [
-  "demo",
   "showcase",
   "made",
-  "gallery",
   "templates",
   "how-it-works",
   "features",
-  "models",
   "pricing",
   "faq",
 ] as const;
+
+/**
+ * Every hash link on the page must land on something.
+ *
+ * The footer went on offering "Gallery → #gallery" after that section was
+ * deleted, so the link scrolled nowhere and the page simply sat still. It is
+ * the quietest possible failure — no error, no 404, no console warning, and
+ * nothing looks wrong unless you happen to click it and notice you did not
+ * move.
+ *
+ * `SECTION_IDS` is maintained by hand against the ids on the components. A
+ * stale entry here fails this test rather than shipping a dead anchor, which
+ * is the right direction to be wrong in.
+ */
+describe("homepage anchors", () => {
+  for (const locale of LOCALES) {
+    it(`resolves every ${locale} footer anchor to a real section`, () => {
+      const { footer } = getCopy(locale);
+
+      for (const group of footer.groups) {
+        for (const link of group.links) {
+          if (!link.href.startsWith("#")) continue;
+
+          expect(
+            SECTION_IDS,
+            `"${link.label}" points at ${link.href}, which no section renders`,
+          ).toContain(link.href.slice(1));
+        }
+      }
+    });
+  }
+});
 
 describe("marketing calls to action", () => {
   for (const locale of LOCALES) {

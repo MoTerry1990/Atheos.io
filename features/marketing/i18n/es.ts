@@ -43,7 +43,7 @@ export const ES: MarketingCopy = {
     },
     howItWorks: {
       eyebrow: "Cómo funciona",
-      title: "Cuatro pasos, sin vueltas",
+      title: "Tres pasos, sin vueltas",
       description:
         "De una idea a algo guardado en su biblioteca, con las partes que suelen salir mal ya resueltas.",
     },
@@ -438,7 +438,7 @@ export const ES: MarketingCopy = {
       {
         title: "Recursos",
         links: [
-          { label: "Galería", href: "#gallery" },
+          { label: "Hecho con Atheos", href: "#made" },
           { label: "Preguntas", href: "#faq" },
           { label: "Sistema de diseño", href: "/design-system" },
         ],

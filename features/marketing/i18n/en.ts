@@ -23,7 +23,7 @@ export const EN: MarketingCopy = {
     },
     howItWorks: {
       eyebrow: "How it works",
-      title: "Four steps, no ceremony",
+      title: "Three steps, no ceremony",
       description:
         "From an idea to something in your library, with the parts that usually go wrong handled for you.",
     },
@@ -429,7 +429,7 @@ export const EN: MarketingCopy = {
       {
         title: "Resources",
         links: [
-          { label: "Gallery", href: "#gallery" },
+          { label: "Made with Atheos", href: "#made" },
           { label: "FAQ", href: "#faq" },
           { label: "Design system", href: "/design-system" },
         ],
