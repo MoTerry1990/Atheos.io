@@ -408,9 +408,9 @@ export const EN: MarketingCopy = {
         "Yes. The Free plan includes 100 credits a month at no cost, with no card required — one video or twenty-five images. It is enough to decide whether Atheos fits how you work.",
     },
     {
-      question: "When does Atheos launch?",
+      question: "Can I use Atheos today?",
       answer:
-        "Atheos is in private beta. Request early access and we will get in touch as capacity opens up — we would rather onboard slowly and keep generation fast than open the doors and queue everyone.",
+        "Yes. Sign-up is open and generation starts immediately — no waitlist and no card. Atheos is still in beta, which means features change and some are unfinished, so anything described as coming soon is not built yet rather than nearly ready.",
     },
   ],
 

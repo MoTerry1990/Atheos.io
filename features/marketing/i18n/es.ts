@@ -428,9 +428,9 @@ export const ES: MarketingCopy = {
         "Sí. El plan Gratis incluye 100 créditos al mes sin costo y sin tarjeta: un video o veinticinco imágenes. Alcanza para decidir si Atheos encaja con su forma de trabajar.",
     },
     {
-      question: "¿Cuándo se lanza Atheos?",
+      question: "¿Puedo usar Atheos hoy?",
       answer:
-        "Atheos está en beta privada. Solicite acceso anticipado y nos comunicamos con usted a medida que se abre capacidad: preferimos incorporar despacio y que la generación siga siendo rápida, antes que abrir las puertas y dejar a todo el mundo en cola.",
+        "Sí. El registro está abierto y puede generar de inmediato: sin lista de espera y sin tarjeta. Atheos sigue en beta, así que las funciones cambian y algunas están incompletas; lo que aparezca como próximamente todavía no existe, no es que esté por salir.",
     },
   ],
 
