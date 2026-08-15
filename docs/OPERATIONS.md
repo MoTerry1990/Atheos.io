@@ -385,15 +385,68 @@ Before applying, in this order.
 **1. Supabase snapshot.** Dashboard → Database → Backups. Confirm a snapshot
 exists dated today; take a manual one if not. This is the rollback of record.
 
-**2. A logical dump of the three tables this touches.** Faster to restore than a
-full snapshot and enough for everything here:
+**2. A logical dump.** Faster to restore than a full snapshot, and on this
+database it is the _only_ option — the Supabase plan in use provides no
+downloadable manual backup.
+
+The obvious command is:
 
 ```bash
 pg_dump "$DIRECT_URL" --data-only --column-inserts -t users -t subscriptions -t credit_transactions -f atheos-pre-sprint4.sql
 ```
 
-Use `DIRECT_URL` (5432), not the pooler. Keep the file out of the repository —
-it contains email addresses.
+**`pg_dump` is not installed on the development machine**, is not in any
+standard Windows PostgreSQL location, and no package manager present carries
+it. So there is a scripted equivalent that uses the `pg` driver the
+application already depends on:
+
+```bash
+node scripts/backup-production.mjs
+```
+
+It writes `atheos-production-<ISO timestamp>.sql` to `C:/Users/mauri/Backups/atheos`
+— **outside the repository**, because a dump inside a git working tree invites
+a commit, and this one contains email addresses and prompts. Override the
+destination with `ATHEOS_BACKUP_DIR`.
+
+### What the scripted dump does and does not cover
+
+**Data: complete.** Every row of every table in `public`, including
+`_prisma_migrations`, as `INSERT` statements. Literals are quoted by Postgres
+itself — each value is `quote_nullable(col::text)` inside the query — so
+`jsonb`, arrays, enums, timestamps and `bytea` all round-trip. Hand-rolled
+JavaScript escaping is where scripts like this normally corrupt data, and it
+does not attempt any.
+
+**Schema: not included, and does not need to be.** It is reproducible from
+`prisma/migrations`, which is in git. Restore is:
+
+```bash
+npx dotenv-cli -e .env.local -- npx prisma migrate deploy
+```
+
+then replay the dump. It opens with `SET session_replication_role = replica`,
+which suspends foreign-key triggers for the session — the same thing
+`pg_dump --disable-triggers` does — so table order does not matter.
+
+**The honest gap:** a real `pg_dump` also captures sequences, functions,
+extensions, RLS policies and grants. This project defines none of its own and
+Prisma owns the rest, but anything Supabase adds outside the migrations is not
+in this file.
+
+### Verify the backup before trusting it
+
+A file on disk is not a backup until something has read it back:
+
+```bash
+node scripts/verify-backup.mjs "C:/Users/mauri/Backups/atheos/<filename>.sql"
+```
+
+It rebuilds the schema from `prisma/migrations` into a throwaway PostgreSQL
+instance, replays the dump, and compares every table's row count against
+production — then re-checks that `creditBalance` still equals the sum of the
+ledger on the restored copy. It exits non-zero on any mismatch. **Do not apply
+a migration on the strength of an unverified dump.**
 
 **3. Record the current migration state**, so a rollback knows where to return
 to:
