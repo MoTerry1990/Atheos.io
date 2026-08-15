@@ -229,3 +229,139 @@ export const PRICING: readonly PricingTier[] = PLAN_DEFINITIONS.map((plan) => ({
 }));
 
 export { Sparkles };
+
+/* -------------------------------------------------------------------------- */
+/* Made with Atheos                                                            */
+/* -------------------------------------------------------------------------- */
+
+export interface MadeItem {
+  kind: "image" | "video";
+  /** Poster/still under `public/marketing`, without the extension. */
+  poster: string;
+  /** Absolute path to the clip. Only for `kind: "video"`. */
+  video?: string;
+  /** The prompt that produced it. Shown on the card and carried into the studio. */
+  prompt: string;
+  /**
+   * Display name of the model, **only when it is known**.
+   *
+   * Optional rather than defaulted: a card claiming to be real output with an
+   * invented model name attached would undo the entire point of the section.
+   */
+  model?: string;
+}
+
+/**
+ * The discovery grid.
+ *
+ * Every entry is genuine output from `scripts/generate-marketing-assets.ts`,
+ * with the prompt that produced it. Nothing here is stock, and nothing is a
+ * placeholder.
+ *
+ * ## Why only two videos
+ *
+ * Because only two exist. `hero.mp4` and `auth.mp4` are the entire library of
+ * generated video committed to this repository, and the Replicate account is
+ * out of credit, so more cannot honestly be made right now. Padding the grid
+ * with the same clip repeated, or with an image dressed as a video card, would
+ * be the kind of small lie this file exists to avoid.
+ *
+ * Four more clips would fill it out. They belong here the moment they exist.
+ */
+export const MADE_WITH_ATHEOS: readonly MadeItem[] = [
+  {
+    kind: "video",
+    poster: "hero-poster",
+    video: "/marketing/hero.mp4",
+    prompt:
+      "Slow drifting particles of violet and magenta light in deep black space, soft volumetric haze, gentle continuous flow, cinematic",
+    model: "Motion 1",
+  },
+  {
+    kind: "image",
+    poster: "gallery-5",
+    prompt: "Isometric city at dusk, miniature tilt shift",
+    model: "FLUX",
+  },
+  {
+    kind: "image",
+    poster: "gallery-2",
+    prompt: "Liquid chrome sculpture, studio reflection",
+    model: "FLUX",
+  },
+  {
+    kind: "video",
+    poster: "auth-poster",
+    video: "/marketing/auth.mp4",
+    prompt:
+      "Slow vertical drift of violet and magenta light through deep black space, soft volumetric haze, gentle upward flow, cinematic",
+    model: "Motion 1",
+  },
+  {
+    kind: "image",
+    poster: "gallery-8",
+    prompt: "Bioluminescent jellyfish, underwater",
+    model: "FLUX",
+  },
+  {
+    kind: "image",
+    poster: "gallery-4",
+    prompt: "Neon rain on glass, shallow depth of field",
+    model: "FLUX",
+  },
+] as const;
+
+/* -------------------------------------------------------------------------- */
+/* Homepage composer                                                           */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * What the landing composer offers, per modality.
+ *
+ * A deliberate, narrow mirror of `services/ai/providers/replicate.ts`. It has
+ * to be a copy: the registry reads server environment variables, and this runs
+ * in a client component on a statically rendered page.
+ *
+ * Two things keep the copy honest. Every `id` here is a real model id, carried
+ * into the studio and resolved there against the actual registry — so a stale
+ * entry produces a model the studio does not select, not a generation that
+ * charges for something else. And `tests/unit/composer-models.test.ts` asserts
+ * each id exists in the registry, which is what catches the drift.
+ *
+ * Fewer options than the studio, on purpose: the studio is where somebody
+ * chooses between two video models, and the homepage is where they decide
+ * whether to bother.
+ */
+export interface ComposerModality {
+  id: "image" | "video" | "audio";
+  models: readonly { id: string; label: string }[];
+  /** Empty for audio, which has no aspect ratio. */
+  aspectRatios: readonly string[];
+}
+
+export const COMPOSER_MODALITIES: readonly ComposerModality[] = [
+  {
+    id: "image",
+    models: [
+      { id: "replicate/flux-schnell", label: "Flux Fast" },
+      { id: "replicate/flux-dev", label: "Flux Quality" },
+    ],
+    aspectRatios: ["1:1", "16:9", "9:16", "4:3"],
+  },
+  {
+    id: "video",
+    models: [
+      { id: "replicate/video-gen", label: "Motion 1 · 720p" },
+      { id: "replicate/video-pro", label: "Motion Pro · 1080p" },
+    ],
+    aspectRatios: ["16:9", "9:16"],
+  },
+  {
+    id: "audio",
+    models: [
+      { id: "replicate/music", label: "Score" },
+      { id: "replicate/sfx", label: "Foley" },
+    ],
+    aspectRatios: [],
+  },
+] as const;

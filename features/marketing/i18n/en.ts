@@ -54,27 +54,36 @@ export const EN: MarketingCopy = {
       "Generate images, video, audio and creative assets across multiple AI providers from a single, beautifully designed workspace.",
   },
 
+  /**
+   * Four items, and every one of them a place rather than a scroll position.
+   *
+   * The previous five were all anchors on this page, which made the header a
+   * table of contents for a document instead of navigation for a product. A
+   * visitor who wants to see what other people made now has somewhere to go.
+   */
   nav: [
-    { href: "#showcase", label: "Product" },
-    { href: "#features", label: "Features" },
-    { href: "#how-it-works", label: "How it works" },
-    { href: "#pricing", label: "Pricing" },
-    { href: "#faq", label: "FAQ" },
+    { href: "/studio", label: "Create" },
+    { href: "/explore", label: "Explore" },
+    { href: "/marketplace", label: "Tools" },
+    { href: "/pricing", label: "Pricing" },
   ],
 
   auth: {
     signIn: "Sign in",
-    signUp: "Get started",
+    signUp: "Start creating",
     dashboard: "Dashboard",
   },
 
   hero: {
-    announcement: "Now in private beta",
-    headline: ["Every AI model.", "One interface."],
+    announcement: "Create without limits",
+    headline: ["One creative studio.", "Every AI model."],
     subheadline:
-      "Stop juggling six subscriptions and six mental models. Atheos puts image, video and audio generation behind a single workspace — with one library, one credit balance, and one place to learn.",
-    primaryCta: { label: "Start creating free", href: "/sign-up" },
-    secondaryCta: { label: "See how it works", href: "#how-it-works" },
+      "Generate images, videos and audio from one beautifully simple workspace.",
+    primaryCta: {
+      label: "Start creating",
+      href: "/sign-up?redirect_url=%2Fstudio",
+    },
+    secondaryCta: { label: "Explore creations", href: "#made" },
     stats: [
       { value: "3", label: "Modalities" },
       { value: "1", label: "Credit balance" },
@@ -88,9 +97,19 @@ export const EN: MarketingCopy = {
     modalities: [
       { id: "image", label: "Image" },
       { id: "video", label: "Video" },
+      { id: "audio", label: "Audio" },
     ],
     cta: "Start with this",
     note: "Free to start — 100 credits a month, no card. Your prompt comes with you.",
+  },
+
+  made: {
+    eyebrow: "Made with Atheos",
+    title: "Real output, and the prompt that made it",
+    description:
+      "Every piece here came out of the models you get on the free plan. Hover to play, and take any prompt into the studio.",
+    tryThis: "Try this",
+    play: "Play preview",
   },
 
   trustedBy: { label: "Built on infrastructure you already trust" },

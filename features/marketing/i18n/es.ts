@@ -75,26 +75,28 @@ export const ES: MarketingCopy = {
   },
 
   nav: [
-    { href: "#showcase", label: "Producto" },
-    { href: "#features", label: "Características" },
-    { href: "#how-it-works", label: "Cómo funciona" },
-    { href: "#pricing", label: "Precios" },
-    { href: "#faq", label: "Preguntas" },
+    { href: "/studio", label: "Crear" },
+    { href: "/explore", label: "Explorar" },
+    { href: "/marketplace", label: "Herramientas" },
+    { href: "/pricing", label: "Precios" },
   ],
 
   auth: {
     signIn: "Iniciar sesión",
-    signUp: "Comenzar",
+    signUp: "Empiece a crear",
     dashboard: "Panel",
   },
 
   hero: {
-    announcement: "En beta privada",
-    headline: ["Todos los modelos de IA.", "Una sola interfaz."],
+    announcement: "Cree sin límites",
+    headline: ["Un estudio creativo.", "Todos los modelos de IA."],
     subheadline:
-      "Deje de manejar seis suscripciones y seis formas distintas de trabajar. Atheos reúne la generación de imagen, video y audio en un solo espacio: una biblioteca, un saldo de créditos y un solo lugar que aprender.",
-    primaryCta: { label: "Empiece gratis", href: "/sign-up" },
-    secondaryCta: { label: "Ver cómo funciona", href: "#how-it-works" },
+      "Genere imágenes, video y audio desde un espacio de trabajo simple y bien hecho.",
+    primaryCta: {
+      label: "Empiece a crear",
+      href: "/sign-up?redirect_url=%2Fstudio",
+    },
+    secondaryCta: { label: "Ver creaciones", href: "#made" },
     stats: [
       { value: "3", label: "Modalidades" },
       { value: "1", label: "Saldo de créditos" },
@@ -108,9 +110,19 @@ export const ES: MarketingCopy = {
     modalities: [
       { id: "image", label: "Imagen" },
       { id: "video", label: "Video" },
+      { id: "audio", label: "Audio" },
     ],
     cta: "Empezar con esto",
     note: "Gratis para empezar: 100 créditos al mes, sin tarjeta. Su prompt le acompaña.",
+  },
+
+  made: {
+    eyebrow: "Hecho con Atheos",
+    title: "Resultados reales, con el prompt que los produjo",
+    description:
+      "Todo lo que ve aquí salió de los modelos que incluye el plan gratuito. Pase el cursor para reproducir y lleve cualquier prompt al estudio.",
+    tryThis: "Probar esto",
+    play: "Reproducir vista previa",
   },
 
   trustedBy: { label: "Construido sobre infraestructura que ya conoce" },

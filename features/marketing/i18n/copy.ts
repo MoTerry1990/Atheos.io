@@ -74,9 +74,22 @@ export interface MarketingCopy {
    */
   composer: {
     placeholder: string;
-    modalities: readonly { id: "image" | "video"; label: string }[];
+    modalities: readonly {
+      id: "image" | "video" | "audio";
+      label: string;
+    }[];
     cta: string;
     note: string;
+  };
+
+  /** The "Made with Atheos" gallery. */
+  made: {
+    eyebrow: string;
+    title: string;
+    description: string;
+    tryThis: string;
+    /** Shown on a card whose media is still loading or paused. */
+    play: string;
   };
 
   trustedBy: { label: string };

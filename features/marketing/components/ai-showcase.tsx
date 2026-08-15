@@ -2,7 +2,7 @@
 
 import { motion } from "motion/react";
 import { Check } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { GeneratedImage } from "@/features/marketing/components/generated-image";
 import {
@@ -45,6 +45,46 @@ export function AIShowcase() {
   const copy = useCopy();
   const [active, setActive] = useState(SHOWCASE[0].id);
 
+  const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
+
+  /**
+   * Arrow keys move between tabs; Home and End jump to the ends.
+   *
+   * Selection follows focus, which is the right choice here because switching
+   * panels costs nothing — no request, no loss of work. Where it *does* cost
+   * something the pattern is to require Enter, and this is not that case.
+   *
+   * Wrapping at both ends rather than stopping: a three-item group is small
+   * enough that hitting a wall reads as a broken control.
+   */
+  function onTabKeyDown(event: React.KeyboardEvent, index: number) {
+    const last = SHOWCASE.length - 1;
+
+    const next =
+      event.key === "ArrowRight"
+        ? index === last
+          ? 0
+          : index + 1
+        : event.key === "ArrowLeft"
+          ? index === 0
+            ? last
+            : index - 1
+          : event.key === "Home"
+            ? 0
+            : event.key === "End"
+              ? last
+              : null;
+
+    if (next === null) return;
+
+    event.preventDefault();
+    const tab = SHOWCASE[next];
+    if (!tab) return;
+
+    setActive(tab.id);
+    tabRefs.current[next]?.focus();
+  }
+
   // Index rather than the object, because the artwork (icon, hue) lives in
   // `SHOWCASE` and the words live in the dictionary. They are joined here and
   // a test asserts the two arrays stay the same length.
@@ -80,6 +120,20 @@ export function AIShowcase() {
                 aria-selected={selected}
                 aria-controls={`panel-${tab.id}`}
                 onClick={() => setActive(tab.id)}
+                onKeyDown={(event) => onTabKeyDown(event, tabIndex)}
+                /**
+                 * Only the selected tab is reachable by Tab.
+                 *
+                 * The tablist pattern makes the whole group one stop and moves
+                 * *within* it using the arrow keys. Leaving every tab
+                 * focusable makes a three-item group three stops on the way to
+                 * the panel, which is the difference between a tablist and
+                 * three buttons that look like one.
+                 */
+                tabIndex={selected ? 0 : -1}
+                ref={(node) => {
+                  tabRefs.current[tabIndex] = node;
+                }}
                 className={cn(
                   "relative flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors",
                   "focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:outline-none",

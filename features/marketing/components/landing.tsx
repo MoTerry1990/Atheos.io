@@ -4,6 +4,7 @@ import { AnimatedDemo } from "@/features/marketing/components/animated-demo";
 import { Faq } from "@/features/marketing/components/faq";
 import { Features } from "@/features/marketing/components/features";
 import { Gallery } from "@/features/marketing/components/gallery";
+import { MadeWithAtheos } from "@/features/marketing/components/made-with-atheos";
 import { Hero } from "@/features/marketing/components/hero";
 import { HomeComposer } from "@/features/marketing/components/home-composer";
 import { HowItWorks } from "@/features/marketing/components/how-it-works";
@@ -76,6 +77,7 @@ export function Landing({ locale }: { locale: Locale }) {
           used to sit below the feature list, the provider grid and the
           templates, which meant a visitor met three sections of claims before
           a single piece of evidence. */}
+      <MadeWithAtheos />
       <Gallery locale={locale} />
 
       <Templates locale={locale} />

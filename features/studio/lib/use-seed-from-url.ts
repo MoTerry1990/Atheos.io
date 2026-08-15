@@ -45,7 +45,7 @@ export function useSeedFromUrl() {
     const prompt = params.get("prompt");
     const modality = params.get("modality");
 
-    if (!prompt && !modality) return;
+    if (!prompt && !modality && !params.get("model")) return;
     seeded.current = true;
 
     if (prompt) {
@@ -54,10 +54,43 @@ export function useSeedFromUrl() {
       setParam("prompt", prompt.slice(0, 2000));
     }
 
-    if (modality === "video" || modality === "image") {
-      const wanted = modality === "video" ? "VIDEO" : "IMAGE";
+    /**
+     * An explicit model wins over the modality.
+     *
+     * The composer sends both, and the model is the more specific answer —
+     * somebody who chose "Motion Pro" asked for that, not for "any video
+     * model". Validated against the registry rather than trusted: this came
+     * from a URL, and a stale or invented id must select nothing rather than
+     * put an unknown string into the request.
+     */
+    const requested = params.get("model");
+    const named = requested
+      ? models.find((entry) => entry.id === requested)
+      : undefined;
+
+    if (named) {
+      setModel(named.id);
+    } else if (
+      modality === "video" ||
+      modality === "image" ||
+      modality === "audio"
+    ) {
+      const wanted =
+        modality === "video"
+          ? "VIDEO"
+          : modality === "audio"
+            ? "AUDIO"
+            : "IMAGE";
       const match = models.find((model) => model.modality === wanted);
       if (match) setModel(match.id);
+    }
+
+    // Only if the chosen model actually offers it — an aspect ratio the model
+    // does not support is a request the provider rejects.
+    const aspect = params.get("aspect");
+    const active = named ?? models.find((entry) => entry.id === requested);
+    if (aspect && active?.capabilities.aspectRatios.includes(aspect)) {
+      setParam("aspectRatio", aspect);
     }
 
     // Clear the query string once consumed. A reload should not re-seed over

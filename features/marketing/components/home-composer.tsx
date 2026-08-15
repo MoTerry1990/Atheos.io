@@ -1,11 +1,12 @@
 "use client";
 
-import { ArrowRight, ImageIcon, Video } from "lucide-react";
+import { ArrowRight, AudioLines, ImageIcon, Video } from "lucide-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Reveal, Section } from "@/features/marketing/components/section";
+import { COMPOSER_MODALITIES } from "@/features/marketing/content";
 import { useCopy } from "@/features/marketing/i18n";
 import { cn } from "@/lib/utils";
 
@@ -31,16 +32,42 @@ import { cn } from "@/lib/utils";
  * composer that discards the prompt at the sign-up boundary is worse than no
  * composer — it asks for effort and then throws it away.
  *
- * ## Why the modality switch is only Image and Video
+ * ## All three modalities, because all three work
  *
- * Audio exists and works, but nobody arrives at a landing page wanting to
- * describe a sound. Two options is a decision; three is a menu.
+ * Score and Foley are live models, not roadmap. Offering Image and Video while
+ * the showcase directly below advertises Audio would be the page contradicting
+ * itself within one scroll.
  */
 export function HomeComposer() {
   const { composer } = useCopy();
 
   const [prompt, setPrompt] = useState("");
-  const [modality, setModality] = useState<"image" | "video">("image");
+  const [modality, setModality] = useState<"image" | "video" | "audio">(
+    "image",
+  );
+
+  const config =
+    COMPOSER_MODALITIES.find((entry) => entry.id === modality) ??
+    COMPOSER_MODALITIES[0]!;
+
+  /**
+   * Model and ratio are held per modality and reset when it changes.
+   *
+   * Keeping a video model selected while the reader switches to Image would
+   * carry an id the studio cannot use for that operation. Resetting to the
+   * first option is the only choice that is always valid.
+   */
+  const [model, setModel] = useState(config.models[0]!.id);
+  const [ratio, setRatio] = useState(config.aspectRatios[0] ?? "");
+
+  function chooseModality(next: "image" | "video" | "audio") {
+    const target = COMPOSER_MODALITIES.find((entry) => entry.id === next);
+    if (!target) return;
+
+    setModality(next);
+    setModel(target.models[0]!.id);
+    setRatio(target.aspectRatios[0] ?? "");
+  }
 
   /**
    * Double-encoded, and that is correct rather than a mistake.
@@ -51,16 +78,20 @@ export function HomeComposer() {
    * ampersand truncate the destination.
    */
   const destination = (() => {
-    const studio = prompt.trim()
-      ? `/studio?prompt=${encodeURIComponent(prompt.trim())}&modality=${modality}`
-      : "/studio";
+    const query = new URLSearchParams({ modality, model });
+    if (prompt.trim()) query.set("prompt", prompt.trim());
+    if (ratio) query.set("aspect", ratio);
 
-    return `/sign-up?redirect_url=${encodeURIComponent(studio)}`;
+    // `URLSearchParams` handles the inner encoding; the outer one protects the
+    // whole string as the value of Clerk's `redirect_url`. Both are needed —
+    // see tests/unit/home-composer.test.ts.
+    return `/sign-up?redirect_url=${encodeURIComponent(`/studio?${query}`)}`;
   })();
 
   const options = [
     { id: "image" as const, icon: ImageIcon },
     { id: "video" as const, icon: Video },
+    { id: "audio" as const, icon: AudioLines },
   ];
 
   return (
@@ -80,7 +111,7 @@ export function HomeComposer() {
                   size="sm"
                   variant={selected ? "default" : "outline"}
                   aria-pressed={selected}
-                  onClick={() => setModality(id)}
+                  onClick={() => chooseModality(id)}
                   className={cn(!selected && "text-muted-foreground")}
                 >
                   <Icon />
@@ -99,6 +130,47 @@ export function HomeComposer() {
             className="resize-y border-0 bg-transparent px-0 text-base focus-visible:ring-0"
             aria-label={composer.placeholder}
           />
+
+          {/* Model and ratio. Native selects rather than a styled dropdown:
+              they are two controls on a marketing page, they are keyboard- and
+              screen-reader-correct for free, and a custom listbox here would
+              ship JavaScript to solve a problem the platform already solved. */}
+          <div className="mt-3 flex flex-wrap gap-2">
+            <label className="flex items-center gap-2 text-xs text-muted-foreground">
+              <span className="sr-only sm:not-sr-only">Model</span>
+              <select
+                value={model}
+                onChange={(event) => setModel(event.target.value)}
+                className="rounded-lg border border-border bg-background px-2 py-1.5 text-sm text-foreground focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:outline-none"
+              >
+                {config.models.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            {/* Absent, not disabled, for audio — it has no aspect ratio, and a
+                greyed-out control invites the reader to wonder what they did
+                wrong. */}
+            {config.aspectRatios.length > 0 ? (
+              <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                <span className="sr-only sm:not-sr-only">Ratio</span>
+                <select
+                  value={ratio}
+                  onChange={(event) => setRatio(event.target.value)}
+                  className="rounded-lg border border-border bg-background px-2 py-1.5 text-sm text-foreground focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:outline-none"
+                >
+                  {config.aspectRatios.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
+          </div>
 
           <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3">
             {/* Stated before the click, not after it. */}
