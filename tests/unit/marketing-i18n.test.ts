@@ -164,10 +164,68 @@ describe("locale routing", () => {
     }
   });
 
-  it("prefixes Spanish paths and leaves English alone", () => {
+  it("resolves a Spanish path by lookup, not by prefixing", () => {
+    /**
+     * This test previously asserted `/es/pricing`, which **404s**. The Spanish
+     * pricing page is at `/es/precios` — the paths are translated too — so the
+     * test was pinning the bug rather than the behaviour.
+     *
+     * `localise` prefixed anything that was not an anchor or an absolute URL,
+     * which produced nine dead links on every Spanish page: four in the header
+     * and five in the footer. It is a `ROUTES` lookup now.
+     */
     expect(localise("/pricing", "en")).toBe("/pricing");
-    expect(localise("/pricing", "es")).toBe("/es/pricing");
+    expect(localise("/pricing", "es")).toBe("/es/precios");
     expect(localise("/", "es")).toBe("/es");
+  });
+
+  it("returns English-only routes unchanged rather than inventing a twin", () => {
+    // The studio, explore, the marketplace and the legal pages have no Spanish
+    // version. Prefixing them produced a 404; returning them sends the reader
+    // to a working page in the wrong language, which is the better failure.
+    for (const href of [
+      "/studio",
+      "/explore",
+      "/marketplace",
+      "/privacy",
+      "/terms",
+      "/acceptable-use",
+      "/connect",
+    ]) {
+      expect(localise(href, "es")).toBe(href);
+    }
+  });
+
+  it("never sends a nav or footer link somewhere that does not exist", () => {
+    /**
+     * The check that would have caught it. Every link either has a `ROUTES`
+     * twin, or is returned unchanged — and in no case does a `/es/...` path
+     * appear that is not one of the two real Spanish routes.
+     */
+    const real = new Set<string>(
+      Object.values(ROUTES).map((paths) => paths.es),
+    );
+
+    for (const [locale, copy] of Object.entries(DICTIONARIES)) {
+      if (locale !== "es") continue;
+
+      const links = [
+        ...copy.nav.map((item) => item.href),
+        ...copy.footer.groups.flatMap((group) =>
+          group.links.map((link) => link.href),
+        ),
+      ];
+
+      for (const href of links) {
+        const resolved = localise(href, "es");
+        if (resolved.startsWith("/es")) {
+          expect(
+            real.has(resolved),
+            `${href} -> ${resolved} does not exist`,
+          ).toBe(true);
+        }
+      }
+    }
   });
 
   it("never prefixes an anchor or an external link", () => {

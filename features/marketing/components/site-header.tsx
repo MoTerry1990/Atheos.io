@@ -113,7 +113,13 @@ export function SiteHeader() {
               <Button
                 variant="ghost"
                 size="icon-sm"
-                className="lg:hidden"
+                // 44x44, the one control on this page that is only ever
+                // touched. `size="icon-sm"` renders a 32px box, which is
+                // fine for a mouse and below the WCAG target-size minimum for
+                // a thumb — on the element that opens all of the navigation.
+                // `-mr-2` keeps the larger hit area from pushing the header's
+                // right edge outward.
+                className="-mr-2 size-11 lg:hidden"
                 aria-label="Open menu"
               >
                 <Menu />

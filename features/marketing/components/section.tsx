@@ -1,6 +1,6 @@
 "use client";
 
-import { motion } from "motion/react";
+import { motion, useReducedMotion } from "motion/react";
 import type { ReactNode } from "react";
 
 import { duration, easing } from "@/components/ui/motion";
@@ -45,6 +45,29 @@ export function Section({
  * flicker. The negative bottom margin starts the animation slightly before the
  * element reaches the fold so it has settled by the time it is actually looked
  * at, rather than animating in the centre of the screen.
+ *
+ * ## Reduced motion renders a plain div, with no hidden initial state
+ *
+ * `MotionConfig reducedMotion="user"` in `providers/motion-provider` already
+ * suppresses the 24px translate. It does **not** suppress the opacity fade —
+ * motion treats opacity as a non-vestibular property and keeps animating it —
+ * so a reduced-motion reader still got 41 elements fading in on scroll.
+ *
+ * Skipping the wrapper entirely is better than shortening the fade, for a
+ * reason beyond preference. `initial={{ opacity: 0 }}` is written into the
+ * server HTML as an inline style, so those 40 elements — the h1, every h2, the
+ * composer, both hero CTAs — arrive **invisible** and depend on JavaScript
+ * running *and* an IntersectionObserver firing to appear. That normally
+ * happens in milliseconds. When it does not, the page is blank.
+ *
+ * It has happened here before: `providers/index.tsx` records a period when
+ * `ClerkProvider` threw during hydration and "every animation sat frozen at
+ * its initial value" — a homepage that server-rendered perfectly and showed
+ * nothing. Removing the hidden initial state for the readers who asked for
+ * less motion narrows that blast radius at no cost to anybody else.
+ *
+ * The `useReducedMotion()` hook returns null on the server and resolves after
+ * mount, so the server always emits the animated branch and hydration matches.
  */
 export function Reveal({
   children,
@@ -55,6 +78,10 @@ export function Reveal({
   delay?: number;
   className?: string;
 }) {
+  const reduced = useReducedMotion();
+
+  if (reduced) return <div className={className}>{children}</div>;
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 24 }}

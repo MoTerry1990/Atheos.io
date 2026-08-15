@@ -705,6 +705,25 @@
 
 /* Soft colour blob. Blurred heavily and animated on transform only, so it
    never triggers layout or paint. */
+/* Drifting colour behind the hero.
+ *
+ * `blur(72px)` over a 32rem circle is the most expensive paint on the page.
+ * Lighthouse mobile attributes the homepage LCP to one of these orbs with
+ * ~2.5s of render delay — 65% of the metric — and nothing is blocking it:
+ * `AnimatedBackground` is a Server Component with no JavaScript at all. The
+ * browser is simply rasterising three large blurred circles under 4x CPU
+ * throttling.
+ *
+ * Dropping the mobile blur to 40px was tried and **measured no improvement**:
+ * LCP moved 3.8s to 3.9s, inside this machine's run-to-run noise. So the blur
+ * is back at 72px rather than carrying a visual change that bought nothing.
+ * The real fix is to stop a decorative element being the LCP candidate at all,
+ * which means giving the hero a genuine above-the-fold content element large
+ * enough to win — a design change, not a CSS tweak, and out of scope here.
+ *
+ * `will-change: transform` matters: the drift animates transform only, so the
+ * compositor runs it off the main thread and the expensive blur is rasterised
+ * once rather than per frame. */
 @utility orb {
   position: absolute;
   border-radius: 9999px;

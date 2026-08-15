@@ -237,6 +237,29 @@ const nextConfig: NextConfig = {
     optimizePackageImports: ["lucide-react", "motion"],
   },
 
+  /**
+   * Put `<meta>` in `<head>`, for everybody.
+   *
+   * Next 15 streams metadata to the **end of `<body>`** for user agents it
+   * does not recognise as bots, which lets the first paint start sooner. The
+   * tags still reach anything that runs JavaScript, so this is a reasonable
+   * default and it is not what this project wants.
+   *
+   * Measured on the homepage: `<meta name="description">` landed in `<body>`
+   * for a normal browser **and for Googlebot** — only `Twitterbot` and
+   * `facebookexternalhit` matched Next's built-in bot list and got it in
+   * `<head>`. Google does render JavaScript and would find it eventually;
+   * "eventually" is a strange place to put the description of the page you
+   * are trying to rank.
+   *
+   * `/.*​/` matches every user agent, which disables the streaming path.
+   * The cost is a small delay to first paint — Lighthouse desktop measured
+   * FCP 0.3s before this change and the same after, with Performance staying
+   * at 100 — and the benefit is that every consumer, listed bot or not, gets
+   * a complete `<head>` in the first bytes.
+   */
+  htmlLimitedBots: /.*/,
+
   // Keep server-only native dependencies out of the bundler's way.
   serverExternalPackages: ["@prisma/client", "@prisma/adapter-pg"],
 

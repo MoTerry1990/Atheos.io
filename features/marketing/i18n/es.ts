@@ -423,7 +423,6 @@ export const ES: MarketingCopy = {
         links: [
           { label: "Hecho con Atheos", href: "#made" },
           { label: "Preguntas", href: "#faq" },
-          { label: "Sistema de diseño", href: "/design-system" },
         ],
       },
       {

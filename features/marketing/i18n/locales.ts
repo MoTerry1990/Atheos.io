@@ -66,15 +66,38 @@ export function pathFor(route: RouteKey, locale: Locale): string {
 }
 
 /**
- * Prefixes an in-app link with the locale, leaving anchors and absolute URLs
- * alone.
+ * The Spanish equivalent of an English path, when one exists.
  *
- * Anchors matter: most marketing navigation is `#pricing`, which must stay a
- * fragment on the current page rather than becoming `/es#pricing` and forcing
- * a navigation to reach a section already on screen.
+ * ## This used to prefix, and that produced nine dead links per page
+ *
+ * The previous implementation returned `/es${href}` for anything that was not
+ * an anchor, a mailto or an absolute URL. Only **two** routes have a Spanish
+ * twin — `/` and `/pricing` — so on `/es` every other link 404'd:
+ *
+ *   /es/studio  /es/explore  /es/marketplace  /es/pricing
+ *   /es/privacy /es/terms    /es/acceptable-use /es/connect
+ *
+ * Four in the header, five in the footer, on every Spanish page. Nothing threw
+ * and the build was clean; the links simply did not go anywhere. The Spanish
+ * pricing page is at `/es/precios` — the paths are translated too — so even
+ * the one route that *did* have a twin was linked to at the wrong URL.
+ *
+ * ## So it is a lookup, not a transformation
+ *
+ * `ROUTES` is the list of pages that exist in both languages. Anything absent
+ * from it is English-only and is returned unchanged, which sends the reader to
+ * a working English page. That is a real limitation — the studio, explore, the
+ * marketplace and the legal pages are not translated — and a working page in
+ * the wrong language is unambiguously better than a 404 in the right one.
+ *
+ * `spanishTwin()` in `negotiate.ts` already worked this way, and warned that
+ * prefixing "would send a visitor to a URL that 404s". It was right; the
+ * warning was just in the wrong file.
  */
 export function localise(href: string, locale: Locale): string {
   if (locale === DEFAULT_LOCALE) return href;
+
+  // Fragments stay on the page, absolute URLs and mail links leave the site.
   if (
     href.startsWith("#") ||
     href.startsWith("http") ||
@@ -82,6 +105,11 @@ export function localise(href: string, locale: Locale): string {
   ) {
     return href;
   }
-  if (href === "/") return "/es";
-  return `/es${href}`;
+
+  for (const paths of Object.values(ROUTES)) {
+    if (paths.en === href) return paths[locale];
+  }
+
+  // English-only. Better a working page than a translated 404.
+  return href;
 }

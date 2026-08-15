@@ -271,6 +271,11 @@ function MediaCard({
           )}`}
           className={cn(
             "inline-flex items-center gap-1 text-sm font-medium text-primary",
+            // The text is 22px tall. `min-h-11` with a negative inline margin
+            // gives the thumb a 44px target without moving the text or adding
+            // a visible box — the link still reads as a link, and the card's
+            // spacing is unchanged.
+            "-mx-2 min-h-11 rounded-md px-2 py-2",
             "underline-offset-4 hover:underline",
             "focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:outline-none",
           )}

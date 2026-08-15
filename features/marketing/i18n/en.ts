@@ -415,7 +415,6 @@ export const EN: MarketingCopy = {
         links: [
           { label: "Made with Atheos", href: "#made" },
           { label: "FAQ", href: "#faq" },
-          { label: "Design system", href: "/design-system" },
         ],
       },
       {

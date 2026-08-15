@@ -100,6 +100,34 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       changeFrequency: "daily",
       priority: 0.8,
     },
+    /**
+     * The public pages that are neither marketing nor a gallery.
+     *
+     * Missing until Sprint 4.2, which mattered most for `/connect`: it is the
+     * page describing how Atheos plugs into Claude, ChatGPT and the rest, and
+     * it is exactly the kind of page somebody finds by searching rather than
+     * by browsing the site.
+     *
+     * The three legal pages carry a low priority and are indexed rather than
+     * hidden. A terms page nobody can find is a terms page nobody agreed to,
+     * and search engines treat their absence as a trust signal.
+     *
+     * English-only, deliberately — they have no Spanish translation, so
+     * claiming an `hreflang` pair for them would advertise a page that does
+     * not exist.
+     */
+    {
+      url: `${baseUrl}/connect`,
+      lastModified,
+      changeFrequency: "monthly",
+      priority: 0.7,
+    },
+    ...["/privacy", "/terms", "/acceptable-use"].map((path) => ({
+      url: `${baseUrl}${path}`,
+      lastModified,
+      changeFrequency: "yearly" as const,
+      priority: 0.3,
+    })),
   ];
 
   try {

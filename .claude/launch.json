@@ -6,6 +6,20 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
       "port": 3000
+    },
+    {
+      "name": "atheos-prod",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": [
+        "dotenv-cli",
+        "-e",
+        ".env.local",
+        "--",
+        "npm",
+        "run",
+        "start"
+      ],
+      "port": 3000
     }
   ]
 }
