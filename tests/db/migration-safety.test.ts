@@ -1,7 +1,20 @@
 import { PGlite } from "@electric-sql/pglite";
 import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+/**
+ * Booting PGlite and replaying every migration takes well over Vitest's 5s
+ * default, and each test here builds its own database rather than sharing one
+ * from a `beforeAll`.
+ *
+ * The other `tests/db` files each pass `60_000` to their setup hook. This file
+ * had no equivalent and passed anyway, because in isolation the build finished
+ * inside 5s — it only started failing once the suite grew enough for these to
+ * run against real CPU contention. A timeout that holds only on an idle machine
+ * is a timeout that fails for reasons unrelated to the code under test.
+ */
+vi.setConfig({ testTimeout: 60_000, hookTimeout: 60_000 });
 
 /**
  * The Sprint 4.1 migration, applied to a real PostgreSQL server.

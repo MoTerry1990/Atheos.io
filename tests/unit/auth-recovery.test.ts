@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
+import { CLERK_PARAMS, RETRY_MARKER, destinationFor } from "@/middleware";
+
 /**
  * The two failures that reached production together, and the rules that stop
  * either coming back.
@@ -71,11 +73,27 @@ const middleware = source("middleware.ts");
 const middlewareCode = code("middleware.ts");
 
 describe("Clerk runs on every matched request", () => {
-  it("exports clerkMiddleware directly, with nothing in front of it", () => {
-    // The regression, stated as code. A wrapper that inspects the pathname and
-    // conditionally calls Clerk is what broke the session, whatever list of
-    // paths happens to sit inside it.
-    expect(middlewareCode).toMatch(/export default clerkMiddleware\(/);
+  it("reaches clerkMiddleware unconditionally, on every matched request", () => {
+    /**
+     * This used to assert `export default clerkMiddleware(`, on the reasoning
+     * that any wrapper was the bug. That was too literal a reading of it.
+     *
+     * The bug was never the wrapper — it was the *condition* inside one: a
+     * pathname check that returned early and never let Clerk run. The handshake
+     * fix does wrap the handler, in a `try`, and calls it on every request
+     * without inspecting anything first.
+     *
+     * So the assertion is what actually matters: nothing stands between
+     * entering the middleware and calling the handler.
+     */
+    const body = middlewareCode.slice(
+      middlewareCode.indexOf("export default async function middleware"),
+    );
+    const beforeHandler = body.slice(0, body.indexOf("await handler("));
+
+    expect(beforeHandler).toMatch(/\{\s*try\s*\{\s*return\s*$/);
+    expect(beforeHandler).not.toContain("if");
+    expect(middlewareCode).toMatch(/clerkMiddleware\(/);
   });
 
   it("has no path allowlist that bypasses Clerk", () => {
@@ -118,9 +136,35 @@ describe("Clerk runs on every matched request", () => {
 });
 
 describe("the middleware handles no Clerk internals itself", () => {
-  it("never names, parses or stores the handshake parameter", () => {
-    expect(middlewareCode).not.toContain("__clerk_handshake");
+  it("names the handshake parameter only in order to delete it", () => {
+    /**
+     * This used to forbid the string `__clerk_handshake` outright. That rule
+     * held while the middleware was a pass-through; it stopped being right when
+     * the fix had to *strip* the parameter, which it cannot do without naming
+     * it.
+     *
+     * The durable rule is narrower and is the one that protects the credential:
+     * the middleware may remove Clerk's parameters, and may never read, decode,
+     * copy or store their values.
+     */
+    expect(middlewareCode).toMatch(/searchParams\.delete\(param\)/);
+
+    // Reading a value is the prohibited operation, however it is spelled.
     expect(middlewareCode).not.toMatch(/searchParams\.get/);
+    expect(middlewareCode).not.toMatch(/get\(\s*["'`]__clerk/);
+    expect(middlewareCode).not.toMatch(
+      /cookies\.get|headers\.get\(\s*["'`]cookie/i,
+    );
+
+    // `.has(RETRY_MARKER)` is the one membership test, and its subject is our
+    // own marker, not a Clerk parameter.
+    const membership = [
+      ...middlewareCode.matchAll(/searchParams\.has\(([^)]*)\)/g),
+    ];
+    expect(membership.length).toBeGreaterThan(0);
+    for (const [, subject] of membership) {
+      expect(subject).toBe("RETRY_MARKER");
+    }
   });
 
   it("never decodes a session token", () => {
@@ -245,5 +289,135 @@ describe("no service worker interferes with the homepage", () => {
         /serviceWorker|navigator\.serviceWorker|workbox|next-pwa/,
       );
     }
+  });
+});
+
+describe("the handshake never reaches a header, a log or a redirect_url", () => {
+  /**
+   * `destinationFor` is the function that decides what `x-pathname` carries,
+   * and `x-pathname` is what `lib/auth.ts` turns into `redirect_url`.
+   *
+   * It used to be `pathname + search`, verbatim. On a real OAuth return that
+   * copied a multi-kilobyte handshake token — a credential — into a request
+   * header, on the one request where the header budget is already largest.
+   *
+   * **Tokens here are synthetic and sized like the real thing.** The previous
+   * round of tests used ~40 characters, which is why they passed against a
+   * defect that only manifests at kilobyte scale.
+   */
+  const SYNTHETIC = "s".repeat(6000);
+
+  function requestFor(url: string) {
+    return { nextUrl: new URL(url) } as unknown as Parameters<
+      typeof destinationFor
+    >[0];
+  }
+
+  it("strips every Clerk parameter", () => {
+    for (const param of CLERK_PARAMS) {
+      const result = destinationFor(
+        requestFor(`https://atheos.io/sign-in?${param}=${SYNTHETIC}`),
+      );
+
+      expect(result).toBe("/sign-in");
+      expect(result).not.toContain(param);
+      expect(result).not.toContain("s".repeat(50));
+    }
+  });
+
+  it("keeps the parameters a destination actually needs", () => {
+    // `/studio?prompt=...` is a real destination somebody was heading for.
+    const result = destinationFor(
+      requestFor("https://atheos.io/studio?prompt=neon+rain&modality=image"),
+    );
+
+    expect(result).toContain("/studio");
+    expect(result).toContain("prompt=neon");
+    expect(result).toContain("modality=image");
+  });
+
+  it("drops the query entirely rather than emitting an unbounded value", () => {
+    // This becomes `redirect_url` on a later redirect. Unbounded here is
+    // unbounded there.
+    const result = destinationFor(
+      requestFor(`https://atheos.io/studio?prompt=${SYNTHETIC}`),
+    );
+
+    expect(result).toBe("/studio");
+    expect(result.length).toBeLessThanOrEqual(512);
+  });
+
+  it("returns a same-origin path, never an absolute URL", () => {
+    const result = destinationFor(requestFor("https://atheos.io/dashboard"));
+
+    expect(result).toBe("/dashboard");
+    expect(result).not.toMatch(/^https?:/);
+  });
+
+  it("refuses to emit a protocol-relative path", () => {
+    /**
+     * The first version of this test only ever passed `/dashboard`, then
+     * asserted the result did not begin with `//`. It passed, and it proved
+     * nothing — `/dashboard` was never going to begin with `//`.
+     *
+     * `https://atheos.io//evil.com` has the pathname `//evil.com`, and that is
+     * the input that matters: a browser handed `//evil.com` as a redirect
+     * target navigates to `https://evil.com`. This asserts against that input.
+     */
+    for (const hostile of [
+      "https://atheos.io//evil.com",
+      "https://atheos.io//evil.com/path?next=1",
+      `https://atheos.io//evil.com?__clerk_handshake=${SYNTHETIC}`,
+    ]) {
+      const result = destinationFor(requestFor(hostile));
+
+      expect(result).toBe("/");
+      expect(result).not.toContain("evil.com");
+    }
+  });
+});
+
+describe("an unresolvable handshake fails safe, not open and not fatal", () => {
+  const middlewareBody = code("middleware.ts");
+
+  it("never lets the request through after a handshake failure", () => {
+    /**
+     * The prohibited shape is `catch { return NextResponse.next() }` — it
+     * silently proceeds as though nothing went wrong. The recovery here issues
+     * a **redirect** to a cleaned URL instead, so the visitor arrives
+     * unauthenticated and every protected route still gates them.
+     */
+    const catchBlock = middlewareBody.slice(middlewareBody.indexOf("catch"));
+
+    expect(catchBlock).not.toMatch(/NextResponse\.next/);
+    expect(catchBlock).toMatch(/NextResponse\.redirect/);
+  });
+
+  it("re-throws anything that is not a handshake failure", () => {
+    // A configuration error must stay loud. Swallowing every exception is how
+    // a broken instance looks healthy.
+    expect(middlewareBody).toMatch(
+      /if \(!isHandshakeFailure \|\| alreadyRetried\) throw error/,
+    );
+  });
+
+  it("attempts recovery exactly once", () => {
+    // Without the marker, a handshake that fails every time is redirected,
+    // reissued and failed again — a loop worse than the error it replaces.
+    expect(middlewareBody).toMatch(/RETRY_MARKER/);
+    expect(middlewareBody).toMatch(/searchParams\.has\(RETRY_MARKER\)/);
+    expect(RETRY_MARKER.startsWith("__")).toBe(true);
+  });
+
+  it("strips Clerk parameters from the recovery target", () => {
+    const catchBlock = middlewareBody.slice(middlewareBody.indexOf("catch"));
+    expect(catchBlock).toMatch(/searchParams\.delete\(param\)/);
+  });
+
+  it("marks the recovery redirect uncacheable", () => {
+    // The next visitor to this path has their own handshake; a cached redirect
+    // would hand them somebody else's outcome.
+    const catchBlock = middlewareBody.slice(middlewareBody.indexOf("catch"));
+    expect(catchBlock).toMatch(/no-store/);
   });
 });
