@@ -26,20 +26,34 @@ nothing was upscaled and relabelled.
 
 ## The audit
 
-| File                   | Source    | Max rendered | Effective source | Needed @2× | Verdict                                                          |
-| ---------------------- | --------- | ------------ | ---------------- | ---------- | ---------------------------------------------------------------- |
-| `hero-poster.webp`     | 1344×768  | 393×491      | **614×768**      | 786×982    | **REPLACE — under-resolved and cropped landscape-into-portrait** |
-| `auth-poster.webp`     | 768×1344  | 393×491      | 768×960          | 786×982    | **REPLACE — marginally under, and the clip is reused**           |
-| `gallery-2.webp`       | 1024×1024 | 393×491      | 819×1024         | 786×982    | Keep — resolution adequate                                       |
-| `gallery-4.webp`       | 1024×1024 | 393×491      | 819×1024         | 786×982    | Keep — resolution adequate                                       |
-| `gallery-5.webp`       | 1024×1024 | 393×491      | 819×1024         | 786×982    | Keep — resolution adequate                                       |
-| `gallery-8.webp`       | 1024×1024 | 393×491      | 819×1024         | 786×982    | Keep — resolution adequate                                       |
-| `showcase-image.webp`  | 1152×896  | 576×432      | 1152×864         | 1152×864   | Keep — exactly adequate                                          |
-| `showcase-video.webp`  | 1152×896  | 576×432      | 1152×864         | 1152×864   | Keep                                                             |
-| `showcase-audio.webp`  | 1152×896  | 576×432      | 1152×864         | 1152×864   | Keep                                                             |
-| `feature-library.webp` | 1344×768  | 536×210      | 1344×735         | 1072×420   | Keep                                                             |
-| `feature-craft.webp`   | 1344×768  | 536×210      | 1344×735         | 1072×420   | Keep                                                             |
-| `template-1…6.webp`    | 1152×896  | 393×294      | 1152×864         | 786×588    | Keep                                                             |
+> **Updated 2026-08-15 (Sprint 4.4).** `hero-poster` and `auth-poster` have left
+> this table. The hero poster was regenerated at 2752×1536 / 90 KB and is no
+> longer a gallery asset; `auth-poster` went back to being only the auth panel's
+> poster. The two gallery slots they occupied are now `made-video-*` clips.
+>
+> The four new posters replace them as the open items, for a smaller and more
+> specific reason. `wan-2.2-t2v-fast` offers 9:16 or 16:9 and nothing between,
+> and tops out at 720p, so a 720×1280 frame put into a 4:5 tile yields 720×900
+> where the rule wants 786×982 — **92% of the floor, against the 78% the old
+> hero poster managed.** Better, still short, still recorded. Clearing it needs
+> a model that emits 4:5 or ≥1080p portrait, not a re-encode of these.
+
+| File                   | Source    | Max rendered | Effective source | Needed @2× | Verdict                                                              |
+| ---------------------- | --------- | ------------ | ---------------- | ---------- | -------------------------------------------------------------------- |
+| `made-video-3.webp`    | 720×1280  | 393×491      | 720×900          | 786×982    | **REPLACE — 92% of the 2× floor; 9:16 model output into a 4:5 tile** |
+| `made-video-4.webp`    | 720×1280  | 393×491      | 720×900          | 786×982    | **REPLACE — as above**                                               |
+| `made-video-5.webp`    | 720×1280  | 393×491      | 720×900          | 786×982    | **REPLACE — as above**                                               |
+| `made-video-6.webp`    | 720×1280  | 393×491      | 720×900          | 786×982    | **REPLACE — as above**                                               |
+| `gallery-2.webp`       | 1024×1024 | 393×491      | 819×1024         | 786×982    | Keep — resolution adequate                                           |
+| `gallery-4.webp`       | 1024×1024 | 393×491      | 819×1024         | 786×982    | Keep — resolution adequate                                           |
+| `gallery-5.webp`       | 1024×1024 | 393×491      | 819×1024         | 786×982    | Keep — resolution adequate                                           |
+| `gallery-8.webp`       | 1024×1024 | 393×491      | 819×1024         | 786×982    | Keep — resolution adequate                                           |
+| `showcase-image.webp`  | 1152×896  | 576×432      | 1152×864         | 1152×864   | Keep — exactly adequate                                              |
+| `showcase-video.webp`  | 1152×896  | 576×432      | 1152×864         | 1152×864   | Keep                                                                 |
+| `showcase-audio.webp`  | 1152×896  | 576×432      | 1152×864         | 1152×864   | Keep                                                                 |
+| `feature-library.webp` | 1344×768  | 536×210      | 1344×735         | 1072×420   | Keep                                                                 |
+| `feature-craft.webp`   | 1344×768  | 536×210      | 1344×735         | 1072×420   | Keep                                                                 |
+| `template-1…6.webp`    | 1152×896  | 393×294      | 1152×864         | 786×588    | Keep                                                                 |
 
 ### The compression problem, separately from resolution
 
@@ -52,7 +66,6 @@ written at a very low bitrate:
 | `gallery-1.webp`       | 9 KB   | severe                                                                                     |
 | `template-1.webp`      | 10 KB  | severe                                                                                     |
 | `feature-craft.webp`   | 11 KB  | severe                                                                                     |
-| `hero-poster.webp`     | 13 KB  | severe, and it is the first thing anybody sees                                             |
 | `gallery-6.webp`       | 14 KB  | heavy                                                                                      |
 | `gallery-3.webp`       | 18 KB  | heavy                                                                                      |
 | `feature-library.webp` | 125 KB | fine — and the same dimensions as `feature-craft` at 11× the bytes, which is the disparity |
@@ -79,32 +92,46 @@ the page.
 
 Replace with four purpose-made portrait clips:
 
-| Property          | Requirement                                                       |
-| ----------------- | ----------------------------------------------------------------- |
-| **Filenames**     | `made-1.mp4` … `made-4.mp4` **and** `made-1.webm` … `made-4.webm` |
-| **Posters**       | `made-1-poster.webp` … `made-4-poster.webp` — one per clip        |
-| **Orientation**   | **Portrait 9:16**                                                 |
-| **Dimensions**    | **1080×1920** preferred, 720×1280 minimum                         |
-| **Poster dims**   | Identical to the clip                                             |
-| **Duration**      | 4–8 seconds, seamless loop                                        |
-| **Frame rate**    | 16–24 fps                                                         |
-| **Formats**       | MP4 (H.264, `yuv420p`, `+faststart`) **and** WebM (VP9)           |
-| **Poster format** | WebP, quality 82–88, **60–110 KB** — not 13 KB                    |
-| **Max size**      | 1.5 MB MP4, 1.0 MB WebM                                           |
-| **Audio**         | **None.** Strip it — the cards are muted                          |
-| **Placement**     | `MADE_WITH_ATHEOS` in `features/marketing/content.ts`             |
-| **Type**          | **Video** (original generation required)                          |
+| Property          | Requirement                                                                                                   |
+| ----------------- | ------------------------------------------------------------------------------------------------------------- |
+| **Filenames**     | ~~`made-1.mp4` … `made-4.mp4`~~ → **delivered as `made-video-3` … `made-video-6`** (`.mp4` + `.webm`)         |
+| **Posters**       | ~~`made-1-poster.webp` …~~ → **delivered as `made-video-3.webp` … `made-video-6.webp`**, frame 0 of each clip |
+| **Orientation**   | **Portrait 9:16**                                                                                             |
+| **Dimensions**    | **1080×1920** preferred, 720×1280 minimum                                                                     |
+| **Poster dims**   | Identical to the clip                                                                                         |
+| **Duration**      | 4–8 seconds, seamless loop                                                                                    |
+| **Frame rate**    | 16–24 fps                                                                                                     |
+| **Formats**       | MP4 (H.264, `yuv420p`, `+faststart`) **and** WebM (VP9)                                                       |
+| **Poster format** | WebP, quality 82–88, **60–110 KB** — not 13 KB                                                                |
+| **Max size**      | 1.5 MB MP4, 1.0 MB WebM                                                                                       |
+| **Audio**         | **None.** Strip it — the cards are muted                                                                      |
+| **Placement**     | `MADE_WITH_ATHEOS` in `features/marketing/content.ts`                                                         |
+| **Type**          | **Video** (original generation required)                                                                      |
+
+> **DELIVERED — Sprint 4.4.** All four clips exist. Generated with the pinned
+> `wan-2.2-t2v-fast` version (the same one `replicate/video-gen` resolves to),
+> 720×1280, 5.07 s, 24 fps, no audio track, four distinct subjects: fashion,
+> product, surreal, environment. Total paid generation $0.81 of an authorised
+> $1.50.
+>
+> Two lines of this spec were **not** met, and the row above the table records
+> why: the model tops out at **720p** where this asked for 1080×1920 preferred,
+> and it emits only 9:16 or 16:9, so the 4:5 tile still crops. Sizes came in
+> well under budget (482–1048 KB MP4, 342–563 KB WebM against 1.5 MB / 1.0 MB).
+>
+> Filenames follow `docs/MEDIA_REPLACEMENT_MANIFEST.md`, which this section
+> predates and disagrees with; the manifest is the one the sprint brief points
+> at, so it won.
 
 ### 3–6. The four weakest stills — quality replacements
 
 Same dimensions, written at a proper bitrate.
 
-| File                                 | Replace with           | Format | Compression                | Placement              | Type  |
-| ------------------------------------ | ---------------------- | ------ | -------------------------- | ---------------------- | ----- |
-| `hero-poster.webp`                   | 1920×1080              | WebP   | q 82–88, target 120–180 KB | Hero background poster | Image |
-| `gallery-1.webp`                     | 1024×1280 **portrait** | WebP   | q 82–88, 90–140 KB         | Gallery card           | Image |
-| `gallery-3.webp`                     | 1024×1280 **portrait** | WebP   | q 82–88, 90–140 KB         | Gallery card           | Image |
-| `template-1.webp`, `template-2.webp` | 1152×896               | WebP   | q 82–88, 60–100 KB         | Templates row          | Image |
+| File                                 | Replace with           | Format | Compression        | Placement     | Type  |
+| ------------------------------------ | ---------------------- | ------ | ------------------ | ------------- | ----- |
+| `gallery-1.webp`                     | 1024×1280 **portrait** | WebP   | q 82–88, 90–140 KB | Gallery card  | Image |
+| `gallery-3.webp`                     | 1024×1280 **portrait** | WebP   | q 82–88, 90–140 KB | Gallery card  | Image |
+| `template-1.webp`, `template-2.webp` | 1152×896               | WebP   | q 82–88, 60–100 KB | Templates row | Image |
 
 Portrait for the gallery replacements: the cards are 4:5, and a native 4:5
 source wastes no pixels on a crop.

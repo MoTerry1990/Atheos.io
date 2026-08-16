@@ -71,7 +71,11 @@ export function Landing({ locale }: { locale: Locale }) {
       <link
         rel="preload"
         as="image"
-        href="/marketing/hero-poster.webp"
+        // Density descriptors matching the `image-set()` in `.hero-poster`, so
+        // the preload fetches the file the CSS will actually use. A plain
+        // `href` here would preload one density and the stylesheet would then
+        // request the other — two downloads for one painted image.
+        imageSrcSet="/marketing/hero-poster-sm.webp 1x, /marketing/hero-poster.webp 2x"
         type="image/webp"
         fetchPriority="high"
       />

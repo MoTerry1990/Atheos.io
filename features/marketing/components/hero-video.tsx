@@ -74,10 +74,26 @@ export function HeroVideo({ className }: { className?: string }) {
       {/* The poster is a separate element rather than the video's `poster`
           attribute so it can stay behind the video and cross-fade, instead of
           being swapped out in one frame. */}
-      <div
-        className="absolute inset-0 bg-cover bg-center"
-        style={{ backgroundImage: "url(/marketing/hero-poster.webp)" }}
-      />
+      {/**
+       * `image-set()` rather than a single URL.
+       *
+       * This is the LCP element, and it is full-bleed: 1340x622 CSS px on a
+       * desktop, ~375 wide on a phone. One asset cannot serve both without
+       * wasting bandwidth at one end or resolution at the other. The 2x file is
+       * 2752x1536 / 90 KB; the 1x is 1376x768 / 40 KB, so a phone on a slow
+       * connection fetches a third of the bytes.
+       *
+       * The replaced asset was 1344x768 at 13 KB — 1x on a 2x screen and
+       * compressed hard enough to be visibly soft, which is the whole of the
+       * "media looks dark and low-impact" complaint. The new one has 4.2x the
+       * pixels at 7x the bytes, which is the right direction for both.
+       *
+       * The rule lives in `styles/globals.css`, not here: the fallback for
+       * browsers without `image-set()` is a second `background-image`
+       * declaration, and a React style object cannot hold the same key twice.
+       * Written inline it silently became two *layered* backgrounds instead.
+       */}
+      <div className="hero-poster absolute inset-0 bg-cover bg-center" />
 
       {allowed ? (
         <video

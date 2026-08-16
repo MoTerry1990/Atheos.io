@@ -82,7 +82,10 @@ describe("made with atheos", () => {
           item.video,
           `${item.poster} claims video with no clip`,
         ).toBeTruthy();
-        expect(item.video).toMatch(/^\/marketing\/.+\.(mp4|webm)$/);
+        // A base path with no extension — the card appends `.webm` then
+        // `.mp4`. That both files exist on disk is asserted in
+        // `homepage-media.test.ts`, which can reach the filesystem.
+        expect(item.video).toMatch(/^\/marketing\/[a-z0-9-]+$/);
       } else {
         expect(item.video).toBeUndefined();
       }

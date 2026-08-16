@@ -224,13 +224,31 @@ export function HomeComposer() {
               they are two controls on a marketing page, they are keyboard- and
               screen-reader-correct for free, and a custom listbox here would
               ship JavaScript to solve a problem the platform already solved. */}
-            <div className="mt-3 flex flex-wrap gap-2">
-              <label className="flex items-center gap-2 text-xs text-muted-foreground">
-                <span className="sr-only sm:not-sr-only">Model</span>
+            {/**
+             * The labels are visible at every width, and stack above their
+             * control below `sm`.
+             *
+             * They were `sr-only sm:not-sr-only` — announced to a screen reader,
+             * invisible to a sighted phone user, who got two unlabelled
+             * dropdowns reading "Flux Fast" and "1:1". Nothing was ever
+             * *truncated*: an `sr-only` element is clipped to 1px by design, so
+             * a naive overflow check reports it as clipped and the earlier audit
+             * recorded truncation that did not exist.
+             *
+             * Side by side they do not fit — the row is 309px of a 375px
+             * viewport with the labels hidden, and showing them needs about 90px
+             * more. Stacking is what buys the space, rather than shrinking the
+             * type.
+             */}
+            <div className="mt-3 flex flex-wrap gap-3">
+              <label className="flex flex-col gap-1 text-xs text-muted-foreground sm:flex-row sm:items-center sm:gap-2">
+                <span>Model</span>
                 <select
                   value={model}
                   onChange={(event) => setModel(event.target.value)}
-                  className="rounded-lg border border-border bg-background px-2 py-1.5 text-sm text-foreground focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:outline-none"
+                  // 44px on touch, matching the tablist above it. `min-h-`, not
+                  // `h-`, for the reason documented on those tabs.
+                  className="min-h-11 rounded-lg border border-border bg-background px-2 py-1.5 text-sm text-foreground focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:outline-none sm:min-h-0"
                 >
                   {config.models.map((option) => (
                     <option key={option.id} value={option.id}>
@@ -244,12 +262,12 @@ export function HomeComposer() {
                 greyed-out control invites the reader to wonder what they did
                 wrong. */}
               {config.aspectRatios.length > 0 ? (
-                <label className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <span className="sr-only sm:not-sr-only">Ratio</span>
+                <label className="flex flex-col gap-1 text-xs text-muted-foreground sm:flex-row sm:items-center sm:gap-2">
+                  <span>Ratio</span>
                   <select
                     value={ratio}
                     onChange={(event) => setRatio(event.target.value)}
-                    className="rounded-lg border border-border bg-background px-2 py-1.5 text-sm text-foreground focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:outline-none"
+                    className="min-h-11 rounded-lg border border-border bg-background px-2 py-1.5 text-sm text-foreground focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:outline-none sm:min-h-0"
                   >
                     {config.aspectRatios.map((option) => (
                       <option key={option} value={option}>

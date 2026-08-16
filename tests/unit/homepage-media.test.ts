@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -158,9 +158,15 @@ describe("the media audit document", () => {
       ).toMatch(/REPLACE/);
     }
 
-    // The two known failures, pinned. If this count drops, the assets were
-    // replaced and the doc should shrink with it.
-    expect(failures.sort()).toEqual(["auth-poster", "hero-poster"]);
+    // The known failures, pinned. `hero-poster` and `auth-poster` were here
+    // until Sprint 4.4 replaced them; the four clip posters are what is short
+    // now, and for a different reason (the model's 720p / 9:16 ceiling).
+    expect(failures.sort()).toEqual([
+      "made-video-3",
+      "made-video-4",
+      "made-video-5",
+      "made-video-6",
+    ]);
   });
 
   it("keeps every template and showcase still above its density floor", () => {
@@ -178,28 +184,108 @@ describe("the media audit document", () => {
     }
   });
 
-  it("names the missing portrait clips with their required dimensions", () => {
+  it("records the delivered portrait clips and where the spec was missed", () => {
+    /**
+     * This asserted that four *missing* clips were specified. They are no
+     * longer missing, so asserting their absence is specified would keep
+     * passing while describing a state that ended.
+     *
+     * What still needs guarding is the honesty of the record: the clips landed
+     * at 720p against a spec that preferred 1080×1920, and the doc has to say
+     * so rather than quietly present the delivery as complete.
+     */
     const text = docText();
 
-    for (const file of ["made-1.mp4", "made-1.webm", "made-1-poster.webp"]) {
-      expect(text, `${file} is not specified`).toContain(file);
+    for (const file of ["made-video-3", "made-video-6"]) {
+      expect(text, `${file} is not recorded`).toContain(file);
     }
 
-    expect(text).toMatch(/1080×1920|720×1280/);
+    expect(text).toContain("DELIVERED");
+    expect(text).toMatch(/720×1280/);
     expect(text).toMatch(/9:16/);
+    // The shortfall, stated: the model's ceiling, not a rounding error.
+    expect(text).toMatch(/720p/);
   });
 });
 
 describe("no asset is passed off as something it is not", () => {
-  it("gives every video card a real clip", () => {
+  it("gives every video card a real clip, in both codecs", () => {
+    /**
+     * `video` is now a base path with no extension — the card appends `.webm`
+     * and `.mp4` so the browser negotiates by source order.
+     *
+     * This used to assert the string ended in `.mp4` or `.webm`, which was a
+     * check on the *shape of a string*. Now that the extension is applied at
+     * render time, the only assertion worth making is that both files are
+     * actually on disk: a base path pointing at nothing would render a card
+     * with two dead sources and fail silently in the browser.
+     */
     for (const item of MADE_WITH_ATHEOS) {
-      if (item.kind === "video") {
-        expect(item.video, `${item.poster} claims video with no clip`).toMatch(
-          /^\/marketing\/.+\.(mp4|webm)$/,
-        );
-      } else {
+      if (item.kind !== "video") {
         expect(item.video).toBeUndefined();
+        continue;
       }
+
+      expect(item.video, `${item.poster} claims video with no clip`).toMatch(
+        /^\/marketing\/[a-z0-9-]+$/,
+      );
+
+      for (const extension of ["webm", "mp4"]) {
+        const file = resolve(
+          MARKETING,
+          `${item.video!.replace("/marketing/", "")}.${extension}`,
+        );
+        expect(
+          existsSync(file),
+          `${item.poster} has no .${extension} on disk`,
+        ).toBe(true);
+      }
+    }
+  });
+
+  it("ships no audio track on any homepage clip", () => {
+    /**
+     * The requirement is *absent*, not silent — a muted track still costs
+     * bytes and still lets an unmute button produce sound on a marketing page.
+     *
+     * Read from the container rather than trusted: an MP4 with an audio track
+     * has an `mp4a`/`sowt` sample-entry box, and a WebM with one carries the
+     * "A_" codec-id prefix. Neither appears in a stripped file.
+     */
+    for (const item of MADE_WITH_ATHEOS) {
+      if (item.kind !== "video") continue;
+      const base = item.video!.replace("/marketing/", "");
+
+      const mp4 = readFileSync(resolve(MARKETING, `${base}.mp4`));
+      expect(mp4.includes(Buffer.from("mp4a")), `${base}.mp4 has audio`).toBe(
+        false,
+      );
+
+      const webm = readFileSync(resolve(MARKETING, `${base}.webm`));
+      expect(
+        webm.includes(Buffer.from("A_OPUS")) ||
+          webm.includes(Buffer.from("A_VORBIS")),
+        `${base}.webm has audio`,
+      ).toBe(false);
+    }
+  });
+
+  it("keeps every clip inside its file-size budget", () => {
+    // A hover-to-play card that costs 3 MB is a card most people never see
+    // finish loading. Caps from docs/MEDIA_REPLACEMENT_MANIFEST.md.
+    for (const item of MADE_WITH_ATHEOS) {
+      if (item.kind !== "video") continue;
+      const base = item.video!.replace("/marketing/", "");
+
+      const mp4 = statSync(resolve(MARKETING, `${base}.mp4`)).size / 1024;
+      const webm = statSync(resolve(MARKETING, `${base}.webm`)).size / 1024;
+
+      expect(mp4, `${base}.mp4 is ${mp4.toFixed(0)} KB`).toBeLessThanOrEqual(
+        1229,
+      );
+      expect(webm, `${base}.webm is ${webm.toFixed(0)} KB`).toBeLessThanOrEqual(
+        717,
+      );
     }
   });
 
