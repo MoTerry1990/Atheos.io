@@ -251,6 +251,23 @@ guards itself: it returns early if `CREATOR` already exists.
 - `P2021` / `P2022` in runtime logs
 - DDL still running after **60 seconds**
 
+### Tooling
+
+PostgreSQL client **17.11** is installed and **not on PATH**. Use the full paths;
+a bare `psql` will not resolve.
+
+```
+C:\Program Files\PostgreSQLin\psql.exe
+C:\Program Files\PostgreSQLin\pg_restore.exe
+```
+
+`pg_restore` is **not used**. The backup is plain data-only SQL — 115 `INSERT`
+statements, no DDL — so it is replayed with `psql -f`. `pg_restore` only reads
+the custom/tar/directory formats `pg_dump -F` produces.
+
+Client 17.11 against server 17.6 is the supported direction: same major version,
+client slightly newer.
+
 ### Procedure
 
 The migration is wrapped in `DO $$ ... END $$` blocks; a failure mid-statement
@@ -258,49 +275,98 @@ rolls that block back automatically. If it partially succeeded and must be
 reversed:
 
 1. **Stop writes.** Pause the Vercel deployment or take the app to maintenance.
-2. **Restore from the backup taken in §4:**
+
+2. **Rebuild the schema to the previous migration.**
+
    ```bash
    npx prisma migrate reset --force --skip-seed
    ```
-   then replay the dump:
-   ```bash
-   psql "$DIRECT_URL" -f "C:/Users/mauri/Backups/atheos/<file>.sql"
-   ```
-   The dump sets `session_replication_role = replica`, so foreign-key ordering
-   is not a problem. It is data-only — the schema comes from
-   `prisma migrate deploy` up to the _previous_ migration first.
-3. **Verify** the four counts and the ledger invariant from §7 match the
-   pre-migration values.
-4. **Redeploy** the last known-good commit.
 
-`psql` is **not currently installed on this machine.** Install PostgreSQL client
-tools _before_ applying, or the rollback path is theoretical. This is a
-precondition, not a footnote.
+   The dump carries no DDL, so the schema must exist before the data lands.
+
+3. **Replay the dump with the real client.** Credentials go through the
+   environment so nothing sensitive reaches the process list — never put the
+   password in the URL on the command line:
+
+   ```bash
+   PGPASSWORD='<password>' PGSSLMODE=require "/c/Program Files/PostgreSQL/17/bin/psql.exe" -h '<pooler-host>' -p 5432 -U 'postgres.<project-ref>' -d postgres -v ON_ERROR_STOP=1 --quiet --no-psqlrc -f 'C:/Users/mauri/Backups/atheos/<file>.sql'
+   ```
+
+   `ON_ERROR_STOP=1` is not optional: without it psql reports success after
+   skipping failed statements, which is the worst possible outcome for a
+   restore. The dump opens its own `BEGIN`/`COMMIT` and sets
+   `session_replication_role = replica`, so **do not** add
+   `--single-transaction` — it would nest and warn. That setting is per-session
+   and does not survive the connection; verified.
+
+4. **Verify** the counts and the ledger invariant from §7 match the
+   pre-migration values.
+
+5. **Redeploy** the last known-good commit.
+
+### Rehearsed, with the real tooling — Sprint 5A.2
+
+Executed end to end against an isolated `atheos_restore_test_<hex>` schema on
+the separate `atheos-test` project:
+
+| Step                           | Result                                                                                          |
+| ------------------------------ | ----------------------------------------------------------------------------------------------- |
+| Backup checksum re-verified    | 78,123 bytes, sha256 `0cde658e…9723` — exact match                                              |
+| `psql -f` restore              | **exit 0**, 14.5 s, zero stderr                                                                 |
+| Restored                       | 21 tables, 115 rows, all per-table counts exact                                                 |
+| Balance / ledger drift         | 16,493 / **0**                                                                                  |
+| Invalid foreign keys           | 0                                                                                               |
+| Apply migration                | enum → `FREE, CREATOR, PRO, STUDIO`; both tables created                                        |
+| Rollback (rebuild + `psql -f`) | **exit 0**, 13.7 s; enum back to the five legacy values, both tables gone, all counts identical |
+| Re-apply                       | canonical again, counts identical                                                               |
+
+Two differences from the production procedure remain, and neither is a gap in
+the tooling proof:
+
+- The rehearsal rebuilt the schema by executing the migration files directly
+  rather than through `npx prisma migrate reset`, because `reset` targets a
+  whole database and this had to stay inside one schema. The SQL applied is
+  byte-identical; the driver differs.
+- Isolation is by schema, not by database. Production's rollback recreates
+  objects in `public`.
+
+The `psql -f` restore itself — the step that had never been executed — is now
+proven with the exact binary, exact flags and the exact verified backup file.
 
 ### Stop conditions — do not proceed at all if
 
 - the fresh backup does not verify clean
 - `subscriptions` is no longer empty and the mapping has not been re-proved
-- `TEST_DATABASE_URL` rehearsal (Sprint 5A §5–7) has still not been performed
 - anyone is mid-signup, or a Stripe webhook is in flight
-- `psql` is unavailable, leaving no rollback path
+- the full path to `psql.exe` does not resolve, or `psql --version` is not 17.x
+- `ON_ERROR_STOP=1` is missing from the restore command
+- the fresh backup's checksum was not recorded before applying
 
 ---
 
-## 9. What has _not_ been proved
+## 9. What has been proved, and what has not
 
-Sprint 5A could not run the rehearsal: `TEST_DATABASE_URL` is unset, and this
-plan is written from a **read-only preflight plus static reading of the SQL**, not
-from an observed apply.
+Rehearsed on real managed PostgreSQL (Sprints 5A.1 and 5A.2), inside disposable
+schemas on the separate `atheos-test` project:
 
-What that leaves unverified:
+- the migration applies, and a second apply is a genuine no-op
+- every legacy tier maps as documented, on seeded fixtures covering all five
+- `scheduledTier` NULLs pass through; the default resets to `FREE`
+- both tables and both CHECK constraints are created
+- the constraints reject negative balances, negative budget usage, invalid
+  enum values, invalid foreign keys and duplicate idempotency keys
+- parallel reservation is atomic and balances never go negative — 3 tests that
+  had never run before
+- the verified backup restores with the real `psql` 17.11 binary, and the full
+  migrate → rollback → re-apply cycle round-trips with counts unchanged
 
-- the migration actually completing on a real server
-- the second run being a true no-op in practice
-- the constraints rejecting negative values in practice
-- rollback working end to end
-- the parallel-reservation concurrency tests (3 skipped)
+Still unproven, honestly:
 
-The empty `subscriptions` table means the _data_ risk is near zero. The
-_mechanical_ risk — a statement erroring halfway — is unproven and is the reason
-to rehearse first.
+- **Applying to production itself.** Every rehearsal used a schema whose data
+  was restored from the production dump, not production.
+- **`prisma migrate deploy` against the production pooler.** The rehearsals
+  executed the migration SQL directly; `deploy` also writes
+  `_prisma_migrations` and takes its own advisory lock.
+- **Behaviour with a non-empty `subscriptions` table.** Production has 0 rows;
+  the mapping was proved on fixtures instead. If that count is ever non-zero at
+  apply time, stop and re-prove (see §5).
