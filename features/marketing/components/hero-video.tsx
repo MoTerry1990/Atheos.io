@@ -47,13 +47,46 @@ export function HeroVideo({ className }: { className?: string }) {
   const [playing, setPlaying] = useState(false);
   const [allowed, setAllowed] = useState(false);
 
+  /**
+   * Decide whether to render a video element at all.
+   *
+   * `false` on the server and on the first client render, so the markup match
+   * is exact and hydration cannot warn. The video is opted *into* after mount,
+   * never rendered and then torn out.
+   *
+   * Two refusals, both of them the visitor's choice rather than ours:
+   *
+   *   `prefers-reduced-motion: reduce`  — a drifting full-bleed background is
+   *   exactly the class of motion that triggers vestibular symptoms.
+   *
+   *   `navigator.connection.saveData`   — someone metering their data should
+   *   not spend 2.3 MB on decoration.
+   *
+   * Both fall back to the poster, which carries the same frame, so the fold
+   * still looks composed either way.
+   */
   useEffect(() => {
-    const query = window.matchMedia("(prefers-reduced-motion: reduce)");
-    setAllowed(!query.matches);
+    const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
 
-    const onChange = (event: MediaQueryListEvent) => setAllowed(!event.matches);
-    query.addEventListener("change", onChange);
-    return () => query.removeEventListener("change", onChange);
+    const connection = (
+      navigator as Navigator & {
+        connection?: { saveData?: boolean; effectiveType?: string };
+      }
+    ).connection;
+
+    const decide = () =>
+      setAllowed(
+        !motion.matches &&
+          connection?.saveData !== true &&
+          // 2G and slow-2G will not stream 2.3 MB usefully; the poster is the
+          // better experience rather than a spinner over a blank hero.
+          connection?.effectiveType !== "slow-2g" &&
+          connection?.effectiveType !== "2g",
+      );
+
+    decide();
+    motion.addEventListener("change", decide);
+    return () => motion.removeEventListener("change", decide);
   }, []);
 
   useEffect(() => {
@@ -64,6 +97,21 @@ export function HeroVideo({ className }: { className?: string }) {
     // there is nothing to recover, and an unhandled rejection in the console
     // on first paint is noise that hides real errors.
     void video.play().catch(() => undefined);
+
+    /**
+     * Stop decoding in a background tab.
+     *
+     * An 8.2 s loop left running behind another tab burns battery to render
+     * something nobody is looking at. `visibilitychange` is the only signal
+     * that reliably covers tab switches, minimising and screen lock.
+     */
+    const onVisibility = () => {
+      if (document.hidden) video.pause();
+      else void video.play().catch(() => undefined);
+    };
+
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
   }, [allowed]);
 
   return (
@@ -121,10 +169,11 @@ export function HeroVideo({ className }: { className?: string }) {
             playing ? "opacity-100" : "opacity-0",
           )}
         >
-          {/* WebM first: VP9 encodes this clip at 720 KB against H.264's
-              1,310 KB — a 45% saving for every browser that accepts it, which
+          {/* WebM first: VP9 encodes this loop at 2,307 KB against H.264's
+              2,865 KB — a 19% saving for every browser that accepts it, which
               is all of them except Safari. The browser picks the first source
-              it can play, so ordering *is* the negotiation. */}
+              it can play and downloads only that one, so ordering *is* the
+              negotiation and no visitor fetches both. */}
           <source src="/marketing/hero.webm" type="video/webm" />
           <source src="/marketing/hero.mp4" type="video/mp4" />
         </video>

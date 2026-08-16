@@ -75,7 +75,8 @@ export function Landing({ locale }: { locale: Locale }) {
         // the preload fetches the file the CSS will actually use. A plain
         // `href` here would preload one density and the stylesheet would then
         // request the other — two downloads for one painted image.
-        imageSrcSet="/marketing/hero-poster-sm.webp 1x, /marketing/hero-poster.webp 2x"
+        imageSrcSet="/marketing/hero-poster-mobile.webp 640w, /marketing/hero-poster.webp 1920w"
+        imageSizes="100vw"
         type="image/webp"
         fetchPriority="high"
       />
