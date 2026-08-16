@@ -136,6 +136,20 @@ export function AIShowcase() {
                 }}
                 className={cn(
                   "relative flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors",
+                  /**
+                   * 44px on touch, matching `home-composer.tsx`.
+                   *
+                   * These measured **38px** at 375px wide while the composer's
+                   * tabs — same three labels, same page — measured 44. Sprint
+                   * 4.2 raised the touch target on one of the two tablists and
+                   * nobody noticed there was a second, because they look
+                   * identical and only one of them is near the fold.
+                   *
+                   * `min-h-`, not `h-`: `py-2` above already sets the box, and
+                   * a competing height utility loses to it unpredictably.
+                   * `min-height` is a different property, so it just applies.
+                   */
+                  "min-h-11 sm:min-h-0",
                   "focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:outline-none",
                   selected
                     ? "text-foreground"

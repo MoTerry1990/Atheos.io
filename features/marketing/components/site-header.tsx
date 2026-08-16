@@ -102,7 +102,18 @@ export function SiteHeader() {
               alternative was asking Clerk who the visitor is *here*, which
               means a ClerkProvider around the marketing tree and its
               JavaScript on every landing-page visit. */}
-          <Button variant="gradient" size="sm" asChild>
+          {/* 44px on touch. This measured 98×32 at 375px — the primary
+              conversion control on the page, at two-thirds the target size a
+              thumb needs, and the only always-visible button up here besides
+              the menu (which is already `size-11`). `sm:` hands it back to the
+              compact height on a pointer. `min-h-`, not `h-`, for the same
+              cascade reason documented in `home-composer.tsx`. */}
+          <Button
+            variant="gradient"
+            size="sm"
+            className="min-h-11 sm:min-h-9"
+            asChild
+          >
             <Link href="/sign-up?redirect_url=%2Fstudio">
               {copy.auth.signUp}
             </Link>

@@ -248,7 +248,22 @@ function MediaCard({
 
       <div className="space-y-3 p-4">
         <div className="flex items-center gap-2">
-          <span className="rounded-md bg-primary/10 px-2 py-0.5 text-2xs font-medium tracking-wider text-primary uppercase">
+          {/**
+           * `bg-accent text-accent-foreground`, not `bg-primary/10 text-primary`.
+           *
+           * The old pairing measured **4.22:1** in Lighthouse — `#ad46ff` on
+           * `#21152b` — against the 4.5:1 floor that 11px text has to clear.
+           * It was the only accessibility failure on the page and the reason
+           * the score sat at 97.
+           *
+           * `--accent` / `--accent-foreground` is the design system's existing
+           * pair for a tinted chip, and it is defined per theme, so this passes
+           * in both rather than in whichever one happened to get tested:
+           * 11.01:1 dark (brand-200 on brand-950), 6.60:1 light (brand-700 on
+           * brand-50). Hardcoding a lighter violet would have fixed dark mode
+           * and quietly broken light.
+           */}
+          <span className="rounded-md bg-accent px-2 py-0.5 text-2xs font-medium tracking-wider text-accent-foreground uppercase">
             {item.kind}
           </span>
           {/* Only when known. An invented model name on a card claiming to be

@@ -47,6 +47,35 @@ import type { Locale } from "@/features/marketing/i18n/locales";
 export function Landing({ locale }: { locale: Locale }) {
   return (
     <>
+      {/**
+       * The one preload on the page.
+       *
+       * Lighthouse identifies the LCP element as the hero's poster — the
+       * `bg-cover` div in `hero-video.tsx`, 1340×622 at desktop — and fails
+       * `lcp-discovery-insight` because nothing announces it. A CSS
+       * `background-image` is invisible to the preload scanner: the browser
+       * cannot know the URL until it has downloaded the stylesheet, matched
+       * the rule and built the layout box, which is why the measured LCP
+       * carried 456 ms of pure *resource load delay*.
+       *
+       * `fetchpriority` cannot help here — that attribute belongs on an
+       * `<img>`, and this is not one. A preload link is the only way to hand
+       * the URL to the scanner while the HTML is still streaming.
+       *
+       * React 19 hoists this into `<head>`. It lives in `Landing` rather than
+       * the marketing layout on purpose: the layout also wraps `/pricing`,
+       * `/privacy` and the legal pages, none of which render a hero, and
+       * preloading a 13 KB image those pages never paint is a straight waste.
+       * Here it is scoped to exactly the two routes with a hero, `/` and `/es`.
+       */}
+      <link
+        rel="preload"
+        as="image"
+        href="/marketing/hero-poster.webp"
+        type="image/webp"
+        fetchPriority="high"
+      />
+
       <Hero />
 
       {/* One field, directly under the fold. It generates nothing — it carries

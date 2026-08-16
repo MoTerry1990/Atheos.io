@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { EN } from "@/features/marketing/i18n/en";
@@ -199,5 +201,120 @@ describe("composer destinations", () => {
       "video",
       "audio",
     ]);
+  });
+});
+
+describe("touch targets on the controls a thumb actually hits", () => {
+  /**
+   * Measured on production at 375×812, not inferred from class names.
+   *
+   * Sprint 4.2 raised the composer's modality tabs to 44px and the finding was
+   * recorded as fixed. It was fixed — for one of the two tablists. The
+   * homepage renders *two* groups labelled Image / Video / Audio: the
+   * composer's, and the showcase's four sections higher. They look identical,
+   * so verifying one looked like verifying both.
+   *
+   *   composer tabs   80×44   min-height: 44px
+   *   showcase tabs   96×38   min-height: auto   <- missed
+   *
+   * Same story for the header's primary CTA at 98×32.
+   *
+   * These assert `min-h-11` rather than a rendered pixel height because jsdom
+   * has no layout engine and would report 0 for everything. The rendered
+   * measurement lives in the sprint report; this stops the class disappearing.
+   */
+  const read = (p: string) =>
+    readFileSync(resolve(import.meta.dirname, "../..", p), "utf8");
+
+  /**
+   * Source with comments stripped.
+   *
+   * Each of these files *documents* the `h-11` mistake it no longer makes, so
+   * asserting against raw text matches the explanation and fails on correct
+   * code. Deleting the comment to satisfy a regex would be the wrong repair —
+   * it is why the next person does not reintroduce the bug.
+   */
+  const code = (p: string) =>
+    read(p)
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .split("\n")
+      .filter((line) => !line.trim().startsWith("//"))
+      .join("\n");
+
+  it("gives the showcase tablist a 44px minimum on touch", () => {
+    const source = read("features/marketing/components/ai-showcase.tsx");
+    expect(source).toMatch(/min-h-11/);
+  });
+
+  it("gives the composer tablist a 44px minimum on touch", () => {
+    const source = read("features/marketing/components/home-composer.tsx");
+    expect(source).toMatch(/min-h-11/);
+  });
+
+  it("gives the header's primary CTA a 44px minimum on touch", () => {
+    const source = read("features/marketing/components/site-header.tsx");
+    const cta = source.slice(source.indexOf('variant="gradient"'));
+    expect(cta.slice(0, 400)).toMatch(/min-h-11/);
+  });
+
+  it("uses min-height rather than height, which loses the cascade", () => {
+    /**
+     * The original attempt used `h-11`. The class list showed `h-11` and the
+     * element still measured 36px, because the Button's own `size` variant
+     * sets `height` and the two compete for one property. `min-height` does
+     * not compete, so it applies.
+     */
+    for (const p of [
+      "features/marketing/components/ai-showcase.tsx",
+      "features/marketing/components/home-composer.tsx",
+      "features/marketing/components/site-header.tsx",
+    ]) {
+      // `(?<![\w-])` so this does not match the `h-11` inside `min-h-11`,
+      // which is the class we actually want.
+      expect(code(p), p).not.toMatch(/(?<![\w-])h-11\b/);
+    }
+  });
+});
+
+describe("the LCP asset is announced to the preload scanner", () => {
+  /**
+   * Lighthouse fails `lcp-discovery-insight` on production: the LCP element is
+   * a CSS `background-image`, which the preload scanner cannot see, so 456ms
+   * of the measured LCP was pure resource-load delay.
+   *
+   * `fetchpriority` is not available here — that attribute is for `<img>`.
+   * A preload link is the only mechanism.
+   */
+  const landing = readFileSync(
+    resolve(
+      import.meta.dirname,
+      "../..",
+      "features/marketing/components/landing.tsx",
+    ),
+    "utf8",
+  );
+
+  it("preloads the hero poster", () => {
+    expect(landing).toMatch(/rel="preload"/);
+    expect(landing).toMatch(/hero-poster\.webp/);
+    expect(landing).toMatch(/as="image"/);
+  });
+
+  it("preloads exactly one asset", () => {
+    // A preload for everything is a preload for nothing: each one competes
+    // with the LCP request it is supposed to accelerate.
+    expect(landing.match(/rel="preload"/g)).toHaveLength(1);
+  });
+
+  it("scopes the preload to the routes that render a hero", () => {
+    /**
+     * In `landing.tsx`, not the marketing layout. The layout also wraps
+     * /pricing, /privacy and the legal pages, none of which paint this image.
+     */
+    const layout = readFileSync(
+      resolve(import.meta.dirname, "../..", "app/(marketing)/layout.tsx"),
+      "utf8",
+    );
+    expect(layout).not.toMatch(/hero-poster/);
   });
 });
