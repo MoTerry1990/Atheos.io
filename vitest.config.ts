@@ -24,6 +24,26 @@ export default defineConfig({
         test: {
           name: "node",
           environment: "node",
+
+          /**
+           * One file at a time.
+           *
+           * Three suites now build disposable schemas on the shared
+           * atheos-test database. They already serialise on a Postgres
+           * advisory lock, but running the *files* in parallel leaves a
+           * window between one schema being dropped and the next being
+           * created, and the Sprint 4 migration decides it has already
+           * run by looking for a `PlanTier` carrying `CREATOR` in **any**
+           * schema. A second schema landing inside that window silently
+           * skips its own enum rotation and reports a migrated schema
+           * whose enum is still `STARTER, BASIC, …`.
+           *
+           * The managed pooler also caps a client at 15 connections, and
+           * three parallel suites asking for 8–12 each exceed it.
+           *
+           * Serial costs wall-clock. Parallel costs correctness.
+           */
+          fileParallelism: false,
           include: ["tests/{unit,integration,api,db}/**/*.test.ts"],
           setupFiles: ["tests/setup/node.ts"],
         },

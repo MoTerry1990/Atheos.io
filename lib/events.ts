@@ -40,6 +40,10 @@ export type EventName =
   | "credit.capture"
   | "credit.release"
   | "credit.release.refused"
+  // Sprint 5C.1: the legacy-spend reversal, and the guard that refuses
+  // to reverse anything once a durable asset exists.
+  | "credit.refund"
+  | "credit.refund.refused"
   // Abuse controls
   | "limit.rate_blocked"
   | "limit.concurrency_blocked"

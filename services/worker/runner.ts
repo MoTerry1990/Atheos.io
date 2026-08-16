@@ -7,6 +7,11 @@ import { sweepRateLimitBuckets } from "@/lib/rate-limit";
 
 import { prisma } from "@/lib/prisma";
 import { pollWithHealth } from "@/services/ai/manager";
+import {
+  FAILURE_CODES,
+  settleFailedDelivery,
+  type FailureCode,
+} from "@/services/billing/settlement";
 import { settleSuccess } from "@/services/generation";
 import { nextAttempt } from "@/services/ai/retry";
 import type { ProviderError } from "@/services/ai/types";
@@ -229,7 +234,10 @@ async function advance(
           {
             code: "unknown",
             retryable: false,
-            message: "The provider reported success but returned no output.",
+            message:
+              "The provider reported success but returned no output, so there " +
+              "is nothing to deliver. Most often the output expired before it " +
+              "was stored.",
           },
           result,
         );
@@ -275,8 +283,18 @@ async function advance(
     }
 
     if (providerJob.state === "canceled") {
-      await markFailed(job.id, workerId, "The provider cancelled this job.");
-      await log(job.id, "warn", "cancelled by provider", { workerId });
+      // Through settlement, not `markFailed`: a cancelled job delivered
+      // nothing, so the credits come back like any other undelivered run.
+      const cancelled = await settleFailedDelivery({
+        generationId: job.id,
+        workerId,
+        code: FAILURE_CODES.PROVIDER_CANCELED,
+        message: "The provider cancelled this job.",
+      });
+      await log(job.id, "warn", "cancelled by provider", {
+        workerId,
+        financial: cancelled.financial,
+      });
       result.failed += 1;
       return;
     }
@@ -342,13 +360,50 @@ async function handleFailure(
     return;
   }
 
-  await markFailed(jobId, workerId, error.message);
+  /**
+   * Permanent failure settles the money as well as the status.
+   *
+   * `markFailed` only ever set `status = 'FAILED'`. The customer's credits
+   * stayed spent, and because the worker had never run in production nobody
+   * noticed until the first real tick failed a job and left a user 90 credits
+   * short. `settleFailedDelivery` is the single path that transitions *and*
+   * reverses, by whichever financial model that generation used.
+   */
+  const settlement = await settleFailedDelivery({
+    generationId: jobId,
+    workerId,
+    code: permanentCode(error.code, error.message),
+    message: error.message,
+  });
+
   await log(jobId, "error", "failed permanently", {
     workerId,
     code: error.code,
     attempts: attemptCount,
+    financial: settlement.financial,
   });
   result.failed += 1;
+}
+
+/**
+ * Translate a provider error code into a stored, machine-readable one.
+ *
+ * The provider's vocabulary is not a contract — it changes when they change it
+ * — so it is mapped once, here, into codes support and reporting can rely on.
+ */
+function permanentCode(code: string, message: string): FailureCode {
+  // `empty_output` is not part of `ProviderErrorCode` and should not be — that
+  // union describes what providers report, and "succeeded with nothing
+  // attached" is our interpretation of a success, not their error.
+  if (/returned no output/i.test(message)) return FAILURE_CODES.EMPTY_OUTPUT;
+  if (code === "canceled" || code === "cancelled") {
+    return FAILURE_CODES.PROVIDER_CANCELED;
+  }
+
+  if (code === "timeout" || code === "rate_limit") {
+    return FAILURE_CODES.RETRIES_EXHAUSTED;
+  }
+  return FAILURE_CODES.PROVIDER_FAILED;
 }
 
 /**
