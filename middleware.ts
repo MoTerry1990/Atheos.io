@@ -119,6 +119,28 @@ export function destinationFor(request: NextRequest) {
  */
 export const RETRY_MARKER = "__atheos_auth_retry";
 
+/**
+ * Handshake errors that a retry can never fix.
+ *
+ * Clerk reports a bad key through the *same* error path as a corrupt handshake
+ * token. The production exception, captured from Vercel Runtime Logs:
+ *
+ *     Clerk: Handshake token verification failed: The provided Clerk Secret Key
+ *     is invalid. ... (reason=secret-key-invalid, token-carrier=undefined)
+ *
+ * The word "Handshake" is right there in the message, so the recovery below
+ * treated it as transient, spent a redirect, and only surfaced the fault on the
+ * second pass. The visitor paid an extra round trip to reach the same 500, and
+ * the log showed a 303 immediately before it, which reads like a loop rather
+ * than the configuration error it is.
+ *
+ * A wrong key is wrong on every attempt. These fail immediately and loudly —
+ * they are exactly the "genuine configuration errors" that must never be
+ * softened.
+ */
+export const CONFIGURATION_FAULT =
+  /secret-key-invalid|publishable-key-invalid|Secret Key is invalid|Publishable Key is invalid/i;
+
 const handler = clerkMiddleware(async (_auth, request) => {
   const headers = new Headers(request.headers);
   // Next.js does not expose the pathname to Server Components. This is the
@@ -173,11 +195,16 @@ export default async function middleware(
     const isHandshakeFailure =
       error instanceof Error && /handshake/i.test(error.message);
 
+    const isConfigurationFault =
+      error instanceof Error && CONFIGURATION_FAULT.test(error.message);
+
     const alreadyRetried = request.nextUrl.searchParams.has(RETRY_MARKER);
 
-    // Anything that is not a handshake failure, and any second attempt, is a
-    // genuine fault. Re-throwing keeps it loud.
-    if (!isHandshakeFailure || alreadyRetried) throw error;
+    // A configuration fault, anything that is not a handshake failure, and any
+    // second attempt are all genuine faults. Re-throwing keeps them loud.
+    if (isConfigurationFault || !isHandshakeFailure || alreadyRetried) {
+      throw error;
+    }
 
     const url = new URL(request.nextUrl);
     for (const param of CLERK_PARAMS) url.searchParams.delete(param);

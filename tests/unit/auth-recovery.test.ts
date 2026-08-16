@@ -2,7 +2,12 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { CLERK_PARAMS, RETRY_MARKER, destinationFor } from "@/middleware";
+import {
+  CLERK_PARAMS,
+  CONFIGURATION_FAULT,
+  RETRY_MARKER,
+  destinationFor,
+} from "@/middleware";
 
 /**
  * The two failures that reached production together, and the rules that stop
@@ -393,12 +398,22 @@ describe("an unresolvable handshake fails safe, not open and not fatal", () => {
     expect(catchBlock).toMatch(/NextResponse\.redirect/);
   });
 
-  it("re-throws anything that is not a handshake failure", () => {
-    // A configuration error must stay loud. Swallowing every exception is how
-    // a broken instance looks healthy.
-    expect(middlewareBody).toMatch(
-      /if \(!isHandshakeFailure \|\| alreadyRetried\) throw error/,
-    );
+  it("re-throws anything that is not a retryable handshake failure", () => {
+    /**
+     * A configuration error must stay loud. Swallowing every exception is how
+     * a broken instance looks healthy.
+     *
+     * This asserted the exact source line until `isConfigurationFault` joined
+     * the condition. Matching a literal line makes any edit to it a failure,
+     * including a correct one — so it now pins the three things that must
+     * remain true of the guard, in any order.
+     */
+    const guard =
+      middlewareBody.match(/if \(([^)]*)\) \{\s*throw error;/)?.[1] ?? "";
+
+    expect(guard).toContain("isConfigurationFault");
+    expect(guard).toContain("!isHandshakeFailure");
+    expect(guard).toContain("alreadyRetried");
   });
 
   it("attempts recovery exactly once", () => {
@@ -419,5 +434,76 @@ describe("an unresolvable handshake fails safe, not open and not fatal", () => {
     // would hand them somebody else's outcome.
     const catchBlock = middlewareBody.slice(middlewareBody.indexOf("catch"));
     expect(catchBlock).toMatch(/no-store/);
+  });
+});
+
+describe("a bad Clerk key fails immediately, not after a wasted retry", () => {
+  /**
+   * The exact message from Vercel Runtime Logs, production deployment
+   * dpl_9vm7ChUpH5sfCZBbk2UbzvZfxyax, commit e2e1f49, source edge-middleware.
+   *
+   * It carries no secret material: Clerk names the *kind* of key that failed
+   * and a reason code, never the key. Nothing here needed redacting, and
+   * nothing here is a real credential.
+   */
+  const PRODUCTION_MESSAGE =
+    "Clerk: Handshake token verification failed: The provided Clerk Secret " +
+    "Key is invalid. Make sure that your Clerk Secret Key is correct. " +
+    "Contact support@clerk.com (reason=secret-key-invalid, " +
+    "token-carrier=undefined).";
+
+  it("classifies the real production exception as a configuration fault", () => {
+    expect(CONFIGURATION_FAULT.test(PRODUCTION_MESSAGE)).toBe(true);
+  });
+
+  it("still matches the handshake test, which is why it needed its own rule", () => {
+    /**
+     * This is the whole trap. The message contains "Handshake", so the
+     * transient-failure branch claimed it and retried something that cannot
+     * succeed. Pinning both facts together stops anyone "simplifying" the two
+     * checks back into one.
+     */
+    expect(/handshake/i.test(PRODUCTION_MESSAGE)).toBe(true);
+    expect(CONFIGURATION_FAULT.test(PRODUCTION_MESSAGE)).toBe(true);
+  });
+
+  it("re-throws configuration faults before the retry branch is reached", () => {
+    const body = code("middleware.ts");
+    const guard = body.slice(
+      body.indexOf("const isConfigurationFault"),
+      body.indexOf("NextResponse.redirect"),
+    );
+
+    expect(guard).toMatch(/if \(isConfigurationFault \|\|/);
+    expect(guard).toMatch(/throw error/);
+    // The throw must come before the redirect is ever constructed.
+    expect(guard).not.toMatch(/NextResponse\.redirect/);
+  });
+
+  it("leaves a genuinely corrupt handshake retryable", () => {
+    // The other real exception, from the earlier local reproduction. A garbled
+    // token can succeed on a second attempt; a wrong key cannot.
+    const corrupt =
+      "Clerk: unable to resolve handshake: SyntaxError: Unexpected end of data";
+
+    expect(/handshake/i.test(corrupt)).toBe(true);
+    expect(CONFIGURATION_FAULT.test(corrupt)).toBe(false);
+  });
+
+  it("does not classify unrelated errors as configuration faults", () => {
+    for (const unrelated of [
+      "TypeError: fetch failed",
+      "Clerk: unable to resolve handshake: SyntaxError: Unexpected end of data",
+      "Database connection terminated unexpectedly",
+    ]) {
+      expect(CONFIGURATION_FAULT.test(unrelated)).toBe(false);
+    }
+  });
+
+  it("contains no key material in the fixture", () => {
+    // A regression fixture must never carry a credential, even an expired one.
+    expect(PRODUCTION_MESSAGE).not.toMatch(/sk_(test|live)_/);
+    expect(PRODUCTION_MESSAGE).not.toMatch(/pk_(test|live)_/);
+    expect(PRODUCTION_MESSAGE).not.toMatch(/[A-Za-z0-9_-]{40,}/);
   });
 });
