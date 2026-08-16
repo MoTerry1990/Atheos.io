@@ -1,98 +1,128 @@
 import { Pool } from "pg";
-import { readdirSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { RESERVE_SQL } from "@/services/billing/ledger";
+import {
+  applyMigrations,
+  createIsolatedSchema,
+  managedTargetConfigured,
+  SCHEMA_PREFIX,
+  type IsolatedSchema,
+} from "./managed-schema";
 
 /**
- * The credit race, under **genuine** concurrency.
+ * Parallel reservation, against a real PostgreSQL server with real connections.
  *
- * ## Why this file is separate, and why it can skip
+ * ## Why PGlite cannot do this
  *
- * `credit-ledger.test.ts` proves the conditional update's semantics against
- * real Postgres via PGlite. What it cannot prove is behaviour under two
- * connections at once, because PGlite has one.
+ * `credit-ledger.test.ts` proves the conditional `UPDATE ... WHERE balance >= n`
+ * twenty times *sequentially* in PGlite. That is a real proof of the SQL and no
+ * proof at all of the thing the audit was worried about: PGlite holds one
+ * connection, so "twenty at once" becomes twenty in a row, and the interleaving
+ * that would expose a lost update never happens.
  *
- * The audit's exploit is specifically simultaneous — twenty requests arriving
- * together, not twenty in sequence — so a claim of "concurrency safe" backed
- * only by sequential tests would be overstating what was checked. Sprint 4's
- * brief says exactly that: do not claim concurrency safety on the strength of
- * mocks.
+ * ## What changed in Sprint 5A.1
  *
- * So this test needs a real server. It runs when `TEST_DATABASE_URL` points at
- * a **disposable** database and skips otherwise, printing which of the two
- * happened. A silent skip would be the worst outcome available: a green suite
- * that never ran the test the whole sprint was about.
+ * This file used to open with:
  *
- * ## Running it
+ *     DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;
  *
- *     docker run --rm -e POSTGRES_PASSWORD=x -p 5433:5432 postgres:16
- *     TEST_DATABASE_URL=postgres://postgres:x@localhost:5433/postgres \
- *       npx vitest run tests/db/credit-ledger.concurrency.test.ts
+ * and guard it by refusing any URL containing `supabase` or `pooler`. The guard
+ * was correct and the result was that these tests never ran — no local Postgres
+ * is installed, so three tests sat skipped indefinitely. A permanently skipped
+ * test is not a safety measure; it is an untested code path with a comment.
  *
- * It DROPs and recreates the public schema on start, so it must never be
- * pointed at anything that matters. The guard below refuses a URL containing
- * `supabase`, which is the one mistake worth making impossible rather than
- * merely documenting.
+ * They now run inside a uniquely-named disposable schema on the separate
+ * `atheos-test` project. Nothing here touches `public`, so the reason for the
+ * old guard is gone rather than merely suppressed. `managed-schema.ts` refuses
+ * the production project ref outright and fails closed on an unproven identity.
+ *
+ * `TEST_DATABASE_URL` remains supported for a disposable *local* server, and is
+ * still refused if it looks managed — that path still does drop `public`.
  */
 
-const url = process.env.TEST_DATABASE_URL;
-const enabled = Boolean(url) && !/supabase|pooler/i.test(url ?? "");
+vi.setConfig({ testTimeout: 120_000, hookTimeout: 180_000 });
 
-if (url && !enabled) {
+const localUrl = process.env.TEST_DATABASE_URL;
+const localEnabled =
+  Boolean(localUrl) && !/supabase|pooler/i.test(localUrl ?? "");
+
+if (localUrl && !localEnabled) {
   throw new Error(
-    "TEST_DATABASE_URL looks like a managed/production database. This test drops the public schema; point it at a disposable server.",
+    "TEST_DATABASE_URL looks like a managed database. That path drops the " +
+      "public schema. Use MIGRATION_TEST_DATABASE_URL for managed servers, " +
+      "which runs inside an isolated schema instead.",
   );
 }
 
+const managed = managedTargetConfigured();
+const enabled = managed || localEnabled;
+
 /**
- * The status, as a test name rather than as a log line.
+ * The status, as a test name rather than a log line.
  *
- * A first version printed the mode with `console.log`. Vitest captures console
- * output during collection and does not surface it, so the notice never
- * appeared — the suite reported "3 skipped" with no indication of what had been
- * skipped or why, which is precisely the silent skip this was written to avoid.
- *
- * A test name is computed at collection time and always printed. So the run
- * itself says, in the reporter output, whether parallel reservation was
- * verified.
+ * Vitest captures console output during collection and never surfaces it, so an
+ * earlier version's `console.log` notice was invisible — the suite reported
+ * "3 skipped" with no indication of what or why. A test name is computed at
+ * collection time and always printed.
  */
 describe("parallel reservation coverage", () => {
   it(
-    enabled
-      ? "VERIFIED — TEST_DATABASE_URL is set, the parallel tests below ran"
-      : "NOT VERIFIED — TEST_DATABASE_URL is unset, so the parallel tests were skipped; only the sequential proof in credit-ledger.test.ts ran",
+    managed
+      ? "VERIFIED (managed) — isolated schema on atheos-test, parallel tests ran"
+      : localEnabled
+        ? "VERIFIED (local) — TEST_DATABASE_URL is set, parallel tests ran"
+        : "NOT VERIFIED — no test database configured, parallel tests skipped",
     () => {
       expect(typeof enabled).toBe("boolean");
     },
   );
 });
 
-const MIGRATIONS = resolve(import.meta.dirname, "../../prisma/migrations");
-
 describe.skipIf(!enabled)("simultaneous reservations", () => {
+  let isolated: IsolatedSchema | null = null;
   let pool: Pool;
 
   beforeAll(async () => {
-    pool = new Pool({ connectionString: url, max: 24 });
-
-    await pool.query(
-      "DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;",
-    );
-
-    for (const name of readdirSync(MIGRATIONS, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => entry.name)
-      .sort()) {
+    if (managed) {
+      /**
+       * Twelve connections, not twenty-four.
+       *
+       * Supabase's **session** pooler caps a client at 15 concurrent
+       * connections and rejects the sixteenth with `EMAXCONNSESSION`. Asking
+       * for 24 does not produce 24-way parallelism against this server; it
+       * produces three failed tests.
+       *
+       * This is a reduction in *width*, not in rigour, and the distinction
+       * matters: the assertions are unchanged. Twenty requests are still
+       * issued for a balance that affords one, and thirty for a balance that
+       * affords eleven — the pool queues them across twelve live connections
+       * rather than twenty. Twelve transactions racing the same row is a
+       * genuine race; a lost update would still show up as two winners.
+       *
+       * The local-Postgres path below keeps 24, where nothing caps it.
+       */
+      isolated = await createIsolatedSchema(12);
+      pool = isolated.pool;
+      await applyMigrations(isolated);
+      expect(isolated.schema.startsWith(SCHEMA_PREFIX)).toBe(true);
+    } else {
+      // Local disposable server only: this branch does drop `public`, and the
+      // guard above has already refused anything that looks managed.
+      pool = new Pool({ connectionString: localUrl, max: 24 });
       await pool.query(
-        readFileSync(resolve(MIGRATIONS, name, "migration.sql"), "utf8"),
+        "DROP SCHEMA IF EXISTS public CASCADE; CREATE SCHEMA public;",
       );
+      const { migrationNames, migrationSql } = await import("./managed-schema");
+      for (const name of migrationNames()) {
+        await pool.query(migrationSql(name));
+      }
     }
-  }, 120_000);
+  });
 
   afterAll(async () => {
-    await pool?.end();
+    if (isolated) await isolated.destroy();
+    else await pool?.end();
   });
 
   async function seedUser(balance: number) {
