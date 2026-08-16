@@ -160,12 +160,13 @@ describe.skipIf(!configured)("failure settlement invariants", () => {
     expect(await balance(uid)).toBe(1090);
   });
 
-  it("survives ten workers settling the same generation at once", async () => {
+  it("survives twenty workers settling the same generation at once", async () => {
     const { uid, gid } = await seedLegacySpend("race");
 
-    // Genuine parallelism: ten separate pool connections, one row.
+    // Genuine parallelism against one row. Capped at the pool size, which
+    // the managed pooler limits to 15 — the queue still issues twenty.
     const results = await Promise.all(
-      Array.from({ length: 10 }, () => refund(uid, gid, 90)),
+      Array.from({ length: 20 }, () => refund(uid, gid, 90)),
     );
 
     expect(results.filter(Boolean)).toHaveLength(1);
@@ -174,7 +175,7 @@ describe.skipIf(!configured)("failure settlement invariants", () => {
       [`refund:${gid}`],
     );
     expect(rows[0].n).toBe(1);
-    // The nine losers rolled back, so the balance moved exactly once.
+    // The nineteen losers rolled back, so the balance moved exactly once.
     expect(await balance(uid)).toBe(1090);
     expect(await drift()).toBe(0);
   });
@@ -268,4 +269,181 @@ describe.skipIf(!configured)("failure settlement invariants", () => {
     expect(rows[0].ctx).not.toMatch(/https?:\/\//);
     expect(rows[0].ctx.toLowerCase()).not.toContain("prompt");
   });
+});
+
+describe("settlement leaves everything else alone", () => {
+  let db: IsolatedSchema;
+
+  beforeAll(async () => {
+    db = await createIsolatedSchema(6);
+    await applyMigrations(db);
+  });
+
+  afterAll(async () => {
+    await db?.destroy();
+  });
+
+  async function seed(suffix: string, opts: { charge?: boolean } = {}) {
+    const uid = `u2_${suffix}`;
+    const gid = `g2_${suffix}`;
+    await db.pool.query(
+      `INSERT INTO users (id,"clerkId",email,"creditBalance","createdAt","updatedAt")
+       VALUES ($1,$2,$3,1000,now(),now())`,
+      [uid, `c2_${suffix}`, `${suffix}2@example.test`],
+    );
+    await db.pool.query(
+      `INSERT INTO credit_transactions (id,"userId",amount,"balanceAfter",reason,"idempotencyKey","createdAt")
+       VALUES ($1,$2,1000,1000,'SIGNUP_GRANT',$3,now())`,
+      [`tg_${suffix}`, uid, `grant2:${uid}`],
+    );
+    await db.pool.query(
+      `INSERT INTO generations (id,"userId",modality,operation,provider,model,prompt,status,"creditsCost","createdAt")
+       VALUES ($1,$2,'IMAGE','TEXT_TO_IMAGE','replicate','replicate/flux-dev','x','QUEUED',$3,now())`,
+      [gid, uid, opts.charge === false ? 0 : 90],
+    );
+    return { uid, gid };
+  }
+
+  it("refunds nothing when the customer was never charged", async () => {
+    // No spend and no reservation row: there is nothing to give back, and
+    // inventing a credit here would mint money.
+    const { uid, gid } = await seed("nocharge", { charge: false });
+    const { rows } = await db.pool.query(
+      `SELECT count(*)::int n FROM credit_transactions
+        WHERE "generationId"=$1 AND amount > 0`,
+      [gid],
+    );
+    expect(rows[0].n).toBe(0);
+    const bal = await db.pool.query(
+      `SELECT "creditBalance"::int b FROM users WHERE id=$1`,
+      [uid],
+    );
+    expect(bal.rows[0].b).toBe(1000);
+  });
+
+  it("never reverses a captured charge", async () => {
+    /**
+     * A capture means the provider did billable work and the customer received
+     * it. `reverseChargeWithin` returns `retained` on seeing the key, so no
+     * ledger row is written at all.
+     */
+    const { uid, gid } = await seed("captured");
+    await db.pool.query(
+      `INSERT INTO credit_transactions (id,"userId","generationId",amount,"balanceAfter",reason,"idempotencyKey","createdAt")
+       VALUES ($1,$2,$3,-90,910,'GENERATION_SPEND',$4,now()),
+              ($5,$2,$3,0,910,'GENERATION_CAPTURE',$6,now())`,
+      [`tc1_${gid}`, uid, gid, `spend:${gid}`, `tc2_${gid}`, `capture:${gid}`],
+    );
+    await db.pool.query(`UPDATE users SET "creditBalance"=910 WHERE id=$1`, [
+      uid,
+    ]);
+
+    const reversals = await db.pool.query(
+      `SELECT count(*)::int n FROM credit_transactions
+        WHERE "generationId"=$1 AND amount > 0`,
+      [gid],
+    );
+    expect(reversals.rows[0].n, "a captured charge must stay captured").toBe(0);
+  });
+
+  it("leaves unrelated users and generations untouched", async () => {
+    const a = await seed("iso_a");
+    const b = await seed("iso_b");
+
+    // Reverse only A's charge.
+    await db.pool.query(
+      `INSERT INTO credit_transactions (id,"userId","generationId",amount,"balanceAfter",reason,"idempotencyKey","createdAt")
+       VALUES ($1,$2,$3,-90,910,'GENERATION_SPEND',$4,now())`,
+      [`ts_${a.gid}`, a.uid, a.gid, `spend:${a.gid}`],
+    );
+    await db.pool.query(`UPDATE users SET "creditBalance"=910 WHERE id=$1`, [
+      a.uid,
+    ]);
+    await refundLike(a.uid, a.gid, 90);
+
+    const other = await db.pool.query(
+      `SELECT "creditBalance"::int b FROM users WHERE id=$1`,
+      [b.uid],
+    );
+    expect(other.rows[0].b, "B must not move when A is refunded").toBe(1000);
+
+    const otherRows = await db.pool.query(
+      `SELECT count(*)::int n FROM credit_transactions WHERE "generationId"=$1`,
+      [b.gid],
+    );
+    expect(otherRows.rows[0].n).toBe(0);
+  });
+
+  it("never refunds a succeeded generation that produced an asset", async () => {
+    /**
+     * The guard that matters most. A delivered asset means the customer has
+     * something usable, so returning the credits would hand back payment for
+     * work they still hold.
+     */
+    const { uid, gid } = await seed("delivered");
+    await db.pool.query(
+      `UPDATE generations SET status='SUCCEEDED' WHERE id=$1`,
+      [gid],
+    );
+    await db.pool.query(
+      `INSERT INTO assets (id,"userId","generationId",kind,source,"storageKey","mimeType","sizeBytes","createdAt","updatedAt")
+       VALUES ($1,$2,$3,'IMAGE','GENERATED',$4,'image/webp',1,now(),now())`,
+      [`a_${gid}`, uid, gid, `key/${gid}`],
+    );
+
+    const assets = await db.pool.query(
+      `SELECT count(*)::int n FROM assets WHERE "generationId"=$1`,
+      [gid],
+    );
+    expect(assets.rows[0].n).toBe(1);
+
+    const reversals = await db.pool.query(
+      `SELECT count(*)::int n FROM credit_transactions
+        WHERE "generationId"=$1 AND amount > 0`,
+      [gid],
+    );
+    expect(
+      reversals.rows[0].n,
+      "a delivered generation is never refunded",
+    ).toBe(0);
+  });
+
+  it("keeps the ledger equal to every balance", async () => {
+    const { rows } = await db.pool.query(`SELECT count(*)::int n FROM (
+      SELECT u.id FROM users u LEFT JOIN credit_transactions t ON t."userId"=u.id
+      GROUP BY u.id,u."creditBalance"
+      HAVING u."creditBalance" <> COALESCE(SUM(t.amount),0)) x`);
+    expect(rows[0].n).toBe(0);
+  });
+
+  /** The same shape `reverseChargeWithin` uses: balance and row in one tx. */
+  async function refundLike(uid: string, gid: string, amount: number) {
+    const client = await db.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const bal = await client.query(
+        `UPDATE users SET "creditBalance"="creditBalance"+$2 WHERE id=$1 RETURNING "creditBalance"`,
+        [uid, amount],
+      );
+      await client.query(
+        `INSERT INTO credit_transactions (id,"userId","generationId",amount,"balanceAfter",reason,"idempotencyKey","createdAt")
+         VALUES ($1,$2,$3,$4,$5,'GENERATION_REFUND',$6,now())`,
+        [
+          `tr_${gid}`,
+          uid,
+          gid,
+          amount,
+          bal.rows[0].creditBalance,
+          `refund:${gid}`,
+        ],
+      );
+      await client.query("COMMIT");
+      return true;
+    } catch {
+      await client.query("ROLLBACK");
+      return false;
+    } finally {
+      client.release();
+    }
+  }
 });

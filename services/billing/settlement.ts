@@ -1,7 +1,6 @@
 import "server-only";
 
 import { prisma } from "@/lib/prisma";
-import { releaseReservation } from "@/services/billing/ledger";
 import { emit } from "@/lib/events";
 
 /**
@@ -133,33 +132,70 @@ export async function settleFailedDelivery(input: {
     };
   }
 
-  const financial = await reverseCharge(generation.id, generation.userId);
-
   /**
-   * The transition itself, conditional.
+   * Reversal and transition in **one** transaction.
    *
-   * `updateMany` with a status filter rather than `update`: two workers racing
-   * here means the second matches zero rows instead of overwriting a terminal
-   * state and a `completedAt` that already happened.
+   * Previously these were two statements: the ledger moved, then the status
+   * moved. A crash between them left a refunded customer whose generation
+   * still read QUEUED, which the next tick would claim and settle again — and
+   * only the idempotency key stopped that becoming a second refund. Relying on
+   * the key to paper over a torn write is not the same as not tearing.
+   *
+   * Everything below commits together or not at all.
    */
-  const transition = await prisma.generation.updateMany({
-    where: {
-      id: generation.id,
-      status: { in: ["QUEUED", "RUNNING", "RETRYING"] },
-      ...(input.workerId ? { lockedBy: input.workerId } : {}),
-    },
-    data: {
-      status: "FAILED",
-      error: `${input.code}: ${input.message}`.slice(0, 1000),
-      completedAt: new Date(),
-      // The lease is released here; nothing should reclaim a terminal job.
-      lockedAt: null,
-      lockedBy: null,
-      nextAttemptAt: null,
-    },
-  });
+  let outcome: {
+    financial: { outcome: FinancialOutcome; balance: number | null };
+    settled: boolean;
+  };
 
-  const settled = transition.count === 1;
+  try {
+    outcome = await prisma.$transaction(async (tx) => {
+      const financial = await reverseChargeWithin(
+        tx,
+        generation.id,
+        generation.userId,
+      );
+
+      /**
+       * `updateMany` with a status filter rather than `update`: two workers
+       * racing here means the second matches zero rows instead of overwriting a
+       * terminal state and a `completedAt` that already happened.
+       */
+      const transition = await tx.generation.updateMany({
+        where: {
+          id: generation.id,
+          status: { in: ["QUEUED", "RUNNING", "RETRYING"] },
+          ...(input.workerId ? { lockedBy: input.workerId } : {}),
+        },
+        data: {
+          status: "FAILED",
+          error: `${input.code}: ${input.message}`.slice(0, 1000),
+          completedAt: new Date(),
+          // The lease is released here; nothing reclaims a terminal job.
+          lockedAt: null,
+          lockedBy: null,
+          nextAttemptAt: null,
+        },
+      });
+
+      return { financial, settled: transition.count === 1 };
+    });
+  } catch (error) {
+    // Someone else reversed first; their transaction committed and ours rolled
+    // back whole. That is the designed outcome of the race, not a failure.
+    if (error instanceof AlreadyReversed) {
+      return {
+        settled: false,
+        financial: "already",
+        balance: null,
+        code: input.code,
+      };
+    }
+    throw error;
+  }
+
+  const financial = outcome.financial;
+  const settled = outcome.settled;
 
   await writeLog(generation.id, settled ? "error" : "info", "delivery failed", {
     code: input.code,
@@ -175,18 +211,29 @@ export async function settleFailedDelivery(input: {
   };
 }
 
+type Tx = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
+
+/** Signals a lost idempotency race so the caller can report a clean no-op. */
+class AlreadyReversed extends Error {}
+
 /**
  * Return the customer's credits by whichever route this generation was charged.
  *
- * Reads the ledger rather than trusting a flag on the generation: the ledger is
- * the append-only record, and the keys on it are what actually prevent a double
- * reversal.
+ * Takes the transaction client so the reversal and the status transition commit
+ * together. It deliberately does **not** call `releaseReservation`: that helper
+ * opens its own transaction, and nesting one inside this would either deadlock
+ * or silently commit early. The keys and the precedence are identical.
+ *
+ * Reads the ledger rather than trusting a flag on the generation. The ledger is
+ * the append-only record, and the unique keys on it are what actually prevent a
+ * double reversal.
  */
-async function reverseCharge(
+async function reverseChargeWithin(
+  tx: Tx,
   generationId: string,
   userId: string,
 ): Promise<{ outcome: FinancialOutcome; balance: number | null }> {
-  const rows = await prisma.creditTransaction.findMany({
+  const rows = await tx.creditTransaction.findMany({
     where: {
       idempotencyKey: {
         in: [
@@ -214,78 +261,54 @@ async function reverseCharge(
   }
 
   const reserved = by.get(`reserve:${generationId}`);
-  if (reserved !== undefined) {
-    const result = await releaseReservation({
-      userId,
-      generationId,
-      amount: Math.abs(reserved),
-      reason: "delivery failed",
-    });
-    return {
-      outcome: result.released ? "released" : "already",
-      balance: result.balance,
-    };
-  }
-
   const spent = by.get(`spend:${generationId}`);
-  if (spent !== undefined) {
-    return refundLegacySpend(generationId, userId, Math.abs(spent));
-  }
+  const charged = reserved ?? spent;
 
-  return { outcome: "none", balance: null };
-}
+  // Nothing was ever taken from this customer.
+  if (charged === undefined) return { outcome: "none", balance: null };
 
-/**
- * Refund a pre-reservation-model direct debit.
- *
- * `GENERATION_RELEASE` would be the wrong reason here — there is no
- * reservation to release, and the two words mean different things to the
- * reporting queries that read them. `refund:{id}` also matches the key the
- * nine historical refunds in production already use, so this cannot
- * double-refund one of them.
- *
- * Balance and ledger row move in a single transaction, which is the schema's
- * stated rule: `creditBalance` is a cached sum, written alongside the entry
- * that changed it.
- */
-async function refundLegacySpend(
-  generationId: string,
-  userId: string,
-  amount: number,
-): Promise<{ outcome: FinancialOutcome; balance: number | null }> {
+  const amount = Math.abs(charged);
+  if (amount <= 0) return { outcome: "none", balance: null };
+
+  /**
+   * `RELEASE` returns an unspent reservation; `REFUND` returns a debit that has
+   * already left the balance. They are different events to the reporting
+   * queries that read them, so the reason follows how the money was taken.
+   */
+  const reserving = reserved !== undefined;
+  const key = reserving ? `release:${generationId}` : `refund:${generationId}`;
+  const reason = reserving ? "GENERATION_RELEASE" : "GENERATION_REFUND";
+
   try {
-    const balance = await prisma.$transaction(async (tx) => {
-      const user = await tx.user.update({
-        where: { id: userId },
-        data: { creditBalance: { increment: amount } },
-        select: { creditBalance: true },
-      });
+    const user = await tx.user.update({
+      where: { id: userId },
+      data: { creditBalance: { increment: amount } },
+      select: { creditBalance: true },
+    });
 
-      await tx.creditTransaction.create({
-        data: {
-          userId,
-          generationId,
-          amount,
-          balanceAfter: user.creditBalance,
-          reason: "GENERATION_REFUND",
-          idempotencyKey: `refund:${generationId}`,
-        },
-      });
-
-      return user.creditBalance;
+    await tx.creditTransaction.create({
+      data: {
+        userId,
+        generationId,
+        amount,
+        balanceAfter: user.creditBalance,
+        reason,
+        idempotencyKey: key,
+      },
     });
 
     emit("credit.refund", { generationId, amount });
-    return { outcome: "refunded", balance };
+    return {
+      outcome: reserving ? "released" : "refunded",
+      balance: user.creditBalance,
+    };
   } catch (error) {
     /**
-     * A unique-key collision means a concurrent caller refunded first. The
-     * transaction rolled back, so the balance was not incremented twice —
-     * this is the success path for the loser of the race, not an error.
+     * A unique-key collision means a concurrent caller reversed first. Throwing
+     * rolls the whole transaction back, which is correct: the balance was not
+     * incremented twice, and the loser of the race reports a clean no-op.
      */
-    if (isUniqueViolation(error)) {
-      return { outcome: "already", balance: null };
-    }
+    if (isUniqueViolation(error)) throw new AlreadyReversed();
     throw error;
   }
 }

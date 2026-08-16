@@ -19,7 +19,6 @@ import {
   claimJobs,
   heartbeat,
   log,
-  markFailed,
   markRetrying,
   queueDepth,
 } from "@/services/worker/queue";
@@ -195,7 +194,24 @@ async function advance(
       workerId,
       attempt: job.attemptCount,
     });
-    await markFailed(job.id, workerId, "The job was never submitted.");
+    /**
+     * Through settlement, not `markFailed`.
+     *
+     * This path charged the customer at reservation time and then never
+     * reached the provider, so it is the one permanent failure where a refund
+     * is unambiguously owed — no provider cost was incurred at all.
+     * `markFailed` left those credits spent.
+     */
+    const submission = await settleFailedDelivery({
+      generationId: job.id,
+      workerId,
+      code: FAILURE_CODES.SUBMISSION_FAILED,
+      message: "The job was never submitted to the provider.",
+    });
+    await log(job.id, "error", "settled unsubmitted job", {
+      workerId,
+      financial: submission.financial,
+    });
     result.failed += 1;
     return;
   }
