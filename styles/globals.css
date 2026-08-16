@@ -891,9 +891,11 @@
  */
 .hero-poster {
   /* Fallback first, for anything without image-set(). */
-  background-image: url("/marketing/hero-poster.webp");
-  background-image: -webkit-image-set(url("/marketing/hero-poster.webp") 1x);
-  background-image: image-set(url("/marketing/hero-poster.webp") 1x);
+  background-image: url("/marketing/hero-poster.582572e3c0.webp");
+  background-image: -webkit-image-set(
+    url("/marketing/hero-poster.582572e3c0.webp") 1x
+  );
+  background-image: image-set(url("/marketing/hero-poster.582572e3c0.webp") 1x);
   background-position: center;
 }
 
@@ -907,8 +909,10 @@
  */
 @media (max-width: 639px) {
   .hero-poster {
-    background-image: url("/marketing/hero-poster-mobile.webp");
-    background-image: image-set(url("/marketing/hero-poster-mobile.webp") 1x);
+    background-image: url("/marketing/hero-poster-mobile.702379bc80.webp");
+    background-image: image-set(
+      url("/marketing/hero-poster-mobile.702379bc80.webp") 1x
+    );
   }
 }
 

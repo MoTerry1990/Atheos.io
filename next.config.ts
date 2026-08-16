@@ -295,6 +295,27 @@ const nextConfig: NextConfig = {
       { source: "/:path*", headers: securityHeaders },
 
       /**
+       * Content-hashed hero media, cached for a year and never revalidated.
+       *
+       * `immutable` is only honest when the URL names exactly one byte
+       * sequence. These filenames carry a SHA-256 prefix
+       * (`hero.62e23be750.webm`), so a re-encode produces a different URL and
+       * a cached copy can never be stale. The unhashed names this replaced
+       * could not take this header for exactly that reason — they were served
+       * `max-age=0, must-revalidate`, which meant a conditional request for a
+       * 1.2 MB file on every visit.
+       */
+      {
+        source: "/marketing/:name(hero[^/]*\.[0-9a-f]{10}\.(?:webm|mp4|webp))",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=31536000, immutable",
+          },
+        ],
+      },
+
+      /**
        * Caching, by route class.
        *
        * Next already sets sensible defaults per rendering mode; these cover the

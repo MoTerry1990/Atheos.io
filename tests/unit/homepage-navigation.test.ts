@@ -296,8 +296,16 @@ describe("the LCP asset is announced to the preload scanner", () => {
 
   it("preloads the hero poster", () => {
     expect(landing).toMatch(/rel="preload"/);
-    expect(landing).toMatch(/hero-poster\.webp/);
     expect(landing).toMatch(/as="image"/);
+    /**
+     * Sprint 4.5.1 content-hashed the media filenames so they can carry an
+     * `immutable` cache header, so this matches the hash rather than a literal
+     * name that changes on every re-encode. Both candidates are asserted:
+     * preloading one density while the stylesheet picks the other would fetch
+     * two files to paint one image.
+     */
+    expect(landing).toMatch(/hero-poster-mobile\.[0-9a-f]{10}\.webp \d+w/);
+    expect(landing).toMatch(/hero-poster\.[0-9a-f]{10}\.webp \d+w/);
   });
 
   it("preloads exactly one asset", () => {
