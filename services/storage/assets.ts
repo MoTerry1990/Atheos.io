@@ -4,8 +4,7 @@ import { GetObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { createHash, randomUUID } from "node:crypto";
 
-import { r2Bucket, r2Client, r2PublicUrl } from "@/lib/r2";
-import { env } from "@/lib/env";
+import { r2Bucket, r2Client, r2ConfigProblems, r2PublicUrl } from "@/lib/r2";
 import { DeliveryFailure, inStage } from "@/services/delivery";
 import { FAILURE_CODES } from "@/services/billing/settlement";
 
@@ -159,13 +158,6 @@ async function readSource(
   };
 }
 
-/**
- * Copy one provider output into R2.
- *
- * The key is `users/{userId}/generations/{generationId}/{uuid}.{ext}` — user
- * first, so a per-user prefix can be listed, exported or deleted without a
- * database query, which is what a GDPR erasure request actually needs.
- */
 /**
  * Where one output lives, derived only from what it is.
  *
@@ -444,12 +436,21 @@ export async function presignedDownloadUrl(
  * storage is misconfigured *after* spending the user's credits and burning
  * provider time is the expensive order to find out.
  */
+/**
+ * Is storage actually usable — not merely populated.
+ *
+ * This used to test the five variables for presence. Presence is what
+ * production had for three sprints while every upload was rejected: the access
+ * key was a 55-character non-hex value and the secret carried a trailing
+ * newline, both present, both unusable. `/api/health` reported storage healthy
+ * throughout, and `submitGeneration` happily took the customer's credits
+ * because the check it consults said everything was fine.
+ *
+ * Structure is the cheapest available proxy for usability, and it is the one
+ * that would have caught this. It cannot prove the credential is *accepted* —
+ * only a request can — but it rules out the entire class of defect that
+ * actually occurred.
+ */
 export function isStorageConfigured(): boolean {
-  return Boolean(
-    env.R2_ACCOUNT_ID &&
-    env.R2_ACCESS_KEY_ID &&
-    env.R2_SECRET_ACCESS_KEY &&
-    env.R2_BUCKET_NAME &&
-    env.NEXT_PUBLIC_R2_PUBLIC_URL,
-  );
+  return r2ConfigProblems().length === 0;
 }

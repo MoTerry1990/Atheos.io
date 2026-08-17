@@ -34,20 +34,159 @@ import { env } from "@/lib/env";
  * and Sprint 14 removed the unused dependency. See § 46 in `docs/DECISIONS.md`.
  */
 
-function requireR2Config() {
-  const accountId = env.R2_ACCOUNT_ID;
-  const accessKeyId = env.R2_ACCESS_KEY_ID;
-  const secretAccessKey = env.R2_SECRET_ACCESS_KEY;
-  const bucket = env.R2_BUCKET_NAME;
+/**
+ * What is structurally wrong with the R2 configuration, if anything.
+ *
+ * ## Why this exists
+ *
+ * For three sprints, production could not store a single generated image.
+ * `R2_ACCESS_KEY_ID` in Vercel held a 55-character non-hex value and
+ * `R2_SECRET_ACCESS_KEY` held a 32-hex value with a trailing newline — neither
+ * is a credential of the right shape, and both were plainly wrong on sight.
+ *
+ * Nothing looked. The only check was `isStorageConfigured()`, which asked
+ * whether the variables were *present*. They were present, so `/api/health`
+ * reported storage healthy while every upload was rejected, and the failure
+ * surfaced only as `400 InvalidArgument` from R2 — a status that says nothing
+ * about which of five variables is malformed. Diagnosing it took a purpose-built
+ * probe deployed to production.
+ *
+ * A length-and-charset check would have named it in seconds. That is all this
+ * is, and it is worth far more than its size.
+ *
+ * ## Why it does not throw at import
+ *
+ * Bad credentials must not take the site down. This is a *report*: the storage
+ * layer refuses to run and generation refuses to start — which is the correct
+ * blast radius — while the marketing pages, sign-in and dashboard keep serving.
+ *
+ * ## Values are trimmed on the way in
+ *
+ * A trailing newline from a copy-paste is the single most likely defect in a
+ * dashboard-entered secret, and it is invisible in every UI that displays one.
+ * Trimming is always safe: no R2 credential has meaningful leading or trailing
+ * whitespace.
+ */
+export interface R2ConfigProblem {
+  variable: string;
+  /** Names the defect. Never contains the value. */
+  problem: string;
+}
 
-  if (!accountId || !accessKeyId || !secretAccessKey || !bucket) {
+/** A Cloudflare R2 S3 credential: fixed-length, lowercase hex. */
+const HEX_32 = /^[0-9a-f]{32}$/;
+const HEX_64 = /^[0-9a-f]{64}$/;
+
+function inspect(
+  variable: string,
+  raw: string | undefined,
+  expected: RegExp,
+  description: string,
+): R2ConfigProblem | null {
+  if (!raw || raw.trim() === "") {
+    return { variable, problem: "is missing" };
+  }
+
+  const trimmed = raw.trim();
+
+  // Reported separately from the format check even though trimming fixes it:
+  // whitespace in a stored secret means the value was pasted carelessly, and
+  // the next person to edit it should know that.
+  if (raw !== trimmed) {
+    return {
+      variable,
+      problem:
+        "has leading or trailing whitespace — re-paste it without a newline",
+    };
+  }
+
+  if (/^["']|["']$/.test(trimmed)) {
+    return { variable, problem: "is wrapped in quotes — store the bare value" };
+  }
+
+  if (!expected.test(trimmed)) {
+    return {
+      variable,
+      problem: `is not ${description} (it is ${trimmed.length} characters)`,
+    };
+  }
+
+  return null;
+}
+
+/** Every structural defect in the current R2 configuration. Empty means valid. */
+export function r2ConfigProblems(): R2ConfigProblem[] {
+  const problems: R2ConfigProblem[] = [];
+
+  const checks: [string, string | undefined, RegExp, string][] = [
+    [
+      "R2_ACCOUNT_ID",
+      env.R2_ACCOUNT_ID,
+      HEX_32,
+      "32 lowercase hexadecimal characters",
+    ],
+    [
+      "R2_ACCESS_KEY_ID",
+      env.R2_ACCESS_KEY_ID,
+      HEX_32,
+      "32 lowercase hexadecimal characters",
+    ],
+    [
+      "R2_SECRET_ACCESS_KEY",
+      env.R2_SECRET_ACCESS_KEY,
+      HEX_64,
+      "64 lowercase hexadecimal characters",
+    ],
+    // A bucket name is not hex; only the S3 naming rules apply.
+    [
+      "R2_BUCKET_NAME",
+      env.R2_BUCKET_NAME,
+      /^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/,
+      "a valid bucket name (lowercase letters, digits, dots and hyphens)",
+    ],
+  ];
+
+  for (const [variable, raw, expected, description] of checks) {
+    const problem = inspect(variable, raw, expected, description);
+    if (problem) problems.push(problem);
+  }
+
+  const publicUrl = env.NEXT_PUBLIC_R2_PUBLIC_URL?.trim();
+  if (!publicUrl) {
+    problems.push({
+      variable: "NEXT_PUBLIC_R2_PUBLIC_URL",
+      problem: "is missing",
+    });
+  } else if (!/^https:\/\/[^\s]+$/.test(publicUrl)) {
+    problems.push({
+      variable: "NEXT_PUBLIC_R2_PUBLIC_URL",
+      problem: "is not an https URL",
+    });
+  }
+
+  return problems;
+}
+
+function requireR2Config() {
+  const problems = r2ConfigProblems();
+
+  if (problems.length > 0) {
+    // Names the variable and the defect, never the value — this message reaches
+    // logs, and a secret in a log is a secret that has left the building.
     throw new Error(
-      "R2 is not configured. Set R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, " +
-        "R2_SECRET_ACCESS_KEY and R2_BUCKET_NAME — see .env.example.",
+      "R2 is misconfigured: " +
+        problems.map((p) => `${p.variable} ${p.problem}`).join("; ") +
+        ". See .env.example.",
     );
   }
 
-  return { accountId, accessKeyId, secretAccessKey, bucket };
+  // Trimmed, so a pasted newline can never reach a hostname or a signature.
+  return {
+    accountId: env.R2_ACCOUNT_ID!.trim(),
+    accessKeyId: env.R2_ACCESS_KEY_ID!.trim(),
+    secretAccessKey: env.R2_SECRET_ACCESS_KEY!.trim(),
+    bucket: env.R2_BUCKET_NAME!.trim(),
+  };
 }
 
 let cached: S3Client | undefined;
@@ -71,25 +210,20 @@ export function r2Client(): S3Client {
     /**
      * Do not attach integrity checksums unless an operation requires them.
      *
-     * The SDK defaults both of these to `WHEN_SUPPORTED`, which adds a CRC32
-     * checksum header to every `PutObject`. R2 rejects that request with
-     * **400 InvalidArgument** — which is precisely what Sprint 5C.3's staged
-     * instrumentation caught in production:
+     * **This is not what fixed the delivery outage**, and the comment that used
+     * to sit here said it was. Sprint 5C.3 saw `400 InvalidArgument` from R2,
+     * matched it to the SDK's `WHEN_SUPPORTED` default adding a CRC32 header,
+     * and shipped this setting as the cure without testing the counterfactual.
+     * Sprint 5C.4 ran it: a Buffer upload succeeds under *both* settings. The
+     * real cause was malformed credentials in Vercel — see `r2ConfigProblems`.
      *
-     *   {"stage":"r2_upload","status":400,
-     *    "errorClass":"S3ServiceException","vendorCode":"InvalidArgument"}
+     * It is kept because it is correct on its own terms — R2 does not need the
+     * header, and not sending it is one less thing to negotiate — but it earns
+     * no credit for the fix, and the record should say so.
      *
-     * It is environment-dependent, which is why it hid for so long: the same
-     * code, the same SDK version and the same credentials upload successfully
-     * from a local Node 24 process and fail on the deployed runtime. The
-     * client-driven poll path stored 19 assets before this surfaced; the worker,
-     * added later, hit it on its first real delivery.
-     *
-     * `WHEN_REQUIRED` sends no checksum for ordinary uploads and still sends one
-     * where the API mandates it. Transport integrity is unaffected — every
-     * request is TLS and SigV4-signed over the payload hash — and we verify the
-     * stored bytes ourselves: the object's key contains the SHA-256 of its
-     * content, and `assets.checksum` records the same digest.
+     * Integrity is unaffected: every request is TLS and SigV4-signed over the
+     * payload hash, the object key contains the SHA-256 of its content, and
+     * `assets.checksum` records the same digest.
      */
     requestChecksumCalculation: "WHEN_REQUIRED",
     responseChecksumValidation: "WHEN_REQUIRED",
