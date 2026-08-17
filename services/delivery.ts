@@ -57,6 +57,8 @@ export class DeliveryFailure extends Error {
   readonly status?: number;
   /** Class name of the original error, for diagnosis without its message. */
   readonly originalClass: string;
+  /** The vendor's error code, when the original error carried one. */
+  readonly vendorCode?: string;
 
   constructor(input: {
     stage: DeliveryStage;
@@ -65,6 +67,7 @@ export class DeliveryFailure extends Error {
     message: string;
     status?: number;
     originalClass?: string;
+    vendorCode?: string;
   }) {
     // The message is one of ours, from the fixed set below — never a provider
     // string and never an interpolated URL.
@@ -75,6 +78,7 @@ export class DeliveryFailure extends Error {
     this.retryable = input.retryable;
     this.status = input.status;
     this.originalClass = input.originalClass ?? "DeliveryFailure";
+    this.vendorCode = input.vendorCode;
   }
 }
 
@@ -85,6 +89,17 @@ export interface SanitizedFailure {
   retryable: boolean;
   errorClass: string;
   status?: number;
+  /**
+   * The vendor's own error code — `InvalidArgument`, `NoSuchBucket`,
+   * `AccessDenied`.
+   *
+   * Safe because it is a fixed identifier from a published list, not a message:
+   * it cannot contain a URL, a key or a prompt. Added after the first staged
+   * diagnosis narrowed a delivery failure to `r2_upload` with a bare HTTP 400,
+   * which named the operation but not the complaint — and 400 from an object
+   * store has a dozen possible causes.
+   */
+  vendorCode?: string;
 }
 
 /**
@@ -107,6 +122,7 @@ export function describeFailure(
       retryable: error.retryable,
       errorClass: error.originalClass,
       ...(error.status !== undefined ? { status: error.status } : {}),
+      ...(error.vendorCode ? { vendorCode: error.vendorCode } : {}),
     };
   }
 
@@ -125,6 +141,16 @@ export function describeFailure(
           .httpStatusCode
       : undefined;
 
+  /**
+   * An AWS/S3 exception sets `name` to the vendor's error code while the
+   * constructor stays `S3ServiceException`. When they differ, `name` is the
+   * specific complaint and is the field worth keeping.
+   */
+  const vendorCode =
+    error instanceof Error && error.name && error.name !== errorClass
+      ? error.name
+      : undefined;
+
   return {
     stage: fallbackStage,
     code: FAILURE_CODES.INTERNAL_FINALIZATION_FAILED,
@@ -133,6 +159,7 @@ export function describeFailure(
     retryable: true,
     errorClass,
     ...(status !== undefined ? { status } : {}),
+    ...(vendorCode ? { vendorCode } : {}),
   };
 }
 
@@ -159,6 +186,7 @@ export async function inStage<T>(
       message: `Delivery failed at ${stage}.`,
       status: described.status,
       originalClass: described.errorClass,
+      vendorCode: described.vendorCode,
     });
   }
 }
