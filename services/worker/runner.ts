@@ -13,7 +13,10 @@ import {
   type FailureCode,
 } from "@/services/billing/settlement";
 import { settleSuccess } from "@/services/generation";
+import { DeliveryFailure, describeFailure } from "@/services/delivery";
 import { nextAttempt } from "@/services/ai/retry";
+import { estimateCost } from "@/services/ai/cost";
+import { findModel } from "@/services/ai/registry";
 import type { ProviderError } from "@/services/ai/types";
 import {
   claimJobs,
@@ -323,6 +326,64 @@ async function advance(
       state: providerJob.state,
     });
   } catch (error) {
+    /**
+     * Name the stage before classifying the failure.
+     *
+     * Sprint 5C.2's single controlled generation died here and recorded
+     * `{"code":"unknown"}` — one label covering the provider poll, the
+     * download, the validation, the R2 write and the asset transaction. The
+     * report could not say which, and reproducing all five locally with
+     * production credentials succeeded, so the fault was only ever visible in
+     * the deployed runtime where nothing was recording it.
+     *
+     * `describeFailure` returns a closed shape with no field able to hold a
+     * signed URL, a prompt or a provider payload, so this can be logged as-is.
+     */
+    if (error instanceof DeliveryFailure) {
+      const sanitized = describeFailure(error, "settlement");
+      await log(job.id, "error", "delivery stage failed", {
+        ...sanitized,
+        workerId,
+      });
+
+      /**
+       * The provider ran. Price it even though the customer is being refunded.
+       *
+       * A delivery failure reaching this branch means the job was polled and
+       * the output existed — Replicate has already billed for it. Recording the
+       * cost here is what keeps the spending breaker and the margin report
+       * honest about money lost to our own delivery faults, which is precisely
+       * the spend an operator most needs to see.
+       */
+      const model = findModel(job.model);
+      const providerCost = model
+        ? (estimateCost(model, 1).costMicroUsd ?? null)
+        : null;
+
+      await handleFailure(
+        job.id,
+        workerId,
+        job.attemptCount,
+        {
+          code: "unknown",
+          retryable: error.retryable,
+          message: error.message,
+        },
+        result,
+        error.code,
+        providerCost,
+      );
+      return;
+    }
+
+    // Not a staged failure: it came from the provider poll itself, which is
+    // the one step outside the delivery pipeline.
+    const sanitized = describeFailure(error, "provider_output_parse");
+    await log(job.id, "error", "delivery stage failed", {
+      ...sanitized,
+      workerId,
+    });
+
     await handleFailure(
       job.id,
       workerId,
@@ -362,6 +423,16 @@ async function handleFailure(
   attemptCount: number,
   error: ProviderError,
   result: TickResult,
+  /**
+   * The staged failure code, when the delivery pipeline produced one.
+   *
+   * Without it, a validation rejection and an R2 outage both settle as
+   * PROVIDER_FAILED, which is the wrong word for either and loses the one
+   * detail that would tell an operator whether to retry or investigate.
+   */
+  stagedCode?: FailureCode,
+  /** Provider cost, when the provider ran before delivery failed. */
+  costMicroUsd?: number | null,
 ): Promise<void> {
   const next = nextAttempt(error, attemptCount);
 
@@ -388,8 +459,9 @@ async function handleFailure(
   const settlement = await settleFailedDelivery({
     generationId: jobId,
     workerId,
-    code: permanentCode(error.code, error.message),
+    code: stagedCode ?? permanentCode(error.code, error.message),
     message: error.message,
+    costMicroUsd,
   });
 
   await log(jobId, "error", "failed permanently", {

@@ -38,10 +38,15 @@ import { emit } from "@/lib/events";
  * `capture:{id}` or `release:{id}`. Both still exist in production, so this
  * picks the correct reversal per generation and **never performs both**:
  *
- *   reservation, uncaptured   → `releaseReservation`, key `release:{id}`
- *   legacy direct spend       → refund,               key `refund:{id}`
- *   captured                  → nothing; the work was billable
+ *   durable asset delivered   → nothing; the customer has what they paid for
+ *   reservation, uncaptured   → release, key `release:{id}`
+ *   reservation, captured     → refund,  key `refund:{id}`
+ *   legacy direct spend       → refund,  key `refund:{id}`
  *   already reversed          → nothing
+ *
+ * `captured → nothing` used to be on that list, and it was the Sprint 5C.2
+ * defect: capture is written at submission, so it was true of every generation
+ * before any of them could fail, and it silently disabled every refund.
  *
  * Every key is deterministic and unique, so a duplicate webhook, a second
  * worker and a retried cron all collapse to one financial effect.
@@ -92,6 +97,16 @@ export async function settleFailedDelivery(input: {
   message: string;
   /** When set, only settles a job this worker still holds the lease on. */
   workerId?: string;
+  /**
+   * What the provider's work cost us, when it did any.
+   *
+   * Recorded *because* the customer is being refunded, not instead of it. The
+   * provider bills for a run whether or not Atheos managed to deliver it, and a
+   * refund that also erased the cost would understate spend by exactly the
+   * amount most worth knowing about — the money lost to our own delivery bugs.
+   * Left null when the provider never ran or its price is unknown.
+   */
+  costMicroUsd?: number | null;
 }): Promise<SettlementResult> {
   const generation = await prisma.generation.findUnique({
     where: { id: input.generationId },
@@ -150,6 +165,26 @@ export async function settleFailedDelivery(input: {
 
   try {
     outcome = await prisma.$transaction(async (tx) => {
+      /**
+       * Ask again, inside the transaction.
+       *
+       * The check above is an early exit on the common case. This one is the
+       * decision. Between the two, a delivery running concurrently can commit
+       * an asset row — and refunding a customer who has just been handed a
+       * working file is the one error this module must never make. Re-reading
+       * here costs one indexed count and closes the window.
+       */
+      const delivered = await tx.asset.count({
+        where: { generationId: generation.id },
+      });
+
+      if (delivered > 0) {
+        return {
+          financial: { outcome: "retained" as FinancialOutcome, balance: null },
+          settled: false,
+        };
+      }
+
       const financial = await reverseChargeWithin(
         tx,
         generation.id,
@@ -171,6 +206,12 @@ export async function settleFailedDelivery(input: {
           status: "FAILED",
           error: `${input.code}: ${input.message}`.slice(0, 1000),
           completedAt: new Date(),
+          // Only when we learned something. Writing null over a cost recorded
+          // by an earlier attempt would erase the evidence this field exists
+          // to keep.
+          ...(input.costMicroUsd != null
+            ? { costMicroUsd: input.costMicroUsd }
+            : {}),
           // The lease is released here; nothing reclaims a terminal job.
           lockedAt: null,
           lockedBy: null,
@@ -216,6 +257,84 @@ type Tx = Parameters<Parameters<typeof prisma.$transaction>[0]>[0];
 /** Signals a lost idempotency race so the caller can report a clean no-op. */
 class AlreadyReversed extends Error {}
 
+/** What the policy decided, before anything is written. */
+export type ReversalPlan =
+  | { action: "already" }
+  | { action: "retain" }
+  | { action: "none" }
+  | {
+      action: "reverse";
+      key: string;
+      reason: "GENERATION_RELEASE" | "GENERATION_REFUND";
+      outcome: "released" | "refunded";
+      amount: number;
+    };
+
+/**
+ * The whole refund policy, as a pure function.
+ *
+ * Extracted from the transaction it used to live inside so it can be tested
+ * against every combination of ledger state directly, rather than inferred from
+ * SQL fixtures that re-express the same rules and therefore cannot disagree with
+ * them. The Sprint 5C.2 defect survived a green suite precisely because no test
+ * exercised this decision — only re-implementations of it.
+ *
+ * Order matters and is the policy:
+ *
+ *   1. Already reversed  → nothing to do.
+ *   2. Durable asset     → retain. The customer has something they can use.
+ *   3. Nothing charged   → nothing to do.
+ *   4. Otherwise         → reverse, once, by the route the money took.
+ *
+ * A capture appears nowhere above as grounds for keeping the money. It decides
+ * only *which* reversal to write: an uncaptured reservation is released, a
+ * captured one is refunded.
+ */
+export function planReversal(input: {
+  generationId: string;
+  hasDurableAsset: boolean;
+  keys: ReadonlySet<string>;
+  reservedAmount?: number;
+  spentAmount?: number;
+}): ReversalPlan {
+  const { generationId, keys } = input;
+
+  if (
+    keys.has(`release:${generationId}`) ||
+    keys.has(`refund:${generationId}`)
+  ) {
+    return { action: "already" };
+  }
+
+  // Ahead of every ledger consideration: delivery is what the money buys.
+  if (input.hasDurableAsset) return { action: "retain" };
+
+  const charged = input.reservedAmount ?? input.spentAmount;
+  if (charged === undefined) return { action: "none" };
+
+  const amount = Math.abs(charged);
+  if (amount <= 0) return { action: "none" };
+
+  const uncapturedReservation =
+    input.reservedAmount !== undefined && !keys.has(`capture:${generationId}`);
+
+  return uncapturedReservation
+    ? {
+        action: "reverse",
+        key: `release:${generationId}`,
+        reason: "GENERATION_RELEASE",
+        outcome: "released",
+        amount,
+      }
+    : {
+        action: "reverse",
+        key: `refund:${generationId}`,
+        reason: "GENERATION_REFUND",
+        outcome: "refunded",
+        amount,
+      };
+}
+
 /**
  * Return the customer's credits by whichever route this generation was charged.
  *
@@ -250,34 +369,30 @@ async function reverseChargeWithin(
 
   const by = new Map(rows.map((row) => [row.idempotencyKey, row.amount]));
 
-  // Already reversed by either route — nothing left to do.
-  if (by.has(`release:${generationId}`) || by.has(`refund:${generationId}`)) {
-    return { outcome: "already", balance: null };
-  }
-
-  // Captured means the provider work was billable and kept. Not ours to return.
-  if (by.has(`capture:${generationId}`)) {
-    return { outcome: "retained", balance: null };
-  }
-
-  const reserved = by.get(`reserve:${generationId}`);
-  const spent = by.get(`spend:${generationId}`);
-  const charged = reserved ?? spent;
-
-  // Nothing was ever taken from this customer.
-  if (charged === undefined) return { outcome: "none", balance: null };
-
-  const amount = Math.abs(charged);
-  if (amount <= 0) return { outcome: "none", balance: null };
-
   /**
-   * `RELEASE` returns an unspent reservation; `REFUND` returns a debit that has
-   * already left the balance. They are different events to the reporting
-   * queries that read them, so the reason follows how the money was taken.
+   * The decision is `planReversal`'s; this function only executes it.
+   *
+   * `hasDurableAsset` is false here because the caller has already checked for
+   * one twice — once as an early exit and once inside this transaction — and
+   * returns `retained` without reaching this code if an asset exists. Passing
+   * it explicitly keeps the policy readable in one place rather than implied by
+   * where the call happens to sit.
    */
-  const reserving = reserved !== undefined;
-  const key = reserving ? `release:${generationId}` : `refund:${generationId}`;
-  const reason = reserving ? "GENERATION_RELEASE" : "GENERATION_REFUND";
+  const plan = planReversal({
+    generationId,
+    hasDurableAsset: false,
+    // `idempotencyKey` is nullable in the schema; a null key cannot be one of
+    // ours, so those rows are dropped rather than widening the plan's type.
+    keys: new Set([...by.keys()].filter((key): key is string => key !== null)),
+    reservedAmount: by.get(`reserve:${generationId}`),
+    spentAmount: by.get(`spend:${generationId}`),
+  });
+
+  if (plan.action === "already") return { outcome: "already", balance: null };
+  if (plan.action === "retain") return { outcome: "retained", balance: null };
+  if (plan.action === "none") return { outcome: "none", balance: null };
+
+  const { amount, key, reason } = plan;
 
   try {
     const user = await tx.user.update({
@@ -298,10 +413,7 @@ async function reverseChargeWithin(
     });
 
     emit("credit.refund", { generationId, amount });
-    return {
-      outcome: reserving ? "released" : "refunded",
-      balance: user.creditBalance,
-    };
+    return { outcome: plan.outcome, balance: user.creditBalance };
   } catch (error) {
     /**
      * A unique-key collision means a concurrent caller reversed first. Throwing

@@ -1,6 +1,7 @@
 import "server-only";
 
 import { requireApiUser } from "@/lib/auth";
+import { inStage } from "@/services/delivery";
 import { isAdmin } from "@/services/admin/auth";
 import { prisma } from "@/lib/prisma";
 import { estimateCost } from "@/services/ai/cost";
@@ -79,14 +80,28 @@ import type {
  * The reservation and the generation row commit in **one transaction**. A debit
  * with no generation is theft; a generation with no debit is free inference.
  *
- * ## Failures after capture are not refunded automatically
+ * ## Credits pay for a delivered asset, not for a provider call
  *
- * Replicate bills for GPU time whether or not the output was usable. Refunding
- * a post-capture failure means Atheos pays for the run *and* returns the money,
- * which is the one policy that loses money on every single occurrence. Those
- * generations are flagged for review instead. Pre-capture failures — a rejected
- * request, a disabled model, a network error before acceptance — are released
- * in full, because nothing was billed.
+ * This file used to say the opposite: that a failure after capture was not
+ * refunded, because Replicate bills for GPU time whether or not the output was
+ * usable, and refunding would mean paying for the run *and* returning the money.
+ *
+ * Sprint 5C.2 showed what that policy does in practice. Replicate produced a
+ * valid image, Atheos failed to store it, and the customer was left four credits
+ * poorer with nothing to show — which the code considered correct, because the
+ * charge had been captured. It also turned out that capture happens at
+ * *submission*, so "after capture" meant "always", and the refund path built the
+ * sprint before could never run at all.
+ *
+ * The rule now: **the customer pays for a durable asset they can use.** If
+ * Atheos fails to deliver one, the credits go back, whatever the provider did
+ * and whatever it cost us. That cost is real and is not erased — it stays on
+ * `costMicroUsd` so the margin report and the spending breaker still see it —
+ * but it is Atheos's loss to absorb, not the customer's to fund.
+ *
+ * A generation that *did* deliver is never refunded. That is the other half of
+ * the rule, and `settleFailedDelivery` checks for an asset row twice, the second
+ * time inside the transaction, before reversing anything.
  *
  * ## Everything is idempotent, by database constraint
  *
@@ -642,7 +657,7 @@ export async function settleSuccess(
     output: (typeof outputs)[number];
   }[] = [];
 
-  for (const output of outputs) {
+  for (const [index, output] of outputs.entries()) {
     // Sequential rather than parallel: a batch of four large files fetched at
     // once is the shape most likely to hit a serverless memory ceiling, and
     // the latency saved is not worth the failure mode.
@@ -651,142 +666,167 @@ export async function settleSuccess(
       generationId,
       sourceUrl: output.sourceUrl,
       mimeType: output.mimeType,
+      // Part of the deterministic storage key, so re-running this delivery
+      // rewrites the same objects instead of accumulating duplicates.
+      index,
     });
     stored.push({ asset, output });
   }
 
-  await prisma.$transaction(async (tx) => {
-    for (const { asset, output } of stored) {
-      const created = await tx.asset.create({
-        data: {
-          userId,
-          generationId,
-          kind: assetKindFor(asset.mimeType),
-          source: "GENERATED",
-          storageKey: asset.storageKey,
-          mimeType: asset.mimeType,
-          sizeBytes: asset.sizeBytes,
-          width: output.width ?? null,
-          height: output.height ?? null,
-          durationMs: output.durationMs ?? null,
-          checksum: asset.checksum,
-        },
+  await inStage("asset_transaction", () =>
+    prisma.$transaction(async (tx) => {
+      for (const { asset, output } of stored) {
+        /**
+         * Idempotent by storage key.
+         *
+         * The key is derived from the generation, the output index and the
+         * content hash, so a redelivery of the same output produces the same
+         * key. Finding it already present means an earlier attempt got this far
+         * — most likely one that uploaded to R2 and then failed before the
+         * transaction committed — and creating a second row for one file would
+         * show the customer their image twice and double the storage report.
+         *
+         * A `findFirst` rather than a unique constraint because adding one is a
+         * migration, and this transaction already serialises the only writer.
+         */
+        const existing = await tx.asset.findFirst({
+          where: { generationId, storageKey: asset.storageKey },
+          select: { id: true },
+        });
+
+        if (existing) continue;
+
+        const created = await tx.asset.create({
+          data: {
+            userId,
+            generationId,
+            kind: assetKindFor(asset.mimeType),
+            source: "GENERATED",
+            storageKey: asset.storageKey,
+            mimeType: asset.mimeType,
+            sizeBytes: asset.sizeBytes,
+            width: output.width ?? null,
+            height: output.height ?? null,
+            durationMs: output.durationMs ?? null,
+            checksum: asset.checksum,
+          },
+        });
+
+        // Project saving: file the result straight into a collection when the
+        // request asked for one.
+        if (input?.collectionId) {
+          await tx.collectionAsset
+            .create({
+              data: { collectionId: input.collectionId, assetId: created.id },
+            })
+            .catch(() => undefined);
+        }
+      }
+
+      /**
+       * Record what this generation cost us, and the units of work behind it.
+       *
+       * Sprint 19 added these columns and its own report closed with "nothing
+       * writes the telemetry columns yet — until the pipeline writes them, this
+       * sprint's persistence work is a schema with nothing in it". This is the
+       * line that closes that.
+       *
+       * Written in the **same transaction** as the status change. A generation
+       * that is SUCCEEDED but has no cost row is a hole in the margin report that
+       * nothing will ever fill, because the provider response is gone by then.
+       *
+       * Counts are derived from what was actually stored, not from what was
+       * requested. A model that returned three images when four were asked for
+       * costs three, and a report built on the request would overstate it.
+       */
+      const images = stored.filter(
+        ({ asset }) => assetKindFor(asset.mimeType) === "IMAGE",
+      ).length;
+
+      const generationRow = await tx.generation.findUnique({
+        where: { id: generationId },
+        select: { model: true, parameters: true },
       });
 
-      // Project saving: file the result straight into a collection when the
-      // request asked for one.
-      if (input?.collectionId) {
-        await tx.collectionAsset
-          .create({
-            data: { collectionId: input.collectionId, assetId: created.id },
+      /**
+       * Seconds of video produced.
+       *
+       * Preferred from the provider, which knows the truth. **Falls back to the
+       * duration the user asked for**, because most providers — Replicate among
+       * them — return a URL and nothing else.
+       *
+       * Without the fallback this was always 0, and since video is priced
+       * per second (`perSecondMicroUsd`) that made every clip cost
+       * `90_000 x 0 = 0`. The cost engine recorded video as **free**, which is
+       * the one number a margin report cannot survive being wrong about, and it
+       * was wrong in the flattering direction.
+       *
+       * The requested duration is a good fallback: it is what the model was
+       * asked for and what the user was charged for, so a mismatch between it
+       * and the delivered clip is a provider bug worth seeing rather than
+       * quietly absorbing.
+       */
+      const reportedSeconds = stored.reduce(
+        (total, { output }) =>
+          total + Math.round((output.durationMs ?? 0) / 1000),
+        0,
+      );
+
+      const requestedSeconds =
+        (generationRow?.parameters as { durationSeconds?: number } | null)
+          ?.durationSeconds ?? 0;
+
+      const videoSeconds =
+        reportedSeconds > 0
+          ? reportedSeconds
+          : // Only for video: an image job has no duration and must stay 0 so
+            // "no video" and "a zero-length video" remain distinguishable.
+            assetKindFor(stored[0]?.asset.mimeType ?? "") === "VIDEO"
+            ? requestedSeconds * stored.length
+            : 0;
+
+      // The model is read from the row rather than threaded through the
+      // signature: `settleSuccess` is called from two places and both already
+      // have the generation id, so a parameter would be the same lookup written
+      // twice. `findModel` returns null for a model that has since been retired,
+      // in which case the cost is genuinely unknown and recorded as null.
+
+      const model = generationRow ? findModel(generationRow.model) : null;
+
+      const cost = model
+        ? estimateCost(model, stored.length, {
+            durationSeconds: videoSeconds || undefined,
           })
-          .catch(() => undefined);
-      }
-    }
+        : { costMicroUsd: null };
 
-    /**
-     * Record what this generation cost us, and the units of work behind it.
-     *
-     * Sprint 19 added these columns and its own report closed with "nothing
-     * writes the telemetry columns yet — until the pipeline writes them, this
-     * sprint's persistence work is a schema with nothing in it". This is the
-     * line that closes that.
-     *
-     * Written in the **same transaction** as the status change. A generation
-     * that is SUCCEEDED but has no cost row is a hole in the margin report that
-     * nothing will ever fill, because the provider response is gone by then.
-     *
-     * Counts are derived from what was actually stored, not from what was
-     * requested. A model that returned three images when four were asked for
-     * costs three, and a report built on the request would overstate it.
-     */
-    const images = stored.filter(
-      ({ asset }) => assetKindFor(asset.mimeType) === "IMAGE",
-    ).length;
-
-    const generationRow = await tx.generation.findUnique({
-      where: { id: generationId },
-      select: { model: true, parameters: true },
-    });
-
-    /**
-     * Seconds of video produced.
-     *
-     * Preferred from the provider, which knows the truth. **Falls back to the
-     * duration the user asked for**, because most providers — Replicate among
-     * them — return a URL and nothing else.
-     *
-     * Without the fallback this was always 0, and since video is priced
-     * per second (`perSecondMicroUsd`) that made every clip cost
-     * `90_000 x 0 = 0`. The cost engine recorded video as **free**, which is
-     * the one number a margin report cannot survive being wrong about, and it
-     * was wrong in the flattering direction.
-     *
-     * The requested duration is a good fallback: it is what the model was
-     * asked for and what the user was charged for, so a mismatch between it
-     * and the delivered clip is a provider bug worth seeing rather than
-     * quietly absorbing.
-     */
-    const reportedSeconds = stored.reduce(
-      (total, { output }) =>
-        total + Math.round((output.durationMs ?? 0) / 1000),
-      0,
-    );
-
-    const requestedSeconds =
-      (generationRow?.parameters as { durationSeconds?: number } | null)
-        ?.durationSeconds ?? 0;
-
-    const videoSeconds =
-      reportedSeconds > 0
-        ? reportedSeconds
-        : // Only for video: an image job has no duration and must stay 0 so
-          // "no video" and "a zero-length video" remain distinguishable.
-          assetKindFor(stored[0]?.asset.mimeType ?? "") === "VIDEO"
-          ? requestedSeconds * stored.length
-          : 0;
-
-    // The model is read from the row rather than threaded through the
-    // signature: `settleSuccess` is called from two places and both already
-    // have the generation id, so a parameter would be the same lookup written
-    // twice. `findModel` returns null for a model that has since been retired,
-    // in which case the cost is genuinely unknown and recorded as null.
-
-    const model = generationRow ? findModel(generationRow.model) : null;
-
-    const cost = model
-      ? estimateCost(model, stored.length, {
-          durationSeconds: videoSeconds || undefined,
-        })
-      : { costMicroUsd: null };
-
-    await tx.generation.update({
-      where: { id: generationId },
-      data: {
-        status: "SUCCEEDED",
-        completedAt: new Date(),
-        // Null when the model has no cost basis. Never zero — a zero here
-        // would make an unpriced model the most profitable in the report.
-        costMicroUsd: cost.costMicroUsd,
-        // Null rather than 0 for a modality this job did not produce, so
-        // "no images" and "not an image job" stay distinguishable in a SUM.
-        imageCount: images || null,
-        videoSeconds: videoSeconds || null,
-        // Release the worker lease in the same write that marks the job done.
-        //
-        // Only the worker ever sets these; on the client-driven path they are
-        // already null and this is a no-op. Doing it here rather than in a
-        // second update is what makes settlement atomic: a crash between
-        // "SUCCEEDED" and "lease released" would leave a finished job that
-        // `claimJobs` still considers locked, and it would sit until the lease
-        // expired five minutes later for no reason.
-        progress: 100,
-        lockedAt: null,
-        lockedBy: null,
-        nextAttemptAt: null,
-      },
-    });
-  });
+      await tx.generation.update({
+        where: { id: generationId },
+        data: {
+          status: "SUCCEEDED",
+          completedAt: new Date(),
+          // Null when the model has no cost basis. Never zero — a zero here
+          // would make an unpriced model the most profitable in the report.
+          costMicroUsd: cost.costMicroUsd,
+          // Null rather than 0 for a modality this job did not produce, so
+          // "no images" and "not an image job" stay distinguishable in a SUM.
+          imageCount: images || null,
+          videoSeconds: videoSeconds || null,
+          // Release the worker lease in the same write that marks the job done.
+          //
+          // Only the worker ever sets these; on the client-driven path they are
+          // already null and this is a no-op. Doing it here rather than in a
+          // second update is what makes settlement atomic: a crash between
+          // "SUCCEEDED" and "lease released" would leave a finished job that
+          // `claimJobs` still considers locked, and it would sit until the lease
+          // expired five minutes later for no reason.
+          progress: 100,
+          lockedAt: null,
+          lockedBy: null,
+          nextAttemptAt: null,
+        },
+      });
+    }),
+  );
 }
 
 /**

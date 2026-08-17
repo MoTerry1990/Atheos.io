@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
+import { planReversal } from "@/services/billing/settlement";
 import {
   applyMigrations,
   createIsolatedSchema,
@@ -321,29 +322,92 @@ describe("settlement leaves everything else alone", () => {
     expect(bal.rows[0].b).toBe(1000);
   });
 
-  it("never reverses a captured charge", async () => {
+  it("refunds a captured charge that delivered nothing", async () => {
     /**
-     * A capture means the provider did billable work and the customer received
-     * it. `reverseChargeWithin` returns `retained` on seeing the key, so no
-     * ledger row is written at all.
+     * This test used to assert the opposite — "never reverses a captured
+     * charge" — and it passed for the whole of Sprint 5C.1 while the behaviour
+     * it described was losing customers' money.
+     *
+     * It passed because it asserted against rows it had inserted itself rather
+     * than against the decision the code makes. Sprint 5C.2 then ran one real
+     * generation: Replicate produced a valid image, Atheos failed to store it,
+     * and the customer kept a 4-credit charge for nothing, because a `capture:`
+     * row existed. Capture is written at *submission*, so that was true of
+     * every generation before it could possibly fail.
+     *
+     * The decision now comes from `planReversal`, the same function production
+     * calls, and the fixture only applies what it returns.
      */
     const { uid, gid } = await seed("captured");
     await db.pool.query(
       `INSERT INTO credit_transactions (id,"userId","generationId",amount,"balanceAfter",reason,"idempotencyKey","createdAt")
-       VALUES ($1,$2,$3,-90,910,'GENERATION_SPEND',$4,now()),
+       VALUES ($1,$2,$3,-90,910,'GENERATION_RESERVATION',$4,now()),
               ($5,$2,$3,0,910,'GENERATION_CAPTURE',$6,now())`,
-      [`tc1_${gid}`, uid, gid, `spend:${gid}`, `tc2_${gid}`, `capture:${gid}`],
+      [
+        `tc1_${gid}`,
+        uid,
+        gid,
+        `reserve:${gid}`,
+        `tc2_${gid}`,
+        `capture:${gid}`,
+      ],
     );
     await db.pool.query(`UPDATE users SET "creditBalance"=910 WHERE id=$1`, [
       uid,
     ]);
+
+    const plan = planReversal({
+      generationId: gid,
+      hasDurableAsset: false,
+      keys: new Set([`reserve:${gid}`, `capture:${gid}`]),
+      reservedAmount: -90,
+    });
+
+    expect(plan).toMatchObject({
+      action: "reverse",
+      reason: "GENERATION_REFUND",
+      amount: 90,
+    });
+
+    if (plan.action !== "reverse") throw new Error("unreachable");
+    expect(await refundLike(uid, gid, plan.amount)).toBe(true);
+
+    // A replay must not add a second one — the unique key rejects it.
+    expect(await refundLike(uid, gid, plan.amount)).toBe(false);
 
     const reversals = await db.pool.query(
       `SELECT count(*)::int n FROM credit_transactions
         WHERE "generationId"=$1 AND amount > 0`,
       [gid],
     );
-    expect(reversals.rows[0].n, "a captured charge must stay captured").toBe(0);
+    expect(reversals.rows[0].n, "exactly one refund").toBe(1);
+
+    const bal = await db.pool.query(
+      `SELECT "creditBalance"::int b FROM users WHERE id=$1`,
+      [uid],
+    );
+    expect(bal.rows[0].b, "the customer is made whole").toBe(1000);
+
+    const drifted = await db.pool.query(`SELECT count(*)::int n FROM (
+      SELECT u.id FROM users u LEFT JOIN credit_transactions t ON t."userId"=u.id
+      GROUP BY u.id,u."creditBalance"
+      HAVING u."creditBalance" <> COALESCE(SUM(t.amount),0)) x`);
+    expect(drifted.rows[0].n, "ledger drift stays zero").toBe(0);
+  });
+
+  it("still retains a captured charge once an asset exists", async () => {
+    // The boundary the change must not cross. Delivery, not capture, is what
+    // justifies keeping the money — so a generation holding a durable asset is
+    // never a refund candidate.
+    const { gid } = await seed("captured_delivered");
+    expect(
+      planReversal({
+        generationId: gid,
+        hasDurableAsset: true,
+        keys: new Set([`reserve:${gid}`, `capture:${gid}`]),
+        reservedAmount: -90,
+      }),
+    ).toEqual({ action: "retain" });
   });
 
   it("leaves unrelated users and generations untouched", async () => {
