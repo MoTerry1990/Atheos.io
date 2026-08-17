@@ -118,8 +118,22 @@ const MODELS: (ProviderModel & { version: string })[] = [
     // clips that is 95 minutes versus 20.
     version: "c483b1f7b892065bc58ebadb6381abf557f6b1f517d2ff0febb3fb635cf49b4d",
     capabilities: {
-      supportsNegativePrompt: true,
-      supportsImageInput: true,
+      /**
+       * Both false, and both were true until Sprint 5D read the schema.
+       *
+       * wan-2.2-t2v-fast accepts prompt, seed, num_frames, frames_per_second,
+       * resolution, aspect_ratio, go_fast, interpolate_output, sample_shift,
+       * optimize_prompt, disable_safety_checker and four lora_* fields. There
+       * is no `image` and no `negative_prompt` — the `t2v` in the slug is the
+       * whole story.
+       *
+       * The consequence was not cosmetic: `buildInput` sends `image` whenever
+       * a reference was attached and `negative_prompt` whenever the flag said
+       * it could, so a user who used either got a rejected job on a model that
+       * had already reserved 90 credits.
+       */
+      supportsNegativePrompt: false,
+      supportsImageInput: false,
       supportsSeed: true,
       aspectRatios: ["16:9", "9:16"],
       // One clip per run. Video is slow and expensive enough that batching
@@ -130,7 +144,9 @@ const MODELS: (ProviderModel & { version: string })[] = [
       durations: [5, 7.5],
       maxDurationSeconds: 7.5,
       cameraMotions: CAMERA_MOTIONS,
-      operations: ["text-to-video", "image-to-video"],
+      // Text-to-video only. Motion Pro keeps image-to-video, which its schema
+      // genuinely supports through `image` and `last_frame_image`.
+      operations: ["text-to-video"],
     },
   },
   {
