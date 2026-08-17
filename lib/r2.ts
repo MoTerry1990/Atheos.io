@@ -67,6 +67,32 @@ export function r2Client(): S3Client {
     region: "auto",
     endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
     credentials: { accessKeyId, secretAccessKey },
+
+    /**
+     * Do not attach integrity checksums unless an operation requires them.
+     *
+     * The SDK defaults both of these to `WHEN_SUPPORTED`, which adds a CRC32
+     * checksum header to every `PutObject`. R2 rejects that request with
+     * **400 InvalidArgument** — which is precisely what Sprint 5C.3's staged
+     * instrumentation caught in production:
+     *
+     *   {"stage":"r2_upload","status":400,
+     *    "errorClass":"S3ServiceException","vendorCode":"InvalidArgument"}
+     *
+     * It is environment-dependent, which is why it hid for so long: the same
+     * code, the same SDK version and the same credentials upload successfully
+     * from a local Node 24 process and fail on the deployed runtime. The
+     * client-driven poll path stored 19 assets before this surfaced; the worker,
+     * added later, hit it on its first real delivery.
+     *
+     * `WHEN_REQUIRED` sends no checksum for ordinary uploads and still sends one
+     * where the API mandates it. Transport integrity is unaffected — every
+     * request is TLS and SigV4-signed over the payload hash — and we verify the
+     * stored bytes ourselves: the object's key contains the SHA-256 of its
+     * content, and `assets.checksum` records the same digest.
+     */
+    requestChecksumCalculation: "WHEN_REQUIRED",
+    responseChecksumValidation: "WHEN_REQUIRED",
   });
 
   return cached;
