@@ -40,14 +40,37 @@ export interface PlanDefinition {
   /**
    * Credits granted at the start of each billing period.
    *
-   * **Null means not yet decided.** Four of the six sellable models still carry
-   * estimated or unknown provider costs (`services/billing/model-costs.ts`), and
-   * an allowance derived from an estimate is a promise the backend might not be
-   * able to keep. Nothing may render a number from a null — the pricing page
-   * shows the plan as not yet available instead, which is true.
+   * **Null means not yet decided**, and nothing may render a number from a null
+   * — the pricing page shows the plan as not yet available instead, which is
+   * true. The paid tiers stayed null until Sprint 6A could prove the arithmetic.
    *
-   * `services/billing/plan-config.ts` holds the provisional figure and the
-   * arithmetic behind it, server-side, where it carries no promise.
+   * ## Why 500 / 1,800 / 4,800 is safe
+   *
+   * A credit retails at $0.005, and `model-costs.ts` enforces a minimum margin
+   * of 2.5x on every enabled model (3.0x on video), asserted per-model against
+   * each model's *longest* duration by `tests/unit/model-costs.test.ts`. That
+   * floor is what bounds the exposure: worst-case provider cost is therefore at
+   * most $0.005 / 2.5 = **$0.002 per credit**, whatever the customer spends it
+   * on.
+   *
+   * At 100% burn, against price minus Stripe's 2.9% + $0.30 and a 5% refund
+   * allowance:
+   *
+   *   Creator  $9.99  net $8.90   500 credits → $1.00 cost → $7.90  (79%)
+   *   Pro      $34.99 net $31.93  1,800       → $3.60       → $28.33 (81%)
+   *   Studio   $89.99 net $82.58  4,800       → $9.60       → $72.98 (81%)
+   *
+   * No plan can reach a negative gross margin through ordinary use. Against the
+   * $500 monthly provider ceiling, full burn by 500 Creator, 138 Pro or 52
+   * Studio subscribers would reach it — and `services/billing/spending.ts`
+   * enforces that ceiling transactionally inside the credit reservation, so it
+   * is a brake rather than a hope.
+   *
+   * These are the figures `plan-config.ts` has carried as
+   * `provisionalCreditsPerMonth` since Sprint 4. They were derived at the
+   * retail $0.005 rather than the real $0.002, so they are roughly 2.5x more
+   * conservative than the arithmetic above requires. Promoted unchanged: the
+   * headroom is the point.
    */
   monthlyCredits: number | null;
   features: readonly string[];
@@ -120,7 +143,7 @@ export const PLAN_DEFINITIONS: readonly PlanDefinition[] = [
     name: "Creator",
     description: "For one person publishing on a schedule.",
     monthly: 999,
-    monthlyCredits: null,
+    monthlyCredits: 500,
     features: [
       "Both video models, including Motion Pro",
       "1080p video up to 12 seconds",
@@ -137,7 +160,7 @@ export const PLAN_DEFINITIONS: readonly PlanDefinition[] = [
     name: "Pro",
     description: "For channels shipping every day.",
     monthly: 3499,
-    monthlyCredits: null,
+    monthlyCredits: 1_800,
     features: [
       "Everything in Creator",
       "5 generations at once",
@@ -153,7 +176,7 @@ export const PLAN_DEFINITIONS: readonly PlanDefinition[] = [
     name: "Studio",
     description: "For studios producing at volume.",
     monthly: 8999,
-    monthlyCredits: null,
+    monthlyCredits: 4_800,
     features: [
       "Everything in Pro",
       "8 generations at once",

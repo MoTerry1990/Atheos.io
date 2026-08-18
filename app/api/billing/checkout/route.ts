@@ -26,7 +26,16 @@ const schema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("subscription"),
     tier: z.enum(["CREATOR", "PRO", "STUDIO"]),
-    interval: z.enum(["MONTH", "YEAR"]),
+    /**
+     * Monthly only.
+     *
+     * The enum used to accept YEAR. Nothing could be bought with it — there is
+     * no yearly price, so `priceIdFor` returned undefined and checkout threw —
+     * but an accepted-then-rejected value is a worse contract than one that was
+     * never offered, and it left the impression annual billing was a
+     * configuration away rather than deliberately retired.
+     */
+    interval: z.literal("MONTH").default("MONTH"),
   }),
   z.object({
     kind: z.literal("pack"),

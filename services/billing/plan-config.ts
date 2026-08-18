@@ -51,7 +51,9 @@ import {
  *
  * ## Credit allocations are deliberately unfinished
  *
- * `creditsPerMonth` is **null** on every paid plan. Four of the six sellable
+ * `creditsPerMonth` was **null** on every paid plan until Sprint 6A proved the
+ * margin arithmetic and promoted the provisional figures unchanged. See
+ * `services/billing/catalogue.ts` for the derivation. Four of the six sellable
  * models have `estimated` or `unknown` costs (`model-costs.ts`), and an
  * allocation derived from an estimate is a promise the backend might not be
  * able to honour. `provisionalCreditsPerMonth` records the arithmetic so the
@@ -157,7 +159,7 @@ export const PLAN_CONFIGS: readonly PlanConfig[] = [
     tier: "CREATOR",
     displayName: "Creator",
     monthlyPriceCents: 999,
-    creditsPerMonth: null,
+    creditsPerMonth: 500,
     provisionalCreditsPerMonth: 500, // $2.50 / $0.005
     providerAllowanceUsd: 2.5,
     maxConcurrentJobs: 3,
@@ -171,7 +173,7 @@ export const PLAN_CONFIGS: readonly PlanConfig[] = [
     tier: "PRO",
     displayName: "Pro",
     monthlyPriceCents: 3499,
-    creditsPerMonth: null,
+    creditsPerMonth: 1_800,
     provisionalCreditsPerMonth: 1_800, // $9.00 / $0.005
     providerAllowanceUsd: 9,
     maxConcurrentJobs: 5,
@@ -185,7 +187,7 @@ export const PLAN_CONFIGS: readonly PlanConfig[] = [
     tier: "STUDIO",
     displayName: "Studio",
     monthlyPriceCents: 8999,
-    creditsPerMonth: null,
+    creditsPerMonth: 4_800,
     provisionalCreditsPerMonth: 4_800, // $24.00 / $0.005
     providerAllowanceUsd: 24,
     // Eight, not unlimited. "No unlimited generation" is a founder constraint

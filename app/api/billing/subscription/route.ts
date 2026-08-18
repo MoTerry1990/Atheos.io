@@ -32,7 +32,8 @@ const schema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("change"),
     tier: z.enum(["FREE", "CREATOR", "PRO", "STUDIO"]),
-    interval: z.enum(["MONTH", "YEAR"]).default("MONTH"),
+    // Monthly only — annual billing was retired in Sprint 4.
+    interval: z.literal("MONTH").default("MONTH"),
   }),
   z.object({ action: z.literal("cancel") }),
   z.object({ action: z.literal("resume") }),

@@ -10,6 +10,7 @@ import {
   rankOf,
 } from "@/services/billing/catalogue";
 import { PRICING } from "@/features/marketing/content";
+import { planDefinitionFor } from "@/services/billing/catalogue";
 import { COMPARISON_ROWS } from "@/features/marketing/plan-comparison-rows";
 
 /**
@@ -43,14 +44,23 @@ describe("plan catalogue", () => {
   });
 
   it("never advertises a credit allowance it has not settled", () => {
-    // The whole point of the null: an unverified provider cost must not become
-    // a number on a pricing card. Only the Free grant is settled today.
+    /**
+     * An unverified provider cost must never become a number on a pricing card.
+     * Sprint 6A settled the paid allowances against the enforced 2.5x margin
+     * floor, so the assertion moved from "paid plans are null" to the thing
+     * that actually matters: whatever is shown is what the webhook grants.
+     */
     for (const plan of visiblePlanDefinitions()) {
-      if (plan.monthlyCredits !== null) {
-        expect(plan.tier).toBe("FREE");
+      if (plan.tier === "FREE") {
         expect(plan.monthlyCredits).toBe(SIGNUP_GRANT);
-      } else {
-        expect(plan.status).toBe("launch_disabled");
+        continue;
+      }
+
+      // A paid plan may be null (unsettled) or a positive integer, never zero
+      // or a fraction — a fractional allowance cannot be granted.
+      if (plan.monthlyCredits !== null) {
+        expect(Number.isInteger(plan.monthlyCredits)).toBe(true);
+        expect(plan.monthlyCredits).toBeGreaterThan(0);
       }
     }
   });
@@ -107,8 +117,25 @@ describe("marketing pricing cards", () => {
   });
 
   it("leaves the credit line null wherever the allowance is unsettled", () => {
+    // Tied to the allowance, not to the launch status. A plan can be settled
+    // and still unbuyable — which is exactly where the paid tiers sit today.
     for (const tier of PRICING) {
-      expect(tier.credits === null).toBe(tier.status === "launch_disabled");
+      const settled = planDefinitionFor(tier.tier).monthlyCredits;
+      expect(tier.credits === null, tier.tier).toBe(settled === null);
+    }
+  });
+
+  it("shows the same allowance the webhook would grant", () => {
+    /**
+     * The failure this prevents is the worst kind in billing: a card promising
+     * 2,000 credits while `onInvoicePaid` grants 1,800. Both numbers come from
+     * `planDefinitionFor`, and this asserts the pricing card did not transform
+     * one on its way to the page.
+     */
+    for (const tier of PRICING) {
+      const settled = planDefinitionFor(tier.tier).monthlyCredits;
+      if (settled === null) continue;
+      expect(tier.credits, tier.tier).toBe(settled.toLocaleString("en-US"));
     }
   });
 

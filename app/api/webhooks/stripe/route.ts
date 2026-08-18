@@ -8,6 +8,7 @@ import { isUniqueViolation } from "@/lib/prisma-errors";
 import { prisma } from "@/lib/prisma";
 import { stripe } from "@/lib/stripe";
 import { grantCredits } from "@/services/billing/credits";
+import { planDispute, planRefund } from "@/services/billing/refunds";
 import { packFor, planFor, resolvePriceId } from "@/services/billing/plans";
 import { syncSubscription } from "@/services/billing/subscription";
 
@@ -67,6 +68,10 @@ const HANDLED = new Set<Stripe.Event.Type>([
   "customer.subscription.deleted",
   "invoice.paid",
   "invoice.payment_failed",
+  // Sprint 6A. A refund that leaves paid access in place is a subscription
+  // the customer no longer pays for; a dispute that does not is worse.
+  "charge.refunded",
+  "charge.dispute.created",
 ]);
 
 export async function POST(request: NextRequest) {
@@ -183,6 +188,12 @@ async function handle(event: Stripe.Event): Promise<void> {
 
     case "invoice.payment_failed":
       return onPaymentFailed(event.data.object);
+
+    case "charge.refunded":
+      return onChargeRefunded(event.data.object);
+
+    case "charge.dispute.created":
+      return onDisputeCreated(event.data.object);
 
     default:
       return;
@@ -320,6 +331,14 @@ async function onInvoicePaid(invoice: Stripe.Invoice): Promise<void> {
       interval: resolved.interval,
       months,
       monthlyCredits: plan.monthlyCredits,
+      /**
+       * The join key a refund will need.
+       *
+       * `charge.refunded` carries a payment intent and no invoice, so without
+       * this a refund cannot tell which grant it should reverse — and reversing
+       * the wrong one would take credits the customer paid for separately.
+       */
+      paymentIntentId: paymentIntentOf(invoice),
     },
   });
 }
@@ -358,4 +377,250 @@ function subscriptionIdOf(invoice: Stripe.Invoice): string | null {
       return subscription.id;
   }
   return null;
+}
+
+/**
+ * A refunded charge.
+ *
+ * The money went back, so the access it bought stops now and the unused part of
+ * the allowance it funded is removed. `planRefund` decides; this carries the
+ * decision out, in one transaction.
+ *
+ * Keyed on `refund:{charge.id}`, so Stripe replaying the event — which it does,
+ * on its own schedule, for days — collapses to one effect at the database's
+ * unique index rather than at an `if` somebody has to remember to write.
+ */
+async function onChargeRefunded(charge: Stripe.Charge): Promise<void> {
+  /**
+   * The payment intent is the join key, not the invoice.
+   *
+   * `Charge.invoice` does not exist in the pinned API version — Stripe moved
+   * the invoice's payment linkage onto `invoice.payments`. The payment intent
+   * is the one identifier both a charge and an invoice still carry, so
+   * `onInvoicePaid` records it on the grant and this reads it back. No extra
+   * API call, and the correlation is exact rather than inferred from amounts.
+   */
+  const paymentIntentId =
+    typeof charge.payment_intent === "string"
+      ? charge.payment_intent
+      : charge.payment_intent?.id;
+
+  if (!paymentIntentId) {
+    // Nothing to correlate against. A charge outside the subscription flow, or
+    // a shape this code has not seen. A human decides rather than this guessing.
+    await flagForReview(charge.customer, "refund.unlinkable", {
+      chargeId: charge.id,
+    });
+    return;
+  }
+
+  const customerId = customerIdOf(charge.customer);
+  const subscription = customerId
+    ? await prisma.subscription.findFirst({
+        where: { stripeCustomerId: customerId },
+        select: { id: true, userId: true },
+      })
+    : null;
+
+  if (!subscription) return;
+
+  /**
+   * The grant this invoice made, if it made one.
+   *
+   * Read by the same deterministic key `onInvoicePaid` writes, which is what
+   * makes "only the credits from *this* invoice" a lookup rather than a guess.
+   * A missing row means the invoice never granted — an unset allowance, or a
+   * grant that failed — and the clawback is then zero.
+   */
+  const grant = await prisma.creditTransaction.findFirst({
+    where: {
+      reason: "SUBSCRIPTION_GRANT",
+      metadata: { path: ["paymentIntentId"], equals: paymentIntentId },
+    },
+    select: { amount: true, stripeReference: true },
+  });
+
+  const [user, existingReversal] = await Promise.all([
+    prisma.user.findUnique({
+      where: { id: subscription.userId },
+      select: { creditBalance: true },
+    }),
+    prisma.creditTransaction.findFirst({
+      where: { idempotencyKey: `refund:${charge.id}` },
+      select: { id: true },
+    }),
+  ]);
+
+  if (!user) return;
+
+  const plan = planRefund({
+    refundedMinorUnits: charge.amount_refunded,
+    invoiceMinorUnits: charge.amount,
+    grantedCredits: grant?.amount ?? 0,
+    currentBalance: user.creditBalance,
+    alreadyReversed: Boolean(existingReversal),
+  });
+
+  if (plan.action === "already") return;
+
+  if (plan.action === "manual_review") {
+    await flagForReview(charge.customer, "refund.manual_review", {
+      chargeId: charge.id,
+      reason: plan.reason,
+    });
+    return;
+  }
+
+  /**
+   * Entitlement and credits move together or not at all.
+   *
+   * A torn write here leaves either a refunded customer with full access, or
+   * one whose credits vanished while they still appear subscribed. Both are
+   * states somebody has to unpick by hand.
+   */
+  await prisma.$transaction(async (tx) => {
+    await tx.subscription.update({
+      where: { id: subscription.id },
+      data: {
+        status: "CANCELED",
+        planTier: "FREE",
+        cancelAtPeriodEnd: false,
+        currentPeriodEnd: new Date(),
+      },
+    });
+
+    if (plan.clawback > 0) {
+      const updated = await tx.user.update({
+        where: { id: subscription.userId },
+        data: { creditBalance: { decrement: plan.clawback } },
+        select: { creditBalance: true },
+      });
+
+      await tx.creditTransaction.create({
+        data: {
+          userId: subscription.userId,
+          amount: -plan.clawback,
+          balanceAfter: updated.creditBalance,
+          // There is no SUBSCRIPTION_REFUND reason in the enum and adding one
+          // is a migration. The metadata carries the meaning until there is.
+          reason: "MANUAL_ADJUSTMENT",
+          idempotencyKey: `refund:${charge.id}`,
+          stripeReference: charge.id,
+          metadata: {
+            kind: "subscription_refund",
+            paymentIntentId,
+            invoiceId: grant?.stripeReference ?? null,
+            grantedCredits: grant?.amount ?? 0,
+            clawback: plan.clawback,
+            unrecoverable: plan.unrecoverable,
+          },
+        },
+      });
+    }
+  });
+
+  if (plan.flagForReview) {
+    // Credits already spent. The work was delivered and the provider was paid
+    // for it, so this is a real loss rather than a discrepancy.
+    await flagForReview(charge.customer, "refund.credits_already_spent", {
+      chargeId: charge.id,
+      unrecoverable: plan.unrecoverable,
+    });
+  }
+}
+
+/**
+ * A disputed charge.
+ *
+ * Access stops immediately; credits are untouched. A dispute is a claim, not a
+ * verdict — the bank may find for the customer weeks later — and taking credits
+ * from someone who turns out to have been right is not something a webhook
+ * should decide on its own.
+ */
+async function onDisputeCreated(dispute: Stripe.Dispute): Promise<void> {
+  const charge = dispute.charge;
+  const customerId =
+    typeof charge === "string" ? null : customerIdOf(charge?.customer);
+
+  const subscription = customerId
+    ? await prisma.subscription.findFirst({
+        where: { stripeCustomerId: customerId },
+        select: { id: true },
+      })
+    : null;
+
+  if (subscription) {
+    const plan = planDispute();
+    if (plan.suspendEntitlement) {
+      await prisma.subscription.update({
+        where: { id: subscription.id },
+        data: { status: "UNPAID", planTier: "FREE" },
+      });
+    }
+  }
+
+  await flagForReview(customerId, "dispute.created", {
+    disputeId: dispute.id,
+    reason: dispute.reason,
+  });
+}
+
+function customerIdOf(
+  customer:
+    string | Stripe.Customer | Stripe.DeletedCustomer | null | undefined,
+): string | null {
+  if (!customer) return null;
+  return typeof customer === "string" ? customer : customer.id;
+}
+
+/**
+ * Record that a human needs to look at this account.
+ *
+ * Written to the admin audit log rather than a new table: it is already where
+ * staff look for "what happened to this account", and a second log is a second
+ * place to forget to check. The actor is named as the system — attributing an
+ * automatic action to a person would corrupt the one record that exists to say
+ * who did what.
+ *
+ * Never throws. A flag that fails must not roll back a refund that succeeded.
+ */
+async function flagForReview(
+  customer:
+    string | Stripe.Customer | Stripe.DeletedCustomer | null | undefined,
+  action: string,
+  details: Record<string, unknown>,
+): Promise<void> {
+  try {
+    const customerId = customerIdOf(customer);
+    await prisma.adminAuditLog.create({
+      data: {
+        actorId: "system",
+        actorEmail: "system@atheos.io",
+        action,
+        subjectType: "stripe_customer",
+        subjectId: customerId ?? "unknown",
+        detail: details as never,
+        reason: `Automatic: ${action}`,
+      },
+    });
+  } catch (error) {
+    console.error(`stripe webhook: could not flag ${action} for review`, error);
+  }
+}
+
+/**
+ * The payment intent behind an invoice.
+ *
+ * Recent API versions moved this from `invoice.payment_intent` into the
+ * `payments` list, so it is read in one place rather than in every handler that
+ * needs it. Returns null when the invoice has no recorded payment — a $0
+ * invoice, or one settled out of band.
+ */
+function paymentIntentOf(invoice: Stripe.Invoice): string | null {
+  const payment = invoice.payments?.data?.[0]?.payment;
+  if (!payment) return null;
+
+  const intent = payment.payment_intent;
+  if (typeof intent === "string") return intent;
+  return intent?.id ?? null;
 }

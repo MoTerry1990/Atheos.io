@@ -9,6 +9,7 @@ import {
   planAllowsModel,
   planConfigFor,
 } from "@/services/billing/plan-config";
+import { planDefinitionFor } from "@/services/billing/catalogue";
 
 /**
  * The financial controls, at the level that can be checked without a database.
@@ -381,10 +382,48 @@ describe("plan configuration", () => {
   });
 
   it("leaves every paid allocation unsettled until costs are verified", () => {
+    /**
+     * Settled in Sprint 6A against the margin floor `model-costs.test.ts`
+     * enforces. What replaces the null check is the property the null was
+     * protecting: the server-side allowance and the customer-facing catalogue
+     * must be the same number.
+     *
+     * Two sources for one figure is how a card promising 2,000 credits ends up
+     * beside a webhook granting 1,800, and the customer is right to be annoyed
+     * about whichever one they read first.
+     */
     for (const plan of PLAN_CONFIGS) {
-      if (plan.monthlyPriceCents > 0) {
-        expect(plan.creditsPerMonth, `${plan.displayName}`).toBeNull();
+      if (plan.monthlyPriceCents === 0) continue;
+
+      expect(
+        plan.creditsPerMonth,
+        `${plan.displayName} disagrees with the public catalogue`,
+      ).toBe(planDefinitionFor(plan.tier).monthlyCredits);
+
+      if (plan.creditsPerMonth !== null) {
+        expect(plan.creditsPerMonth).toBeGreaterThan(0);
       }
+    }
+  });
+
+  it("keeps every settled allowance inside its provider budget", () => {
+    /**
+     * The arithmetic the allowances were promoted on. A credit retails at
+     * $0.005 and every enabled model clears a 2.5x margin floor, so worst-case
+     * provider cost is at most $0.002 per credit whatever the customer spends
+     * it on. That figure times the allowance must stay inside the plan's stated
+     * provider budget, or the budget is decoration.
+     */
+    const WORST_COST_PER_CREDIT_USD = 0.005 / 2.5;
+
+    for (const plan of PLAN_CONFIGS) {
+      if (plan.creditsPerMonth === null) continue;
+
+      const worstCase = plan.creditsPerMonth * WORST_COST_PER_CREDIT_USD;
+      expect(
+        worstCase,
+        `${plan.displayName} can burn $${worstCase.toFixed(2)} against a $${plan.providerAllowanceUsd} allowance`,
+      ).toBeLessThanOrEqual(plan.providerAllowanceUsd);
     }
   });
 

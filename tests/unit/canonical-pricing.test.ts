@@ -8,6 +8,7 @@ import {
   visiblePlanDefinitions,
 } from "@/services/billing/catalogue";
 import { PLAN_CONFIGS } from "@/services/billing/plan-config";
+import { planDefinitionFor } from "@/services/billing/catalogue";
 import { PRICING } from "@/features/marketing/content";
 import { EN } from "@/features/marketing/i18n/en";
 import { ES } from "@/features/marketing/i18n/es";
@@ -185,11 +186,28 @@ describe("credit claims", () => {
   });
 
   it("advertises no credit allowance for a plan the backend has not settled", () => {
-    // Only Free has a number. Every paid allowance is null until the provider
-    // costs behind it are measured.
+    /**
+     * The rule was never "paid plans show no number" — it was "never advertise
+     * a number the backend cannot honour". Until Sprint 6A the paid allowances
+     * were genuinely unsettled, so the only safe display was none.
+     *
+     * They are settled now, so the invariant asserts what it always meant: a
+     * card shows a figure exactly when the catalogue has one, and stays silent
+     * when it does not.
+     */
     for (const tier of PRICING) {
-      if (tier.monthly > 0) {
-        expect(tier.credits, `${tier.tier} advertises credits`).toBeNull();
+      const settled = planDefinitionFor(tier.tier).monthlyCredits;
+
+      if (settled === null) {
+        expect(
+          tier.credits,
+          `${tier.tier} advertises an unsettled allowance`,
+        ).toBeNull();
+      } else {
+        expect(
+          tier.credits,
+          `${tier.tier} hides a settled allowance`,
+        ).not.toBeNull();
       }
     }
   });

@@ -1,6 +1,7 @@
 import "server-only";
 
 import { env } from "@/lib/env";
+import { stripeConfigProblems } from "@/lib/stripe";
 import {
   PACK_DEFINITIONS,
   PLAN_DEFINITIONS,
@@ -133,22 +134,26 @@ export function priceIdFor(
  * the webhook secret a completed payment would never grant anything — which is
  * the worst of the three failure modes, because the customer's card is charged.
  */
+/**
+ * Is billing actually usable — not merely populated.
+ *
+ * This used to test three variables for presence, which is the check that let
+ * `sk_test_placeholder` read as a configured Stripe account. `stripeConfigProblems`
+ * validates prefix, length, charset, quoting and whitespace, and refuses a live
+ * key outright, so a misconfiguration disables checkout instead of surfacing at
+ * the moment a customer clicks Subscribe.
+ */
 export function isBillingConfigured(): boolean {
-  return Boolean(
-    env.STRIPE_SECRET_KEY &&
-    env.STRIPE_WEBHOOK_SECRET &&
-    PLANS.some((plan) => plan.priceIds.month || plan.priceIds.year),
-  );
+  return stripeConfigProblems().length === 0;
 }
 
 /** Names the missing variables, so a misconfiguration is actionable. */
 export function billingConfigurationProblems(): string[] {
-  const problems: string[] = [];
-
-  if (!env.STRIPE_SECRET_KEY) problems.push("STRIPE_SECRET_KEY");
-  if (!env.STRIPE_WEBHOOK_SECRET) {
-    problems.push("STRIPE_WEBHOOK_SECRET (payments would never be fulfilled)");
-  }
+  // Structural defects first: "STRIPE_SECRET_KEY is a placeholder" is a more
+  // useful line than "STRIPE_SECRET_KEY", and the old check could not say it.
+  const problems: string[] = stripeConfigProblems().map(
+    (problem) => `${problem.variable} ${problem.problem}`,
+  );
 
   for (const plan of PLANS) {
     if (plan.tier === "FREE") continue;
