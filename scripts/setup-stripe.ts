@@ -46,6 +46,17 @@ import {
 
 const DRY_RUN = process.argv.includes("--dry-run");
 
+/**
+ * Reconcile only the subscription plans, leaving credit packs alone.
+ *
+ * Sprint 6A wanted exactly three products in the Stripe account — Creator, Pro
+ * and Studio — and nothing else. The packs are a real part of the catalogue and
+ * this script still creates them by default; the flag exists so a run scoped to
+ * subscriptions cannot quietly add three more products to somebody's dashboard
+ * as a side effect of setting up plans.
+ */
+const SUBSCRIPTIONS_ONLY = process.argv.includes("--subscriptions-only");
+
 const key = process.env.STRIPE_SECRET_KEY;
 if (!key) {
   console.error(
@@ -177,8 +188,12 @@ async function main() {
     // a better number next month.
   }
 
-  console.log("\nCredit packs");
-  for (const pack of PACK_DEFINITIONS) {
+  console.log(
+    SUBSCRIPTIONS_ONLY
+      ? "\nCredit packs — skipped (--subscriptions-only)"
+      : "\nCredit packs",
+  );
+  for (const pack of SUBSCRIPTIONS_ONLY ? [] : PACK_DEFINITIONS) {
     await ensurePrice({
       lookupKey: `atheos_${pack.id}`,
       productName: `Atheos — ${pack.name}`,
