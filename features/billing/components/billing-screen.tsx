@@ -551,7 +551,16 @@ export function BillingScreen({
 
       <UsagePanel
         usage={usage}
-        allowance={currentPlan.monthlyCredits}
+        /**
+         * The allowance follows the **billed** plan, not the access tier.
+         *
+         * Credits are granted by `invoice.paid` from the subscription's own
+         * plan, so an owner on complimentary Studio with a Creator
+         * subscription receives 500 a month, not Studio's 4,800. Showing the
+         * access tier's figure here read "860 of 4,800 used" against an
+         * allowance that will never arrive.
+         */
+        allowance={(billedPlan ?? currentPlan).monthlyCredits}
         balance={data.creditBalance}
       />
 

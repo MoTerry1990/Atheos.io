@@ -30,7 +30,20 @@ import type { BillingInterval, PlanTier } from "@/lib/generated/prisma/enums";
  */
 
 export type Scenario =
-  "free" | "subscribed" | "past_due" | "cancelling" | "unconfigured";
+  | "free"
+  | "subscribed"
+  | "past_due"
+  | "cancelling"
+  | "unconfigured"
+  /**
+   * An owner: complimentary Studio access with a real Creator subscription
+   * underneath. Added in Sprint 6B, when a live purchase on the owner account
+   * showed "Current plan: Studio" and offered to move the customer onto the
+   * plan they had just bought. It is unreachable in the preview without a role
+   * override *and* a paid subscription, which is exactly the kind of state this
+   * page exists to make visible.
+   */
+  | "complimentary";
 
 const LATENCY_MS = 200;
 
@@ -60,10 +73,20 @@ export function createFixtureApi(now: number, scenario: Scenario): BillingApi {
   const subscribed =
     scenario === "subscribed" ||
     scenario === "past_due" ||
-    scenario === "cancelling";
+    scenario === "cancelling" ||
+    scenario === "complimentary";
+
+  // Access granted by role rather than payment. The subscription underneath is
+  // real and still governs every billing control.
+  const complimentary = scenario === "complimentary";
 
   const state = {
-    tier: (subscribed ? "CREATOR" : "FREE") as PlanTier,
+    // Effective access. An owner reaches Studio whatever they pay for.
+    tier: (complimentary
+      ? "STUDIO"
+      : subscribed
+        ? "CREATOR"
+        : "FREE") as PlanTier,
     interval: "MONTH" as BillingInterval,
     status: subscribed
       ? scenario === "past_due"
@@ -98,10 +121,10 @@ export function createFixtureApi(now: number, scenario: Scenario): BillingApi {
         interval: state.interval,
         status: state.status,
         active: subscribed,
-        // The preview models an ordinary customer, for whom access and billing
-        // are the same plan. The complimentary owner case has its own tests.
-        billedTier: subscribed ? state.tier : null,
-        complimentary: false,
+        // Access above, billing here. They are the same plan for an ordinary
+        // customer and deliberately differ for an owner.
+        billedTier: complimentary ? "CREATOR" : subscribed ? state.tier : null,
+        complimentary,
         currentPeriodStart: subscribed ? periodStart : null,
         currentPeriodEnd: subscribed ? periodEnd : null,
         cancelAtPeriodEnd: state.cancelAtPeriodEnd,

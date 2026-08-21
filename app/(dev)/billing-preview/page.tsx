@@ -33,6 +33,11 @@ const SCENARIOS: { id: Scenario; label: string; hint: string }[] = [
   { id: "past_due", label: "Past due", hint: "Payment failed, still entitled" },
   { id: "cancelling", label: "Cancelling", hint: "Ends at the period end" },
   { id: "unconfigured", label: "No Stripe", hint: "Nothing purchasable" },
+  {
+    id: "complimentary",
+    label: "Owner",
+    hint: "Studio access, Creator billed",
+  },
 ];
 
 export default function BillingPreviewPage() {
