@@ -98,6 +98,10 @@ export function createFixtureApi(now: number, scenario: Scenario): BillingApi {
         interval: state.interval,
         status: state.status,
         active: subscribed,
+        // The preview models an ordinary customer, for whom access and billing
+        // are the same plan. The complimentary owner case has its own tests.
+        billedTier: subscribed ? state.tier : null,
+        complimentary: false,
         currentPeriodStart: subscribed ? periodStart : null,
         currentPeriodEnd: subscribed ? periodEnd : null,
         cancelAtPeriodEnd: state.cancelAtPeriodEnd,

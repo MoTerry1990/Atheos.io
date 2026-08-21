@@ -184,7 +184,13 @@ export function BillingScreen({
     // A downgrade removes capability, so it is confirmed. An upgrade is not:
     // it takes effect immediately, costs money the price card already stated,
     // and is reversible in one click.
-    if (rankOf(tier) < rankOf(current.tier)) {
+    // Compared against the billed plan. An owner on complimentary Studio who
+    // pays for Creator is not "downgrading" by staying on Creator.
+    const comparedTo = current.complimentary
+      ? (current.billedTier ?? tier)
+      : current.tier;
+
+    if (rankOf(tier) < rankOf(comparedTo)) {
       setConfirming(tier);
       return;
     }
@@ -236,8 +242,44 @@ export function BillingScreen({
   }
 
   const { entitlement, usage } = data;
-  const currentPlan =
+
+  /**
+   * Access and billing are two different questions, and this screen asks both.
+   *
+   * `entitlement.tier` is what the account may *use*. For an owner that is a
+   * complimentary Studio grant which no subscription stands behind.
+   * `entitlement.billedTier` is what the account is actually *charged* for.
+   *
+   * Reading the first and calling it "current plan" is what produced the
+   * Sprint 6B defect: an owner who had just bought Creator was shown
+   * "Current plan: Studio" and offered a move to the plan they had paid for
+   * minutes earlier.
+   */
+  const accessPlan =
     data.plans.find((plan) => plan.tier === entitlement.tier) ?? data.plans[0];
+
+  const billedPlan =
+    entitlement.billedTier === null
+      ? null
+      : (data.plans.find((plan) => plan.tier === entitlement.billedTier) ??
+        null);
+
+  /**
+   * The tier every billing *control* compares against.
+   *
+   * For a complimentary account that is the billed plan — so Creator reads as
+   * current and offers no move. For everyone else it stays `tier`, which
+   * correctly falls back to Free when a subscription lapses; using `billedTier`
+   * there would mark a plan "current" that the customer can no longer use.
+   *
+   * Null for an owner with nothing billed, which is right: no card is current,
+   * because nothing is being paid for.
+   */
+  const billingTier: PlanTier | null = entitlement.complimentary
+    ? entitlement.billedTier
+    : entitlement.tier;
+
+  const currentPlan = accessPlan;
   const status = entitlement.status ? STATUS_COPY[entitlement.status] : null;
   const renewal = entitlement.currentPeriodEnd
     ? new Date(entitlement.currentPeriodEnd)
@@ -289,16 +331,51 @@ export function BillingScreen({
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0">
             <p className="text-2xs font-medium tracking-wider text-muted-foreground uppercase">
-              Current plan
+              {entitlement.complimentary ? "Effective access" : "Current plan"}
             </p>
             <p className="mt-1 flex items-center gap-2 text-lg font-semibold">
               {currentPlan.name}
-              {status ? (
+              {entitlement.complimentary ? (
+                <Badge variant="outline" size="sm">
+                  Complimentary owner access
+                </Badge>
+              ) : null}
+              {status && !entitlement.complimentary ? (
                 <Badge variant={status.variant} size="sm" dot>
                   {status.label}
                 </Badge>
               ) : null}
             </p>
+
+            {/**
+             * What is actually being charged, stated separately.
+             *
+             * Only rendered for a complimentary account, because for everyone
+             * else it is the same plan named twice — and a screen that repeats
+             * itself teaches people to stop reading it.
+             */}
+            {entitlement.complimentary ? (
+              <p className="mt-2 text-xs text-muted-foreground">
+                <span className="font-medium text-foreground">
+                  Billed subscription:
+                </span>{" "}
+                {billedPlan ? (
+                  <>
+                    {billedPlan.name} — {formatMoney(billedPlan.monthly)}/month
+                    {status ? (
+                      <>
+                        {" "}
+                        <Badge variant={status.variant} size="sm" dot>
+                          {status.label}
+                        </Badge>
+                      </>
+                    ) : null}
+                  </>
+                ) : (
+                  "none"
+                )}
+              </p>
+            ) : null}
 
             {entitlement.cancelAtPeriodEnd && renewal ? (
               <p className="mt-1 text-xs text-warning">
@@ -404,7 +481,7 @@ export function BillingScreen({
               plan={plan}
               highlighted={plan.tier === highlightTier}
               interval={interval}
-              currentTier={entitlement.tier}
+              currentTier={billingTier ?? entitlement.tier}
               scheduledTier={entitlement.scheduledTier}
               cancelAtPeriodEnd={entitlement.cancelAtPeriodEnd}
               disabled={!data.configured || busy}

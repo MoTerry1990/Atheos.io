@@ -35,6 +35,16 @@ export interface Entitlement {
   scheduledTier: PlanTier | null;
   stripeCustomerId: string | null;
   stripeSubscriptionId: string | null;
+  /**
+   * What the account is billed for, as distinct from what it may use.
+   *
+   * Mirrors `Entitlement` in `services/billing/subscription.ts`; the two are
+   * separate declarations because this one crosses to the browser. Null when
+   * nothing is billed.
+   */
+  billedTier: PlanTier | null;
+  /** True when access comes from a role rather than a payment. */
+  complimentary: boolean;
 }
 
 export interface InvoiceSummary {

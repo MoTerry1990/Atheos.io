@@ -50,6 +50,10 @@ const ENTITLED: ReadonlySet<SubscriptionStatus> = new Set([
 ]);
 
 export interface Entitlement {
+  /**
+   * What the account may **use**. For an owner this is `OWNER_TIER` regardless
+   * of what, if anything, they pay for.
+   */
   tier: PlanTier;
   interval: BillingInterval;
   status: SubscriptionStatus | null;
@@ -62,6 +66,30 @@ export interface Entitlement {
   scheduledTier: PlanTier | null;
   stripeCustomerId: string | null;
   stripeSubscriptionId: string | null;
+
+  /**
+   * What the account is actually **billed** for, independent of access.
+   *
+   * Null when no live subscription stands behind the access — the ordinary case
+   * for an owner, and for anyone on Free.
+   *
+   * ## Why this had to be separated
+   *
+   * Sprint 6B bought Creator on the owner account and the billing page reported
+   * "Current plan: Studio" with a "Move to Creator?" dialog — offering to move
+   * the customer onto the plan they had just paid for. Nothing was broken
+   * underneath: Stripe held one active Creator subscription, the mirror row
+   * said CREATOR, and exactly 500 credits were granted. The screen was reading
+   * `tier`, which for an owner is the complimentary Studio grant, and treating
+   * it as the answer to a question it was never answering.
+   *
+   * Access and billing are two different facts about an account. They coincide
+   * for every ordinary customer, which is why one field served for so long, and
+   * they diverge for exactly the people who test the product.
+   */
+  billedTier: PlanTier | null;
+  /** True when access is granted by role rather than paid for. */
+  complimentary: boolean;
 }
 
 /**
@@ -134,18 +162,33 @@ export async function getEntitlement(userId: string): Promise<Entitlement> {
   // worst moment. Entitlement is a question about a person, and this is the
   // one function that answers it, so this is where the exception belongs.
   if (user && isOwnerAccount(user)) {
+    /**
+     * Complimentary access, but a real subscription underneath if one exists.
+     *
+     * The period dates, the pending cancellation and the scheduled downgrade
+     * are all read from the row rather than nulled out. They describe the
+     * *subscription*, which is a real thing an owner can hold, and the billing
+     * screen needs them to render a renewal date, drive cancellation and open
+     * the Customer Portal. Blanking them made the owner's own billing
+     * unmanageable from the product — the one account guaranteed to hit it.
+     */
     return {
       tier: OWNER_TIER,
-      interval: "MONTH",
+      interval: subscription?.interval ?? "MONTH",
       status: subscription?.status ?? null,
+      // Never depends on the subscription: that is the point of the override.
       active: true,
-      currentPeriodStart: null,
-      currentPeriodEnd: null,
-      cancelAtPeriodEnd: false,
-      scheduledTier: null,
+      currentPeriodStart: subscription?.currentPeriodStart?.getTime() ?? null,
+      currentPeriodEnd: subscription?.currentPeriodEnd?.getTime() ?? null,
+      cancelAtPeriodEnd: subscription?.cancelAtPeriodEnd ?? false,
+      scheduledTier: subscription?.scheduledTier ?? null,
       stripeCustomerId:
         subscription?.stripeCustomerId ?? user.stripeCustomerId ?? null,
       stripeSubscriptionId: subscription?.stripeSubscriptionId ?? null,
+      // The honest answer to "what is this account paying for": whatever the
+      // row says, or nothing. Access above, billing here.
+      billedTier: subscription ? subscription.planTier : null,
+      complimentary: true,
     };
   }
 
@@ -161,6 +204,9 @@ export async function getEntitlement(userId: string): Promise<Entitlement> {
       scheduledTier: null,
       stripeCustomerId: user?.stripeCustomerId ?? null,
       stripeSubscriptionId: null,
+      // Free is not billed, so there is nothing to report here.
+      billedTier: null,
+      complimentary: false,
     };
   }
 
@@ -180,6 +226,14 @@ export async function getEntitlement(userId: string): Promise<Entitlement> {
     stripeCustomerId:
       subscription.stripeCustomerId ?? user?.stripeCustomerId ?? null,
     stripeSubscriptionId: subscription.stripeSubscriptionId,
+    /**
+     * For an ordinary customer access and billing are the same plan, so this
+     * mirrors `tier` — except when the subscription has lapsed, where access
+     * drops to Free while the row still records what is being billed. Keeping
+     * both makes "your Creator subscription is past due" expressible.
+     */
+    billedTier: subscription.planTier,
+    complimentary: false,
   };
 }
 
