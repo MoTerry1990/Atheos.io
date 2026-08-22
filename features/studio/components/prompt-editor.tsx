@@ -14,6 +14,10 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  PromptField,
+  type PromptModality,
+} from "@/features/studio/components/prompt-field";
 import { Control } from "@/features/studio/components/model-picker";
 import { PROMPT_TEMPLATES } from "@/features/studio/data/presets";
 import { assemblePrompt, useStudioStore } from "@/store/studio-store";
@@ -42,7 +46,7 @@ import { cn } from "@/lib/utils";
  * cleared in the store at the same time, so a hidden field cannot smuggle text
  * into a request.
  */
-export function PromptEditor() {
+export function PromptEditor({ onGenerate }: { onGenerate?: () => void } = {}) {
   const prompt = useStudioStore((state) => state.params.prompt);
   const negativePrompt = useStudioStore((state) => state.params.negativePrompt);
   const params = useStudioStore((state) => state.params);
@@ -53,6 +57,21 @@ export function PromptEditor() {
   const [showAssembled, setShowAssembled] = useState(false);
 
   const model = useSelectedModel();
+
+  /**
+   * Which placeholder and which enhancer the field should use.
+   *
+   * Read from the model rather than held in the store: the modality *is* a
+   * property of the selected model, and a second copy could disagree with it
+   * after a model change — showing video guidance above an image model.
+   */
+  const modality: PromptModality =
+    model.modality === "VIDEO"
+      ? "VIDEO"
+      : model.modality === "AUDIO"
+        ? "AUDIO"
+        : "IMAGE";
+
   const assembled = assemblePrompt(params, installed.styles);
   const hasAdditions = assembled !== prompt.trim() && assembled.length > 0;
 
@@ -126,21 +145,55 @@ export function PromptEditor() {
     return groups;
   }, {});
 
+  /**
+   * Enhance and undo, rendered inside the field's own footer.
+   *
+   * They belong with the text they act on rather than in a separate row: a
+   * button that rewrites the paragraph above it reads as part of the editor,
+   * and putting it there also keeps the row below the field free for the
+   * things that are not about the prompt.
+   */
+  const enhanceControls = (
+    <>
+      {/* Free, and rate-limited rather than priced — see
+          services/ai/enhance.ts. Disabled below three characters because there
+          is nothing to expand, which is also the state it is in when the field
+          is empty. */}
+      <Button
+        type="button"
+        variant="ghost"
+        size="xs"
+        onClick={enhance}
+        disabled={enhancing || prompt.trim().length < 3}
+      >
+        <Sparkles className={enhancing ? "animate-pulse" : undefined} />
+        {enhancing ? "Enhancing…" : "Enhance"}
+      </Button>
+
+      {/* The one affordance this feature cannot ship without. Enhancing
+          overwrites text the user wrote; without a way back, a click they did
+          not mean costs them their prompt. */}
+      {previous !== null ? (
+        <Button type="button" variant="ghost" size="xs" onClick={undoEnhance}>
+          <Undo2 />
+          Undo
+        </Button>
+      ) : null}
+    </>
+  );
+
   return (
     <div className="space-y-4">
-      <Control label="Prompt" hint={`${prompt.length} characters`}>
+      <Control label="Prompt">
         <div className="space-y-2">
-          <Textarea
+          {/* The editor surface. `data-studio-prompt` still marks the textarea
+              inside it, so the `/` shortcut keeps working unchanged. */}
+          <PromptField
             value={prompt}
-            onChange={(event) => handlePromptChange(event.target.value)}
-            placeholder="Describe what you want to see — subject, setting, light, mood."
-            rows={5}
-            className="resize-y"
-            /* The `/` shortcut's target. A data attribute rather than an id
-               because the studio preview route renders this component twice on
-               one page, and duplicate ids would make the shortcut focus
-               whichever the browser found first. */
-            data-studio-prompt
+            onChange={handlePromptChange}
+            modality={modality}
+            onSubmit={onGenerate}
+            footer={enhanceControls}
           />
 
           <div className="flex flex-wrap items-center gap-2">
@@ -178,32 +231,6 @@ export function PromptEditor() {
                 ))}
               </DropdownMenuContent>
             </DropdownMenu>
-
-            {/* Free, and rate-limited rather than priced — see
-                services/ai/enhance.ts. Disabled below three characters because
-                there is nothing to expand, which is also the state it is in
-                when the field is empty. */}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={enhance}
-              disabled={enhancing || prompt.trim().length < 3}
-            >
-              <Sparkles className={enhancing ? "animate-pulse" : undefined} />
-              {enhancing ? "Enhancing…" : "Enhance"}
-            </Button>
-
-            {/* The one affordance this feature cannot ship without. Enhancing
-                overwrites text the user wrote; without a way back, a click they
-                did not mean costs them their prompt. Cleared as soon as they
-                type, because at that point "undo" would discard their edit
-                rather than the enhancement. */}
-            {previous !== null ? (
-              <Button variant="ghost" size="sm" onClick={undoEnhance}>
-                <Undo2 />
-                Undo
-              </Button>
-            ) : null}
 
             {hasAdditions ? (
               <Button
