@@ -473,3 +473,43 @@ describe("the rest of the benchmark matrix", () => {
     expect(camera.motion).toBe("static camera");
   });
 });
+
+describe("routing follows measured adherence, not headline capability", () => {
+  /**
+   * Sprint 6C, one generation per model at 5s on identical prompt text:
+   *
+   *   Motion 1  (wan-2.2)   correct elevated tracking drone shot, whole car
+   *                         visible, ocean held on one side throughout
+   *   Motion Pro (seedance) camera at car level beside the hood, car cropped —
+   *                         the exact benchmark failure, at three times the cost
+   *
+   * Capability had ranked them the other way round. This pins the correction.
+   */
+  it("prefers the model that actually produced an aerial shot", () => {
+    const decision = chooseVideoModel({
+      aerialTracking: true,
+      durationSeconds: 5,
+    });
+    expect(decision.chosen?.model.id).toBe("replicate/video-gen");
+  });
+
+  it("keeps that preference cheaper, not dearer", () => {
+    // The measured winner is also the less expensive model, so this correction
+    // reduces spend rather than raising it.
+    const decision = chooseVideoModel({
+      aerialTracking: true,
+      durationSeconds: 5,
+    });
+    expect(decision.costsMore).toBe(false);
+  });
+
+  it("never lets the preference override a hard requirement", () => {
+    // An aerial shot that must start from a supplied frame still has to go to
+    // the model that accepts one — Motion 1 has no image input at all.
+    const decision = chooseVideoModel({
+      aerialTracking: true,
+      needsImageInput: true,
+    });
+    expect(decision.chosen?.model.id).toBe("replicate/video-pro");
+  });
+});

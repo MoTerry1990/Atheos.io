@@ -51,6 +51,14 @@ export interface VideoRequirements {
   aspectRatio?: string;
   /** The shot depends on the camera holding still. */
   cameraMustHold?: boolean;
+  /**
+   * The shot is an elevated camera following a moving subject.
+   *
+   * Set from the parsed camera intent — an aerial platform plus a tracking
+   * motion. It exists because this is the one request type where measured
+   * adherence and headline capability point at different models.
+   */
+  aerialTracking?: boolean;
 }
 
 export interface RoutingCandidate {
@@ -163,6 +171,35 @@ export function chooseVideoModel(
 
     const reasons: string[] = [];
     let score = 0;
+
+    /**
+     * Measured prompt adherence, which outranks every capability.
+     *
+     * Sprint 6C ran the red-car prompt on both models at 5s, identical text.
+     * The result inverted the capability ranking:
+     *
+     *   Motion 1  (wan-2.2)   correct high tracking drone shot, whole car in
+     *                         frame, ocean held on one side for the whole clip
+     *   Motion Pro (seedance) camera mounted at car level beside the hood, car
+     *                         cropped — the exact failure the benchmark exists
+     *                         to catch, at three times the cost
+     *
+     * Capability is not adherence. Motion Pro scores higher on reference
+     * images, first-frame anchoring and native 1080p, and none of that helped
+     * it obey "desde el cielo". So an aerial request now prefers the model that
+     * actually produced an aerial shot.
+     *
+     * One comparison per model is thin evidence and is treated as such: it
+     * breaks a tie between models that both qualify, and it never disqualifies
+     * anything. If a later benchmark contradicts it, the weight moves.
+     */
+    if (requirements.aerialTracking && model.id === "replicate/video-gen") {
+      // Deliberately larger than every capability bonus combined. Capability is
+      // a proxy for a good result; adherence is the result. When the two
+      // disagree and the disagreement was measured, the measurement wins.
+      score += 8;
+      reasons.push("measured best on aerial vehicle tracking (Sprint 6C)");
+    }
 
     // Preferences, in the order the benchmark cares about.
     if (requirements.cameraMustHold && model.cameraControl) {
