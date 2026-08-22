@@ -216,3 +216,101 @@ describe("billing controls use the real subscription", () => {
     expect(block).toMatch(/active: true/);
   });
 });
+
+describe("the usage panel is a wallet, not a plan meter", () => {
+  const screen = readFileSync(
+    resolve(
+      import.meta.dirname,
+      "../..",
+      "features/billing/components/billing-screen.tsx",
+    ),
+    "utf8",
+  );
+  const panel = readFileSync(
+    resolve(
+      import.meta.dirname,
+      "../..",
+      "features/billing/components/usage-panel.tsx",
+    ),
+    "utf8",
+  );
+  const reporting = readFileSync(
+    resolve(import.meta.dirname, "../..", "services/billing/reporting.ts"),
+    "utf8",
+  );
+
+  it("draws the used figure from the ledger, not from generations alone", () => {
+    /**
+     * `creditsSpent` nets GENERATION_SPEND against GENERATION_REFUND in the
+     * credit ledger. That is wallet consumption across every credit source —
+     * signup grant, packs, subscription grants, manual adjustments — and it is
+     * the authoritative number. Spending is not scoped to the subscription.
+     */
+    expect(reporting).toMatch(
+      /creditsSpent: Math\.max\(0, -\(spend \+ refunds\)\)/,
+    );
+    expect(reporting).toMatch(/sumOf\("GENERATION_SPEND"\)/);
+    expect(reporting).toMatch(/sumOf\("GENERATION_REFUND"\)/);
+  });
+
+  it("takes the denominator from the plan that actually grants credits", () => {
+    /**
+     * The defect: an owner on complimentary Studio saw "of 4,800", an allowance
+     * that would never arrive. `invoice.paid` grants the *billed* plan's
+     * figure, so only that plan has a real allowance for this account — and a
+     * complimentary tier grants nothing at all.
+     */
+    expect(screen).toMatch(/const grantingPlan =/);
+    expect(screen).toMatch(
+      /allowance=\{grantingPlan\?\.monthlyCredits \?\? null\}/,
+    );
+    // Never the access tier.
+    expect(screen).not.toMatch(/allowance=\{currentPlan\.monthlyCredits\}/);
+    expect(screen).not.toMatch(/allowance=\{accessPlan\.monthlyCredits\}/);
+  });
+
+  it("never hardcodes an allowance figure", () => {
+    // Every number comes from the catalogue, which is what the webhook grants
+    // from. A literal here would drift from what the customer receives.
+    for (const source of [screen, panel]) {
+      expect(source).not.toMatch(/allowance=\{\s*\d+\s*\}/);
+      expect(source).not.toMatch(
+        /monthlyCredits\s*[:=]\s*(500|1800|1_800|4800|4_800)\b/,
+      );
+    }
+  });
+
+  it("attributes the denominator in words", () => {
+    // "of 500" with no stated origin is the ambiguity that let the wrong plan's
+    // number sit there unnoticed.
+    expect(screen).toMatch(/grants \$\{|credits monthly`/);
+    expect(screen).toMatch(/allowanceNote/);
+    expect(panel).toMatch(/allowanceNote/);
+  });
+
+  it("says complimentary access grants no credits", () => {
+    // The claim that must never be implied: that Studio-by-role handed over
+    // 4,800 credits. It hands over none.
+    expect(screen).toMatch(/Complimentary access grants no credits/);
+  });
+
+  it("states the billed plan's monthly grant beside its price", () => {
+    expect(screen).toMatch(/credits monthly`/);
+    expect(screen).toMatch(/billedPlan\.monthlyCredits !== null/);
+  });
+
+  it("treats spending above the grant as normal, not an overage", () => {
+    // Credits pool and never expire, so used > allowance is expected rather
+    // than an error state.
+    expect(panel).toMatch(/spent more than this period/i);
+    expect(panel).toMatch(/draw on your whole balance/i);
+  });
+
+  it("collapses to a bare count when no plan grants credits", () => {
+    // An owner with no subscription, or an unsettled allowance: show what was
+    // used and invent no denominator.
+    expect(panel).toMatch(
+      /allowance === null\s*\?\s*"credits used this period"/,
+    );
+  });
+});

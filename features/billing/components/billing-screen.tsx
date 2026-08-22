@@ -280,6 +280,28 @@ export function BillingScreen({
     : entitlement.tier;
 
   const currentPlan = accessPlan;
+
+  /**
+   * The plan whose recurring grant actually lands in the ledger.
+   *
+   * `invoice.paid` grants `planFor(tier).monthlyCredits` for the **subscribed**
+   * plan, so that is the only plan whose allowance is a real number for this
+   * account. For an ordinary customer it is the same plan they have access to;
+   * for an owner it is the one they pay for, and complimentary Studio grants
+   * nothing at all.
+   */
+  const grantingPlan =
+    billedPlan ?? (entitlement.complimentary ? null : accessPlan);
+
+  /** "Creator grants 500 credits monthly" — never a bare number. */
+  const allowanceNote =
+    grantingPlan && grantingPlan.monthlyCredits !== null
+      ? grantingPlan.tier === "FREE"
+        ? `${grantingPlan.name} includes ${grantingPlan.monthlyCredits.toLocaleString("en-US")} credits, once`
+        : `${grantingPlan.name} grants ${grantingPlan.monthlyCredits.toLocaleString("en-US")} credits monthly`
+      : entitlement.complimentary
+        ? "Complimentary access grants no credits — spending draws on your balance"
+        : null;
   const status = entitlement.status ? STATUS_COPY[entitlement.status] : null;
   const renewal = entitlement.currentPeriodEnd
     ? new Date(entitlement.currentPeriodEnd)
@@ -362,6 +384,9 @@ export function BillingScreen({
                 {billedPlan ? (
                   <>
                     {billedPlan.name} — {formatMoney(billedPlan.monthly)}/month
+                    {billedPlan.monthlyCredits !== null
+                      ? ` · ${billedPlan.monthlyCredits.toLocaleString("en-US")} credits monthly`
+                      : ""}
                     {status ? (
                       <>
                         {" "}
@@ -560,7 +585,8 @@ export function BillingScreen({
          * access tier's figure here read "860 of 4,800 used" against an
          * allowance that will never arrive.
          */
-        allowance={(billedPlan ?? currentPlan).monthlyCredits}
+        allowance={grantingPlan?.monthlyCredits ?? null}
+        allowanceNote={allowanceNote}
         balance={data.creditBalance}
       />
 

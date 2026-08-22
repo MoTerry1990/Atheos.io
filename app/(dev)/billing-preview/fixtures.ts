@@ -97,7 +97,7 @@ export function createFixtureApi(now: number, scenario: Scenario): BillingApi {
     scheduledTier: (scenario === "cancelling"
       ? "FREE"
       : null) as PlanTier | null,
-    balance: subscribed ? 2140 : 118,
+    balance: complimentary ? 17_079 : subscribed ? 2140 : 118,
   };
 
   const periodStart = now - 12 * day;
@@ -137,8 +137,17 @@ export function createFixtureApi(now: number, scenario: Scenario): BillingApi {
       usage: {
         periodStart: subscribed ? periodStart : now - 30 * day,
         periodEnd: subscribed ? periodEnd : now,
-        creditsSpent: subscribed ? 860 : 82,
-        creditsGranted: plan.monthlyCredits ?? 0,
+        /**
+         * Wallet consumption, not subscription-credit consumption.
+         *
+         * The owner scenario deliberately spends more than Creator's 500
+         * monthly grant, because that is what the real account does: the
+         * balance is pooled and mostly came from adjustments and packs. It is
+         * the case the panel used to render as an overage against the wrong
+         * plan's allowance.
+         */
+        creditsSpent: complimentary ? 860 : subscribed ? 380 : 82,
+        creditsGranted: complimentary ? 500 : (plan.monthlyCredits ?? 0),
         generations: subscribed ? 47 : 9,
         byModality: subscribed
           ? [

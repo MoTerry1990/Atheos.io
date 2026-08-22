@@ -16,6 +16,26 @@ import { cn } from "@/lib/utils";
  * thirds of what — and the denominator is the number they are deciding whether
  * to increase.
  *
+ * ## What the two numbers actually are
+ *
+ * They come from different places and mean different things, and conflating
+ * them is how this panel told an owner they had used "860 of 4,800".
+ *
+ *   **used** is `creditsSpent` from `services/billing/reporting.ts`: the net of
+ *   `GENERATION_SPEND` and `GENERATION_REFUND` in the **ledger** over the
+ *   period. It is wallet consumption, drawn from one pooled balance — signup
+ *   grant, credit packs, subscription grants and manual adjustments all spend
+ *   from the same place. It is not "subscription credits used", and nothing
+ *   stops it exceeding the allowance.
+ *
+ *   **allowance** is the recurring grant of the plan the customer is **billed**
+ *   for, from the catalogue — the same figure `invoice.paid` grants. It is a
+ *   reference point, not a cap.
+ *
+ * So `allowanceNote` names the plan behind the denominator. Without it, "of
+ * 500" is a number with no stated origin, which is the ambiguity that let the
+ * wrong plan's figure sit there unnoticed.
+ *
  * ## Two breakdowns, because they answer different questions
  *
  * By modality answers "is video eating my plan". By model answers "which one".
@@ -35,12 +55,23 @@ const MODALITY_LABELS: Record<string, string> = {
 export function UsagePanel({
   usage,
   allowance,
+  allowanceNote,
   balance,
 }: {
   usage: UsageReport;
-  /** Credits the current plan grants per period. */
-  /** Null while a plan's credit allowance has not been settled. */
+  /**
+   * The recurring grant of the **billed** plan, not the access tier.
+   *
+   * Null while a plan's credit allowance has not been settled, in which case
+   * the fraction collapses to a bare count rather than inventing a
+   * denominator.
+   */
   allowance: number | null;
+  /**
+   * Where that denominator comes from, in words — "Creator grants 500 credits
+   * monthly". Rendered beneath the fraction so the number is never anonymous.
+   */
+  allowanceNote?: string | null;
   balance: number;
 }) {
   const used = usage.creditsSpent;
@@ -86,15 +117,31 @@ export function UsagePanel({
               ? "credits used this period"
               : `of ${allowance.toLocaleString("en-US")} credits used`}
           </span>
-          <span>{balance.toLocaleString("en-US")} remaining</span>
+          <span>{balance.toLocaleString("en-US")} balance</span>
         </p>
+
+        {/* The denominator, attributed. */}
+        {allowanceNote ? (
+          <p className="text-2xs text-muted-foreground">{allowanceNote}</p>
+        ) : null}
         {/* Balance and allowance are different numbers and people conflate
-            them. Rollover and credit packs both make the balance exceed the
-            allowance, which looks like a bug unless it is explained. */}
+            them. Credits pool and never expire, so rollover, credit packs and
+            adjustments all make the balance exceed the allowance — which looks
+            like a bug unless it is explained. */}
         {allowance !== null && balance > allowance ? (
           <p className="text-2xs text-muted-foreground">
-            Your balance is above this period&rsquo;s allowance — rollover and
-            credit packs both add to it.
+            Your balance is above this period&rsquo;s grant — credits never
+            expire, and packs and rollover both add to it.
+          </p>
+        ) : null}
+
+        {/* The other direction, and the one that looked like an error: spending
+            draws on the whole balance, so using more than the grant is normal
+            rather than an overage. */}
+        {allowance !== null && used > allowance ? (
+          <p className="text-2xs text-muted-foreground">
+            You have spent more than this period&rsquo;s grant — that is fine,
+            generations draw on your whole balance.
           </p>
         ) : null}
       </div>
