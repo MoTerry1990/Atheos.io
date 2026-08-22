@@ -1,7 +1,7 @@
 "use client";
 
 import { Eye, EyeOff, Sparkles, Undo2, WandSparkles } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { enhancePrompt } from "@/features/studio/lib/api";
 
@@ -19,6 +19,7 @@ import {
   type PromptModality,
 } from "@/features/studio/components/prompt-field";
 import { Control } from "@/features/studio/components/model-picker";
+import { ShotPlanPreview } from "@/features/studio/components/shot-plan";
 import { PROMPT_TEMPLATES } from "@/features/studio/data/presets";
 import { assemblePrompt, useStudioStore } from "@/store/studio-store";
 import { useSelectedModel } from "@/features/studio/lib/use-model";
@@ -71,6 +72,36 @@ export function PromptEditor({ onGenerate }: { onGenerate?: () => void } = {}) {
       : model.modality === "AUDIO"
         ? "AUDIO"
         : "IMAGE";
+
+  /**
+   * What the selected video model can take, for the shot-plan preview.
+   *
+   * `supportsMultiShot` and `supportsNativeAudio` are hard `false` rather than
+   * capability flags because no model in the catalogue has either: Sprint 5D
+   * read both provider schemas and found no shot-list input and no audio output
+   * on `wan-2.2-t2v-fast` or `seedance-1-lite`. Inventing optimistic flags here
+   * would make the preview promise a sequence with sound that the generation
+   * cannot produce. When a model that can do it is added, these become real
+   * capability reads and the preview stops collapsing on its own.
+   */
+  const videoProviderSupport = useMemo(
+    () => ({
+      supportsMultiShot: false,
+      supportsNativeAudio: false,
+      supportsNegativePrompt: model.capabilities.supportsNegativePrompt,
+      maxDurationSeconds:
+        model.capabilities.maxDurationSeconds ??
+        (model.capabilities.durations?.length
+          ? Math.max(...model.capabilities.durations)
+          : params.durationSeconds),
+    }),
+    [
+      model.capabilities.supportsNegativePrompt,
+      model.capabilities.maxDurationSeconds,
+      model.capabilities.durations,
+      params.durationSeconds,
+    ],
+  );
 
   const assembled = assemblePrompt(params, installed.styles);
   const hasAdditions = assembled !== prompt.trim() && assembled.length > 0;
@@ -195,6 +226,16 @@ export function PromptEditor({ onGenerate }: { onGenerate?: () => void } = {}) {
             onSubmit={onGenerate}
             footer={enhanceControls}
           />
+
+          {/* Video only. An image has no shot list, and a panel explaining
+              that would be noise on the modality most people use. */}
+          {modality === "VIDEO" ? (
+            <ShotPlanPreview
+              prompt={prompt}
+              durationSeconds={params.durationSeconds}
+              provider={videoProviderSupport}
+            />
+          ) : null}
 
           <div className="flex flex-wrap items-center gap-2">
             <DropdownMenu>
