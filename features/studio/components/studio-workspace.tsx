@@ -42,6 +42,10 @@ import { StyleAndCamera } from "@/features/studio/components/style-and-camera";
 import { VideoSettings } from "@/features/studio/components/video-settings";
 import { findModelIn } from "@/features/studio/data/models";
 import {
+  chooseModelForModality,
+  modalityOf,
+} from "@/features/studio/lib/modality";
+import {
   ApiError,
   loadStudio,
   pollUntilSettled,
@@ -478,10 +482,79 @@ export function StudioWorkspace() {
   const usingMock = useStudioStore((state) => state.usingMockProvider);
   const [view, setView] = useState<StudioView>("compose");
 
+  // Selected separately rather than taking the whole `params` object: this
+  // component re-renders on every keystroke otherwise, and it owns the layout.
+  const models = useStudioStore((state) => state.models);
+  const modelId = useStudioStore((state) => state.params.modelId);
+  const setModel = useStudioStore((state) => state.setModel);
+
+  /**
+   * The modality rail reads and writes the selected model.
+   *
+   * It used to be `useState<Modality>("image")` and nothing else — local UI
+   * state wired to the rail's highlight and to nothing that generates. Clicking
+   * Image while a video model was selected moved the pill and left the composer
+   * on Motion 1: same model, same "TEXT TO VIDEO" label, same 90-credit
+   * estimate. The one control that looks like the workspace's primary
+   * navigation did nothing, and the only real way to change modality was to
+   * know that the model dropdown above the prompt also changes it.
+   *
+   * So the value is *derived* from the selected model rather than stored
+   * separately. Two copies of the same fact is what allowed them to disagree,
+   * and the model is the one that decides what actually gets generated.
+   */
+  const selectedModality = modalityOf(findModelIn(models, modelId));
+
+  /**
+   * The last model used in each modality.
+   *
+   * Switching to Video and back to Image should return the image model the user
+   * was working with, not whichever one happens to be first in the catalogue.
+   * A ref rather than state: it changes as a consequence of rendering and
+   * nothing reads it during render.
+   */
+  const lastModelByModality = useRef<Partial<Record<Modality, string>>>({});
+  useEffect(() => {
+    if (modelId) lastModelByModality.current[selectedModality] = modelId;
+  }, [modelId, selectedModality]);
+
+  /**
+   * Set when a modality has no model at all, so the rail can say so.
+   *
+   * Without it a click on an empty modality would silently do nothing — which
+   * is the bug this whole block exists to remove, in a smaller form.
+   */
+  const [emptyModality, setEmptyModality] = useState<Modality | null>(null);
+
+  const modality = emptyModality ?? selectedModality;
+
+  const setModality = useCallback(
+    (next: Modality) => {
+      if (next === selectedModality) {
+        setEmptyModality(null);
+        return;
+      }
+
+      const target = chooseModelForModality({
+        models,
+        next,
+        remembered: lastModelByModality.current,
+      });
+
+      if (!target) {
+        setEmptyModality(next);
+        return;
+      }
+
+      setEmptyModality(null);
+      setModel(target);
+    },
+    [models, selectedModality, setModel],
+  );
+
   // Sprint 22. The workspace's own UI state — deliberately local rather than in
   // the studio store: none of it describes a generation, and persisting a
   // palette's open flag across reloads would restore a modal nobody opened.
-  const [modality, setModality] = useState<Modality>("image");
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
@@ -701,7 +774,14 @@ export function StudioWorkspace() {
                     Hidden because the column is self-evidently the composer to
                     anyone who can see it. */}
                 <h2 className="sr-only">Composer</h2>
-                <ModalityUnavailable modality={modality} />
+                <ModalityUnavailable
+                  modality={modality}
+                  reason={
+                    emptyModality
+                      ? "No model for this output type is in your catalogue."
+                      : undefined
+                  }
+                />
                 <Composer />
               </div>
             </ScrollArea>

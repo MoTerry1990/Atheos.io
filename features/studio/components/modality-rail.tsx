@@ -161,9 +161,24 @@ export function ModalityRail({
 }
 
 /** Banner shown when a user lands on a modality that cannot run. */
-export function ModalityUnavailable({ modality }: { modality: Modality }) {
+export function ModalityUnavailable({
+  modality,
+  /**
+   * Overrides the built-in reason.
+   *
+   * A modality can be unavailable for two different reasons, and they are not
+   * interchangeable: text has no implementation at all, while image, video or
+   * audio can simply have no model in *this* user's catalogue. Saying "not part
+   * of the studio" about a modality that is merely unstocked would be false.
+   */
+  reason,
+}: {
+  modality: Modality;
+  reason?: string;
+}) {
   const option = MODALITIES.find((m) => m.id === modality);
-  if (!option || option.available) return null;
+  if (!option) return null;
+  if (option.available && !reason) return null;
 
   return (
     <div className="rounded-lg border border-border bg-muted/40 p-4">
@@ -174,8 +189,8 @@ export function ModalityUnavailable({ modality }: { modality: Modality }) {
         <p className="text-sm font-medium">{option.label} generation</p>
       </div>
       <p className="mt-1.5 text-xs text-muted-foreground">
-        {option.unavailableReason} Nothing here is a placeholder for it — when a
-        provider implements it, this panel becomes the composer.
+        {reason ?? option.unavailableReason} Nothing here is a placeholder for
+        it — when a provider implements it, this panel becomes the composer.
       </p>
     </div>
   );
