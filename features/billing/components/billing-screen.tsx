@@ -293,6 +293,29 @@ export function BillingScreen({
   const grantingPlan =
     billedPlan ?? (entitlement.complimentary ? null : accessPlan);
 
+  /**
+   * Whether a monthly grant may be used as a denominator at all.
+   *
+   * Three conditions, and all of them are necessary:
+   *
+   *   1. The usage window is the **billing period**, not the trailing-30-day
+   *      fallback. Comparing spend in an arbitrary window to "500 credits
+   *      monthly" asserts a relationship that does not exist.
+   *   2. A plan is actually granting credits — complimentary access grants
+   *      none, so there is no denominator to show.
+   *   3. That grant is **recurring**. Free's 100 credits are a one-time
+   *      welcome grant, and rendering "82 of 100 used this period" would
+   *      invent a monthly allowance the Free plan has never had.
+   *
+   * When any fails the bar is dropped and the facts are stated separately,
+   * which is the honest presentation of a pooled wallet.
+   */
+  const allowanceApplies =
+    usage.isBillingPeriod &&
+    grantingPlan !== null &&
+    grantingPlan.tier !== "FREE" &&
+    grantingPlan.monthlyCredits !== null;
+
   /** "Creator grants 500 credits monthly" — never a bare number. */
   const allowanceNote =
     grantingPlan && grantingPlan.monthlyCredits !== null
@@ -585,7 +608,7 @@ export function BillingScreen({
          * access tier's figure here read "860 of 4,800 used" against an
          * allowance that will never arrive.
          */
-        allowance={grantingPlan?.monthlyCredits ?? null}
+        allowance={allowanceApplies ? grantingPlan!.monthlyCredits : null}
         allowanceNote={allowanceNote}
         balance={data.creditBalance}
       />

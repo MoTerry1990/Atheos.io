@@ -65,6 +65,12 @@ export interface InvoiceSummary {
 export interface UsageReport {
   periodStart: number;
   periodEnd: number;
+  /**
+   * True when the window is the subscriber's billing period; false for the
+   * trailing-30-day fallback. Only a billing period may be compared against a
+   * plan's monthly grant.
+   */
+  isBillingPeriod: boolean;
   creditsSpent: number;
   creditsGranted: number;
   generations: number;

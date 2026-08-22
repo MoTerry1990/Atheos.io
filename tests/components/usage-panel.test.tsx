@@ -34,6 +34,7 @@ import type { UsageReport } from "@/features/billing/lib/api";
 const usage: UsageReport = {
   periodStart: Date.UTC(2026, 7, 9),
   periodEnd: Date.UTC(2026, 8, 8),
+  isBillingPeriod: true,
   creditsSpent: 860,
   creditsGranted: 500,
   generations: 47,
@@ -52,7 +53,7 @@ describe("the owner case that was wrong in production", () => {
       />,
     );
 
-    expect(screen.getByText(/of 500 credits used/)).toBeTruthy();
+    expect(screen.getByText(/of 500 used this billing period/)).toBeTruthy();
     // The number that must never appear: Studio's allowance, which
     // complimentary access does not grant.
     expect(screen.queryByText(/4,800/)).toBeNull();
@@ -122,8 +123,9 @@ describe("an owner billed for nothing", () => {
       />,
     );
 
-    expect(screen.getByText(/credits used this period/)).toBeTruthy();
-    expect(screen.queryByText(/of .* credits used/)).toBeNull();
+    expect(screen.getByText("Available balance")).toBeTruthy();
+    expect(screen.getByText("Credits spent in this window")).toBeTruthy();
+    expect(screen.queryByText(/used this billing period/)).toBeNull();
     expect(
       screen.getByText(/Complimentary access grants no credits/),
     ).toBeTruthy();
@@ -142,8 +144,71 @@ describe("an ordinary subscriber", () => {
     );
 
     expect(screen.getByText(/380/)).toBeTruthy();
-    expect(screen.getByText(/of 500 credits used/)).toBeTruthy();
+    expect(screen.getByText(/of 500 used this billing period/)).toBeTruthy();
     // Under the grant and under the balance: neither explainer applies.
     expect(screen.queryByText(/spent more than this period/)).toBeNull();
+  });
+});
+
+describe("the denominator only exists for a real billing period", () => {
+  /**
+   * `creditsSpent` is period-scoped, not lifetime — `usagePeriodFor` returns
+   * the subscription's billing period and `getUsage` filters `createdAt` to it,
+   * netting GENERATION_REFUND against GENERATION_SPEND. That is what makes
+   * "of 500 used this billing period" a true statement rather than a
+   * comparison between a rolling window and a monthly grant.
+   *
+   * When the window is the trailing-30-day fallback, or the grant is one-time,
+   * or nothing grants at all, the caller passes a null allowance and the bar
+   * disappears. These assert the panel honours that rather than inventing one.
+   */
+  it("states separate facts when there is no billing-period metric", () => {
+    render(
+      <UsagePanel
+        usage={{ ...usage, isBillingPeriod: false, creditsSpent: 12_500 }}
+        allowance={null}
+        allowanceNote={null}
+        balance={17_079}
+      />,
+    );
+
+    expect(screen.getByText("Available balance")).toBeTruthy();
+    expect(screen.getByText("17,079 credits")).toBeTruthy();
+    expect(screen.getByText("Credits spent in this window")).toBeTruthy();
+    expect(screen.getByText("12,500")).toBeTruthy();
+
+    // The claim that must not be made: pooled spend measured against a plan.
+    expect(screen.queryByText(/used this billing period/)).toBeNull();
+    expect(screen.queryByText(/of 500/)).toBeNull();
+    expect(screen.queryByText(/of 100/)).toBeNull();
+  });
+
+  it("renders no progress bar without a denominator", () => {
+    // A bar is a claim that something finite is being consumed. Credits pool
+    // and never expire, so with no billing-period grant there is nothing to
+    // draw a fraction of.
+    const { container } = render(
+      <UsagePanel
+        usage={{ ...usage, isBillingPeriod: false }}
+        allowance={null}
+        allowanceNote={null}
+        balance={17_079}
+      />,
+    );
+    expect(container.querySelector('[role="progressbar"]')).toBeNull();
+  });
+
+  it("labels the bar as the billing period when one exists", () => {
+    render(
+      <UsagePanel
+        usage={usage}
+        allowance={500}
+        allowanceNote="Creator grants 500 credits monthly"
+        balance={17_079}
+      />,
+    );
+    // Not "this period" — the billing period specifically, which is the only
+    // window the 500 belongs to.
+    expect(screen.getByText(/used this billing period/)).toBeTruthy();
   });
 });

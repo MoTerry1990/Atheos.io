@@ -261,9 +261,9 @@ describe("the usage panel is a wallet, not a plan meter", () => {
      * complimentary tier grants nothing at all.
      */
     expect(screen).toMatch(/const grantingPlan =/);
-    expect(screen).toMatch(
-      /allowance=\{grantingPlan\?\.monthlyCredits \?\? null\}/,
-    );
+    // Gated on `allowanceApplies` — see the billing-period tests below, which
+    // pin the three conditions that gate it.
+    expect(screen).toMatch(/grantingPlan!\.monthlyCredits/);
     // Never the access tier.
     expect(screen).not.toMatch(/allowance=\{currentPlan\.monthlyCredits\}/);
     expect(screen).not.toMatch(/allowance=\{accessPlan\.monthlyCredits\}/);
@@ -306,11 +306,107 @@ describe("the usage panel is a wallet, not a plan meter", () => {
     expect(panel).toMatch(/draw on your whole balance/i);
   });
 
-  it("collapses to a bare count when no plan grants credits", () => {
-    // An owner with no subscription, or an unsettled allowance: show what was
-    // used and invent no denominator.
-    expect(panel).toMatch(
-      /allowance === null\s*\?\s*"credits used this period"/,
+  it("collapses to separate facts when no plan grants credits", () => {
+    // An owner with no subscription, an unsettled allowance, or a rolling
+    // window: state the balance and the spend, and invent no denominator.
+    expect(panel).toMatch(/Available balance/);
+    expect(panel).toMatch(/Credits spent in this window/);
+    expect(panel).toMatch(/allowance !== null \? \(/);
+  });
+});
+
+describe("the usage window is a billing period, not lifetime", () => {
+  const reporting = readFileSync(
+    resolve(import.meta.dirname, "../..", "services/billing/reporting.ts"),
+    "utf8",
+  );
+  const screen = readFileSync(
+    resolve(
+      import.meta.dirname,
+      "../..",
+      "features/billing/components/billing-screen.tsx",
+    ),
+    "utf8",
+  );
+
+  it("scopes spend to a window rather than summing all time", () => {
+    /**
+     * The question that decides whether a denominator is legitimate at all. If
+     * `creditsSpent` were lifetime ledger spend, comparing it to a monthly
+     * grant would be meaningless — you cannot use 500 monthly credits as the
+     * denominator of everything ever spent.
+     *
+     * It is not lifetime: every aggregate is filtered by `createdAt` within the
+     * period, and refunds are netted against spend.
+     */
+    expect(reporting).toMatch(
+      /const window = \{ gte: period\.start, lt: period\.end \}/,
     );
+    expect(reporting).toMatch(/where: \{ userId, createdAt: window \}/);
+    expect(reporting).toMatch(/-\(spend \+ refunds\)/);
+  });
+
+  it("says which window it used", () => {
+    // A billing period and a rolling 30 days are different claims, and only one
+    // may be compared to a monthly grant.
+    expect(reporting).toMatch(/isBillingPeriod: true/);
+    expect(reporting).toMatch(/isBillingPeriod: false/);
+    expect(reporting).toMatch(/isBillingPeriod: boolean/);
+  });
+
+  it("shows a denominator only for a recurring grant inside a billing period", () => {
+    /**
+     * Three necessary conditions. Dropping any one reintroduces a false claim:
+     * a rolling window measured against a month, a one-time Free grant
+     * presented as monthly, or complimentary access implying an allowance.
+     */
+    expect(screen).toMatch(/const allowanceApplies =/);
+    expect(screen).toMatch(/usage\.isBillingPeriod &&/);
+    expect(screen).toMatch(/grantingPlan\.tier !== "FREE"/);
+    expect(screen).toMatch(
+      /allowance=\{allowanceApplies \? grantingPlan!\.monthlyCredits : null\}/,
+    );
+  });
+
+  it("never labels wallet spend as a monthly figure", () => {
+    // "used this billing period" is only rendered on the branch that has a
+    // billing-period denominator; the fallback states facts separately.
+    const panel = readFileSync(
+      resolve(
+        import.meta.dirname,
+        "../..",
+        "features/billing/components/usage-panel.tsx",
+      ),
+      "utf8",
+    );
+    expect(panel).toMatch(/used this billing period/);
+    expect(panel).toMatch(/Available balance/);
+    expect(panel).toMatch(/Credits spent in this window/);
+    // No copy anywhere claims monthly usage without the billing-period gate.
+    expect(panel).not.toMatch(/credits used this month/i);
+  });
+
+  it("keeps the wallet balance sourced from every ledger entry", () => {
+    /**
+     * `creditBalance` is the cached sum of the whole append-only ledger —
+     * signup grant, packs, subscription grants, adjustments, spend and refunds
+     * — not a per-plan figure. The billing API passes it straight through.
+     */
+    const route = readFileSync(
+      resolve(import.meta.dirname, "../..", "app/api/billing/route.ts"),
+      "utf8",
+    );
+    expect(route).toMatch(/creditBalance/);
+    expect(reporting).toMatch(/sumOf\("SIGNUP_GRANT"\)/);
+    expect(reporting).toMatch(/sumOf\("PACK_PURCHASE"\)/);
+    expect(reporting).toMatch(/sumOf\("MANUAL_ADJUSTMENT"\)/);
+  });
+
+  it("keeps the Creator grant informational and separate from access", () => {
+    // Stated beside the billed plan and its price, never merged into the
+    // access tier's line.
+    expect(screen).toMatch(/Billed subscription:/);
+    expect(screen).toMatch(/billedPlan\.monthlyCredits !== null/);
+    expect(screen).toMatch(/Effective access/);
   });
 });

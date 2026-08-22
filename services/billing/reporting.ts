@@ -83,6 +83,16 @@ export interface UsageBreakdownRow {
 export interface UsageReport {
   periodStart: number;
   periodEnd: number;
+  /**
+   * Whether the window above is the subscriber's **billing period**.
+   *
+   * False means the trailing-30-day fallback, which is a reporting convenience
+   * and not a billing month. The distinction decides whether a plan's monthly
+   * grant may be used as a denominator: comparing spend in an arbitrary 30-day
+   * window against "500 credits monthly" states a relationship that does not
+   * exist.
+   */
+  isBillingPeriod: boolean;
   /** Net credits consumed — spend less refunds. */
   creditsSpent: number;
   creditsGranted: number;
@@ -113,7 +123,7 @@ export interface UsageReport {
  */
 export async function getUsage(
   userId: string,
-  period: { start: Date; end: Date },
+  period: { start: Date; end: Date; isBillingPeriod?: boolean },
 ): Promise<UsageReport> {
   const window = { gte: period.start, lt: period.end };
 
@@ -151,6 +161,7 @@ export async function getUsage(
   return {
     periodStart: period.start.getTime(),
     periodEnd: period.end.getTime(),
+    isBillingPeriod: period.isBillingPeriod ?? false,
     creditsSpent: Math.max(0, -(spend + refunds)),
     creditsGranted:
       sumOf("SUBSCRIPTION_GRANT") +
@@ -182,15 +193,18 @@ export async function getUsage(
 export function usagePeriodFor(entitlement: {
   currentPeriodStart?: number | null;
   currentPeriodEnd?: number | null;
-}): { start: Date; end: Date } {
+}): { start: Date; end: Date; isBillingPeriod: boolean } {
   if (entitlement.currentPeriodStart && entitlement.currentPeriodEnd) {
     return {
       start: new Date(entitlement.currentPeriodStart),
       end: new Date(entitlement.currentPeriodEnd),
+      isBillingPeriod: true,
     };
   }
 
   const end = new Date();
   const start = new Date(end.getTime() - 30 * 24 * 60 * 60 * 1000);
-  return { start, end };
+  // A rolling window, not a billing month. Callers must not compare it to a
+  // monthly allowance — see `isBillingPeriod` on `UsageReport`.
+  return { start, end, isBillingPeriod: false };
 }

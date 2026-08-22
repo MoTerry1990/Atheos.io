@@ -137,6 +137,9 @@ export function createFixtureApi(now: number, scenario: Scenario): BillingApi {
       usage: {
         periodStart: subscribed ? periodStart : now - 30 * day,
         periodEnd: subscribed ? periodEnd : now,
+        // Only a subscriber has a billing period; everyone else gets the
+        // rolling window, which must not be compared to a monthly grant.
+        isBillingPeriod: subscribed,
         /**
          * Wallet consumption, not subscription-credit consumption.
          *

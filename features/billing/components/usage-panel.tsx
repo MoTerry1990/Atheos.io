@@ -100,25 +100,53 @@ export function UsagePanel({
       </div>
 
       <div className="space-y-1.5">
-        <ProgressBar
-          value={
-            allowance && allowance > 0
-              ? Math.min(100, (used / allowance) * 100)
-              : 0
-          }
-          label="Credits used this period"
-        />
-        <p className="flex flex-wrap justify-between gap-2 text-xs text-muted-foreground tabular-nums">
-          <span>
-            <span className="font-medium text-foreground">
-              {used.toLocaleString("en-US")}
-            </span>{" "}
-            {allowance === null
-              ? "credits used this period"
-              : `of ${allowance.toLocaleString("en-US")} credits used`}
-          </span>
-          <span>{balance.toLocaleString("en-US")} balance</span>
-        </p>
+        {/**
+         * The bar only exists when there is a real denominator.
+         *
+         * A progress bar is a claim that something is being consumed out of
+         * something finite. Credits are pooled and never expire, so that claim
+         * only holds for one comparison: spend *inside a billing period*
+         * against the recurring grant that period pays for. Everywhere else —
+         * a rolling 30-day window, a one-time Free grant, complimentary access
+         * that grants nothing — the facts are stated separately instead, with
+         * no bar to imply a limit that is not there.
+         */}
+        {allowance !== null ? (
+          <>
+            <ProgressBar
+              value={
+                allowance > 0 ? Math.min(100, (used / allowance) * 100) : 0
+              }
+              label="Credits used this billing period"
+            />
+            <p className="flex flex-wrap justify-between gap-2 text-xs text-muted-foreground tabular-nums">
+              <span>
+                <span className="font-medium text-foreground">
+                  {used.toLocaleString("en-US")}
+                </span>{" "}
+                {`of ${allowance.toLocaleString("en-US")} used this billing period`}
+              </span>
+              <span>{balance.toLocaleString("en-US")} balance</span>
+            </p>
+          </>
+        ) : (
+          <dl className="space-y-1 text-xs">
+            <div className="flex flex-wrap justify-between gap-2 tabular-nums">
+              <dt className="text-muted-foreground">Available balance</dt>
+              <dd className="font-medium text-foreground">
+                {balance.toLocaleString("en-US")} credits
+              </dd>
+            </div>
+            <div className="flex flex-wrap justify-between gap-2 tabular-nums">
+              <dt className="text-muted-foreground">
+                Credits spent in this window
+              </dt>
+              <dd className="font-medium text-foreground">
+                {used.toLocaleString("en-US")}
+              </dd>
+            </div>
+          </dl>
+        )}
 
         {/* The denominator, attributed. */}
         {allowanceNote ? (
