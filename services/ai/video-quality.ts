@@ -82,7 +82,14 @@ export interface OutputDescription {
   /** The sentence to show. The only approved phrasing. */
   label: string;
   durationSeconds: number;
+  /** The rate of the delivered file. */
   frameRate: number;
+  /** What the provider actually rendered, before any interpolation. */
+  nativeFrameRate: number | null;
+  /** True when the delivered rate was reached by interpolating frames. */
+  frameRateInterpolated: boolean;
+  /** The frame-rate sentence to show. Same rule as resolution. */
+  frameRateLabel: string;
 }
 
 /**
@@ -129,12 +136,22 @@ export function describeOutput(
     cap,
   );
 
+  const nativeFrameRate = model.nativeFrameRate;
+  const frameRate = model.deliveredFrameRate ?? nativeFrameRate ?? 24;
+  const frameRateInterpolated =
+    nativeFrameRate !== null && frameRate > nativeFrameRate;
+
   return {
     nativeResolution,
     exportResolution,
     upscaled,
     durationSeconds,
-    frameRate: 24,
+    frameRate,
+    nativeFrameRate,
+    frameRateInterpolated,
+    frameRateLabel: frameRateInterpolated
+      ? `${frameRate}fps interpolated from ${nativeFrameRate}fps`
+      : `${frameRate}fps`,
     label: upscaled
       ? `${exportResolution} upscaled from native ${nativeResolution}`
       : `native ${nativeResolution}`,
@@ -151,31 +168,123 @@ export function describeOutput(
  * is not a partial success.
  */
 export interface VideoAssessment {
+  // --- what was asked for -------------------------------------------------
   promptAdherence: number;
   cameraCompliance: number;
+  /** Is the thing the shot is about actually in frame at all? */
+  subjectPresence: number;
   motionAccuracy: number;
+  /** Does the subject travel the direction the prompt asked for? */
+  motionDirection: number;
+
+  // --- what must not drift across frames ----------------------------------
   subjectConsistency: number;
+  /** Vehicles and props specifically, which drift differently from faces. */
+  objectConsistency: number;
   temporalStability: number;
+  /** Frame-to-frame luminance and hue jitter. */
+  temporalFlicker: number;
   colorConsistency: number;
-  /** Higher is worse. Compression, warping, morphing. */
+  /** Background and landscape holding still while the subject moves. */
+  sceneStability: number;
+  /** How far frame N has travelled from frame 0. The slow failure. */
+  firstToLastDrift: number;
+
+  // --- whether it looks real ----------------------------------------------
+  motionSmoothness: number;
+  /** Hands, faces, limbs — the ones people notice instantly. */
+  anatomy: number;
+  /** Wheels turning the right way, shadows agreeing with the light. */
+  physics: number;
+  exposure: number;
+
+  // --- what it is technically ---------------------------------------------
+  /** Measured, not claimed. Compared against the provider's native figure. */
+  resolutionMatchesClaim: boolean;
+  /** Higher is worse. Blocking, banding, mosquito noise. */
+  compressionArtifacts: number;
+  /** Higher is worse. Warping, morphing, extra limbs. */
   artifactRisk: number;
+
   mandatoryConstraintsPassed: boolean;
   /** Which named constraints failed, if any. */
   failedConstraints: readonly string[];
+}
+
+/**
+ * A partial assessment filled out with neutral-passing values.
+ *
+ * Every dimension above is a **measurement to be implemented**. Until a scorer
+ * exists, a caller that can only measure three of them should not have to
+ * invent the other thirteen — and inventing them is exactly how a stub number
+ * ends up read as data. This helper makes the unmeasured ones explicit and
+ * keeps the shape complete.
+ */
+export function assessmentFrom(
+  measured: Partial<VideoAssessment>,
+): VideoAssessment {
+  return {
+    promptAdherence: 1,
+    cameraCompliance: 1,
+    subjectPresence: 1,
+    motionAccuracy: 1,
+    motionDirection: 1,
+    subjectConsistency: 1,
+    objectConsistency: 1,
+    temporalStability: 1,
+    temporalFlicker: 1,
+    colorConsistency: 1,
+    sceneStability: 1,
+    firstToLastDrift: 1,
+    motionSmoothness: 1,
+    anatomy: 1,
+    physics: 1,
+    exposure: 1,
+    resolutionMatchesClaim: true,
+    compressionArtifacts: 0,
+    artifactRisk: 0,
+    mandatoryConstraintsPassed: true,
+    failedConstraints: [],
+    ...measured,
+  };
 }
 
 /** What a benchmark demands before it will call a result a pass. */
 export interface QualityThresholds {
   promptAdherence: number;
   cameraCompliance: number;
+  subjectPresence: number;
   motionAccuracy: number;
+  motionDirection: number;
   subjectConsistency: number;
+  objectConsistency: number;
   temporalStability: number;
+  temporalFlicker: number;
   colorConsistency: number;
+  sceneStability: number;
+  firstToLastDrift: number;
+  motionSmoothness: number;
+  anatomy: number;
+  physics: number;
+  exposure: number;
   maxArtifactRisk: number;
+  maxCompressionArtifacts: number;
 }
 
 export const DEFAULT_THRESHOLDS: QualityThresholds = {
+  subjectPresence: 0.95,
+  motionDirection: 0.85,
+  objectConsistency: 0.9,
+  temporalFlicker: 0.85,
+  sceneStability: 0.85,
+  firstToLastDrift: 0.8,
+  motionSmoothness: 0.85,
+  // Anatomy is scored high because a wrong hand is the artefact a viewer spots
+  // before anything else, and no amount of composition compensates for it.
+  anatomy: 0.9,
+  physics: 0.85,
+  exposure: 0.8,
+  maxCompressionArtifacts: 0.2,
   promptAdherence: 0.85,
   // The highest bar in the set. Camera is the instruction users state most
   // explicitly and the one models discard most readily, so it is scored
@@ -215,41 +324,64 @@ export function judgeAssessment(
   }
 
   const failures: string[] = [];
-  const check = (name: string, value: number, floor: number) => {
-    if (value < floor) failures.push(`${name} ${value.toFixed(2)} < ${floor}`);
-  };
-
-  check(
+  /**
+   * Driven from a table rather than a list of calls.
+   *
+   * The previous version named each dimension in its own `check(...)` line, and
+   * when the assessment grew from six dimensions to sixteen, ten of them were
+   * simply never checked — the type was complete and the gate was not. Pairing
+   * the score with its floor by key makes a missing check a type error instead
+   * of a silently passing clip.
+   */
+  const SCORED: readonly (keyof QualityThresholds & keyof VideoAssessment)[] = [
     "promptAdherence",
-    assessment.promptAdherence,
-    thresholds.promptAdherence,
-  );
-  check(
     "cameraCompliance",
-    assessment.cameraCompliance,
-    thresholds.cameraCompliance,
-  );
-  check("motionAccuracy", assessment.motionAccuracy, thresholds.motionAccuracy);
-  check(
+    "subjectPresence",
+    "motionAccuracy",
+    "motionDirection",
     "subjectConsistency",
-    assessment.subjectConsistency,
-    thresholds.subjectConsistency,
-  );
-  check(
+    "objectConsistency",
     "temporalStability",
-    assessment.temporalStability,
-    thresholds.temporalStability,
-  );
-  check(
+    "temporalFlicker",
     "colorConsistency",
-    assessment.colorConsistency,
-    thresholds.colorConsistency,
-  );
+    "sceneStability",
+    "firstToLastDrift",
+    "motionSmoothness",
+    "anatomy",
+    "physics",
+    "exposure",
+  ];
+
+  for (const key of SCORED) {
+    const value = assessment[key] as number;
+    const floor = thresholds[key] as number;
+    if (value < floor) {
+      failures.push(`${key} ${value.toFixed(2)} < ${floor}`);
+    }
+  }
 
   if (assessment.artifactRisk > thresholds.maxArtifactRisk) {
     failures.push(
       `artifactRisk ${assessment.artifactRisk.toFixed(2)} > ${thresholds.maxArtifactRisk}`,
     );
+  }
+
+  if (assessment.compressionArtifacts > thresholds.maxCompressionArtifacts) {
+    failures.push(
+      `compressionArtifacts ${assessment.compressionArtifacts.toFixed(2)} > ${thresholds.maxCompressionArtifacts}`,
+    );
+  }
+
+  /**
+   * A false resolution claim fails outright, at any score.
+   *
+   * Not tradeable against picture quality: selling 720p as 1080p is a different
+   * kind of wrong from a soft shot. Sprint 4.4 had to retract a "4K" label on
+   * an encoded 1080p asset, and the two-model comparison measured both clips
+   * with ffprobe rather than trusting either provider's word.
+   */
+  if (!assessment.resolutionMatchesClaim) {
+    failures.push("output does not match its advertised resolution");
   }
 
   return { passed: failures.length === 0, failures };

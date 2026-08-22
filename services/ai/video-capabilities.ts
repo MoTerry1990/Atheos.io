@@ -91,6 +91,19 @@ export interface VideoModelCapability {
 
   /** Is this wired into the product today? */
   available: boolean;
+  /**
+   * Frames per second the provider actually renders, before interpolation.
+   *
+   * Separate from what the file reports. Motion 1 generates at 16fps and ships
+   * a 30fps file because `interpolate_output` defaults on — measured with
+   * ffprobe on a real clip: 152 frames across 5.07s. Calling that "30fps" with
+   * no qualifier is the same class of claim as calling an upscale "1080p".
+   */
+  nativeFrameRate: number | null;
+  /** Frame rate of the delivered file, when the provider interpolates. */
+  deliveredFrameRate: number | null;
+  /** Measured end-to-end latency, seconds. Null until one has been timed. */
+  measuredLatencySeconds: number | null;
   /** ISO date the provider schema was last read. */
   verifiedAt: string;
   /** What a reader should know before trusting the row. */
@@ -123,6 +136,11 @@ export const VIDEO_CAPABILITIES: readonly VideoModelCapability[] = [
     negativePrompt: false,
     seed: true,
     // Length is frames ÷ fps, not a duration input: 81 and 121 frames at 16fps.
+    nativeFrameRate: 16,
+    // interpolate_output defaults on, so the file is 30fps from 16fps source.
+    deliveredFrameRate: 30,
+    // Sprint 6C: 5s clip, submitted to delivered.
+    measuredLatencySeconds: 300,
     durationsSeconds: [5, 7.5],
     resolutions: ["480p", "720p"],
     aspectRatios: ["16:9", "9:16"],
@@ -169,6 +187,10 @@ export const VIDEO_CAPABILITIES: readonly VideoModelCapability[] = [
     negativePrompt: false,
     seed: true,
     // `duration` is a free integer with no enum; the catalogue offers steps.
+    nativeFrameRate: 24,
+    deliveredFrameRate: 24,
+    // Sprint 6C: 5s clip, noticeably slower than Motion 1.
+    measuredLatencySeconds: 700,
     durationsSeconds: [5, 10, 12],
     resolutions: ["480p", "720p", "1080p"],
     aspectRatios: ["16:9", "4:3", "1:1", "3:4", "9:16", "21:9", "9:21"],
@@ -214,6 +236,9 @@ export const VIDEO_CAPABILITIES: readonly VideoModelCapability[] = [
     cameraControl: false,
     negativePrompt: true,
     seed: true,
+    nativeFrameRate: 24,
+    deliveredFrameRate: 24,
+    measuredLatencySeconds: null,
     durationsSeconds: [4, 6, 8],
     resolutions: ["720p", "1080p"],
     aspectRatios: ["16:9", "9:16"],

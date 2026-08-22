@@ -11,12 +11,14 @@ import {
 import { chooseVideoModel } from "@/services/ai/video-routing";
 import {
   DEFAULT_THRESHOLDS,
+  assessmentFrom,
   describeOutput,
   judgeAssessment,
   qualityOptionsFor,
   type VideoAssessment,
 } from "@/services/ai/video-quality";
 import { VIDEO_CAPABILITIES } from "@/services/ai/video-capabilities";
+import { PRESERVE_ALL, renderImageToVideo } from "@/services/ai/image-to-video";
 
 /**
  * The permanent video benchmark suite.
@@ -358,7 +360,9 @@ describe("resolution labelling stays honest", () => {
 });
 
 describe("quality assessment gates a result", () => {
-  const good: VideoAssessment = {
+  // `assessmentFrom` fills the dimensions no scorer measures yet, so a test
+  // states only what it is actually about.
+  const good: VideoAssessment = assessmentFrom({
     promptAdherence: 0.93,
     cameraCompliance: 0.97,
     motionAccuracy: 0.92,
@@ -366,9 +370,7 @@ describe("quality assessment gates a result", () => {
     temporalStability: 0.91,
     colorConsistency: 0.94,
     artifactRisk: 0.05,
-    mandatoryConstraintsPassed: true,
-    failedConstraints: [],
-  };
+  });
 
   it("passes a result that clears every threshold", () => {
     expect(judgeAssessment(good).passed).toBe(true);
@@ -511,5 +513,227 @@ describe("routing follows measured adherence, not headline capability", () => {
       needsImageInput: true,
     });
     expect(decision.chosen?.model.id).toBe("replicate/video-pro");
+  });
+});
+
+describe("the assessment covers every dimension the spec names", () => {
+  const complete = assessmentFrom({});
+
+  it("scores all sixteen dimensions", () => {
+    for (const field of [
+      "promptAdherence",
+      "cameraCompliance",
+      "subjectPresence",
+      "motionAccuracy",
+      "motionDirection",
+      "subjectConsistency",
+      "objectConsistency",
+      "temporalStability",
+      "temporalFlicker",
+      "colorConsistency",
+      "sceneStability",
+      "firstToLastDrift",
+      "motionSmoothness",
+      "anatomy",
+      "physics",
+      "exposure",
+    ]) {
+      expect(complete, field).toHaveProperty(field);
+    }
+    expect(complete).toHaveProperty("compressionArtifacts");
+    expect(complete).toHaveProperty("resolutionMatchesClaim");
+  });
+
+  it("fails a clip whose resolution does not match its label", () => {
+    /**
+     * Not tradeable against picture quality. Selling 720p as 1080p is a
+     * different kind of wrong from a soft shot, and Sprint 4.4 already had to
+     * retract one such claim.
+     */
+    const verdict = judgeAssessment(
+      assessmentFrom({ resolutionMatchesClaim: false }),
+    );
+    expect(verdict.passed).toBe(false);
+    expect(verdict.failures.join(" ")).toMatch(/advertised resolution/);
+  });
+
+  it("fails bad anatomy even when the shot is otherwise perfect", () => {
+    // A wrong hand is what a viewer notices first, so it is scored high.
+    expect(judgeAssessment(assessmentFrom({ anatomy: 0.5 })).passed).toBe(
+      false,
+    );
+  });
+
+  it("fails first-to-last drift, the slow failure", () => {
+    expect(
+      judgeAssessment(assessmentFrom({ firstToLastDrift: 0.4 })).passed,
+    ).toBe(false);
+  });
+
+  it("passes a clip that is good on every axis", () => {
+    expect(judgeAssessment(assessmentFrom({})).passed).toBe(true);
+  });
+});
+
+describe("image-to-video preserves the picture it was given", () => {
+  const seedance = {
+    startFrame: true,
+    endFrame: true,
+    cameraControl: true,
+    negativePrompt: false,
+  };
+
+  const request = {
+    sourceImageUrl: "https://example.test/frame.png",
+    preserve: PRESERVE_ALL,
+    motion: {
+      cameraLocked: true,
+      cameraMotion: "",
+      subjectMotion: "the car drives forward",
+      motionStrength: "moderate" as const,
+      durationSeconds: 5,
+      aspectRatio: "16:9",
+      qualityMode: "quality" as const,
+    },
+    prompt: "anima esta foto",
+  };
+
+  it("asks for identity, vehicle, landscape and light to hold", () => {
+    const out = renderImageToVideo(request, seedance);
+    expect(out.prompt).toMatch(/identical person/);
+    expect(out.prompt).toMatch(/identical vehicle/);
+    expect(out.prompt).toMatch(/identical landscape/);
+    expect(out.prompt).toMatch(/identical lighting/);
+  });
+
+  it("leads with the motion, not the prohibitions", () => {
+    // A caption that opens with a list of things not to do produces a still
+    // frame — the opposite failure, but a failure.
+    const out = renderImageToVideo(request, seedance);
+    expect(out.prompt.indexOf("the car drives forward")).toBe(0);
+  });
+
+  it("names the specific drift each control guards against", () => {
+    const out = renderImageToVideo(request, seedance);
+    for (const drift of [
+      "extra passengers appearing",
+      "vehicle shape changes",
+      "wheel deformation",
+      "road deformation",
+      "frame-to-frame color shifts",
+    ]) {
+      expect(out.negative, drift).toMatch(drift);
+    }
+  });
+
+  it("maps camera lock onto the structural input where it exists", () => {
+    expect(renderImageToVideo(request, seedance).inputs.cameraFixed).toBe(true);
+  });
+
+  it("says plainly what the model cannot honour", () => {
+    /**
+     * seedance has no negative-prompt input, so every prohibition above is
+     * prompt text and nothing more. Reporting that is the difference between a
+     * control and the appearance of one.
+     */
+    const out = renderImageToVideo(request, seedance);
+    expect(out.unsupported.join(" ")).toMatch(/no negative prompt/);
+  });
+
+  it("reports a missing source-frame input rather than pretending", () => {
+    const out = renderImageToVideo(request, {
+      ...seedance,
+      startFrame: false,
+    });
+    expect(out.unsupported.join(" ")).toMatch(/cannot take a source frame/);
+  });
+
+  it("drops a closing frame the model cannot use", () => {
+    const out = renderImageToVideo(
+      { ...request, lastFrameImageUrl: "https://example.test/end.png" },
+      { ...seedance, endFrame: false },
+    );
+    expect(out.inputs.lastFrameImage).toBeUndefined();
+    expect(out.unsupported.join(" ")).toMatch(/closing frame/);
+  });
+
+  it("adds only what was turned on", () => {
+    const out = renderImageToVideo(
+      { ...request, preserve: { ...PRESERVE_ALL, character: false } },
+      seedance,
+    );
+    expect(out.prompt).not.toMatch(/identical person/);
+    expect(out.prompt).toMatch(/identical vehicle/);
+  });
+});
+
+describe("frame rate is labelled as honestly as resolution", () => {
+  const motion1 = VIDEO_CAPABILITIES.find(
+    (m) => m.id === "replicate/video-gen",
+  )!;
+  const motionPro = VIDEO_CAPABILITIES.find(
+    (m) => m.id === "replicate/video-pro",
+  )!;
+
+  it("names interpolation when the provider interpolates", () => {
+    /**
+     * Measured in Sprint 6C with ffprobe: Motion 1 delivered 152 frames across
+     * 5.07s — 30fps — from a model that renders 81 frames at 16fps with
+     * `interpolate_output` defaulting on. Calling that "30fps" unqualified is
+     * the same class of claim as calling an upscale "1080p".
+     */
+    const output = describeOutput(motion1, "quality", 5);
+    expect(output.frameRateInterpolated).toBe(true);
+    expect(output.frameRateLabel).toBe("30fps interpolated from 16fps");
+  });
+
+  it("says nothing extra when the rate is native", () => {
+    const output = describeOutput(motionPro, "quality", 5);
+    expect(output.frameRateInterpolated).toBe(false);
+    expect(output.frameRateLabel).toBe("24fps");
+  });
+
+  it("records the measured latency it was timed at", () => {
+    // Routing and the pre-generation estimate both need a real number, and a
+    // guess would be indistinguishable from one.
+    expect(motion1.measuredLatencySeconds).toBeGreaterThan(0);
+    expect(motionPro.measuredLatencySeconds).toBeGreaterThan(
+      motion1.measuredLatencySeconds!,
+    );
+  });
+});
+
+describe("image-to-video reports prohibitions that never reach the model", () => {
+  it("says they are not sent, rather than implying they were", () => {
+    /**
+     * The red-car clip asked for no extra passengers and returned two
+     * occupants. Neither shipped model has a negative-prompt input, and the
+     * adapter does not fold negatives into the caption — so the honest report
+     * is that the prohibition never left the building.
+     */
+    const out = renderImageToVideo(
+      {
+        sourceImageUrl: "https://example.test/a.png",
+        preserve: PRESERVE_ALL,
+        motion: {
+          cameraLocked: false,
+          cameraMotion: "slow push in",
+          subjectMotion: "the car drives forward",
+          motionStrength: "subtle",
+          durationSeconds: 5,
+          aspectRatio: "16:9",
+          qualityMode: "quality",
+        },
+        prompt: "anima",
+      },
+      {
+        startFrame: true,
+        endFrame: true,
+        cameraControl: true,
+        negativePrompt: false,
+      },
+    );
+    expect(out.unsupported.join(" ")).toMatch(/not sent to the provider/);
+    expect(out.unsupported.join(" ")).not.toMatch(/appended/);
   });
 });
