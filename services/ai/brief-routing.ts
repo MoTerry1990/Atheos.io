@@ -81,7 +81,9 @@ export const MODEL_CAPABILITIES: ModelCapability[] = [
     acceptsImageInput: true,
     canDirectMultipleShots: true,
     canProduceHardCuts: false,
-    creditsPerGeneration: 576,
+    // 8s x $0.15/s with audio x 3.0 margin / $0.005 = 720. Was 576, which is
+    // 2.40x — the same underpricing the registry carried at 288.
+    creditsPerGeneration: 720,
     estimatedSeconds: 130,
   },
   {
@@ -97,20 +99,27 @@ export const MODEL_CAPABILITIES: ModelCapability[] = [
     creditsPerGeneration: 1920,
     estimatedSeconds: 110,
   },
-  {
-    id: "replicate/seedance-2.5",
-    label: "Cinematic Long",
-    maxDurationSeconds: 30,
-    maxResolution: "720p",
-    acceptsReferenceImages: true,
-    acceptsImageInput: true,
-    canDirectMultipleShots: true,
-    canProduceHardCuts: false,
-    // $0.2312/s at 720p; 10s is $2.31, and 3x margin at $0.005/credit.
-    creditsPerGeneration: 1_387,
-    estimatedSeconds: 200,
-  },
 ];
+
+/**
+ * TODO(motion-pro-upgrade): `replicate/seedance-2.5` — "Cinematic Long".
+ *
+ * Removed here because it was a **phantom**: routable, compilable and quoted at
+ * 1,387 credits, but absent from `services/ai/providers/replicate.ts`, so it had
+ * no version pin and no adapter path. Nothing could ever run it. A model the
+ * router can recommend and the provider has never heard of is worse than an
+ * absent one — the quote is real, the refusal happens after the user commits.
+ *
+ * Bring it back as part of the Motion Pro upgrade (seedance-1-lite ->
+ * seedance-2.x), which needs, together and in one change:
+ *   - a registry entry with a pinned version hash,
+ *   - a `model-costs` entry ($0.2312/s at 720p, verified 2026-08-24),
+ *   - its own `videoShape` branch (it takes `duration` in seconds, plus
+ *     `generate_audio`, `reference_images` and `last_frame_image`),
+ *   - the audio strategy and routing rows restored below,
+ *   - and a re-read of its live schema, because this one is nine months newer
+ *     than the entry that was removed.
+ */
 
 export interface RoutingVerdict {
   model: ModelCapability;

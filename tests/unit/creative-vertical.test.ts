@@ -129,15 +129,18 @@ describe("17. the compiler is chosen by model, and they differ", () => {
 
   it("compiles the same brief differently for different models", () => {
     /**
-     * The point of the dispatcher. One brief, four models, four different
+     * The point of the dispatcher. One brief, three models, three different
      * requests — rather than one expanded string sent everywhere.
+     *
+     * Was four, the fourth being `seedance-2.5`. It had a compiler and no
+     * registry entry, so this assertion was proving that a model nothing could
+     * submit to compiled differently from three that could.
      */
     const continuous = continuousSilentBrief();
     const outputs = [
       "replicate/video-gen",
       "replicate/video-pro",
       "replicate/veo-3.1",
-      "replicate/seedance-2.5",
     ].map((id) => compileForModel(continuous, MODEL[id]));
 
     const prompts = new Set(outputs.map((o) => o.prompt));
@@ -150,15 +153,10 @@ describe("17. the compiler is chosen by model, and they differ", () => {
 
   it("sends a negative prompt only where the input exists", () => {
     const continuous = continuousSilentBrief();
-    const seedance = compileForModel(
-      continuous,
-      MODEL["replicate/seedance-2.5"],
-    );
     const pro = compileForModel(continuous, MODEL["replicate/video-pro"]);
     const motion1 = compileForModel(continuous, MODEL["replicate/video-gen"]);
 
-    // Neither seedance tier nor wan-2.2 has a negative_prompt field.
-    expect(seedance.negativePrompt).toBe("");
+    // Neither seedance-1-lite nor wan-2.2 has a negative_prompt field.
     expect(pro.negativePrompt).toBe("");
     expect(motion1.negativePrompt).toBe("");
     expect(

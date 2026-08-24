@@ -394,6 +394,112 @@ export const MODEL_COSTS: readonly ModelCostEntry[] = [
   // ------------------------------------------------------------------------
   // Audio
   // ------------------------------------------------------------------------
+  /**
+   * The Veo 3.1 tiers, behind `ENABLE_VEO_31`.
+   *
+   * Costs read from Replicate's published pricing panels on 2026-08-24 and
+   * re-verified the same day before these numbers were written down:
+   *
+   *   veo-3.1        $0.40/s with audio, $0.20/s silent
+   *   veo-3.1-fast   $0.15/s with audio, $0.10/s silent
+   *   veo-3.1-lite   $0.05/s at 720p,    $0.08/s at 1080p (audio always on)
+   *
+   * Every entry is priced with **audio on**, at the model's *base* duration —
+   * `creditCost` is the base price and `services/ai/pricing.ts` scales it by
+   * `durationSeconds / min(durations)`, so a floor that holds at 4 seconds holds
+   * at 8 as well. `assumptions.maxDurationSeconds` records the longest clip for
+   * the audit trail.
+   *
+   * Only `veo-3.1-fast` was actually mispriced: 288 credits against a $0.60
+   * base cost is 2.40x, under the 3.0x video floor. The other two were already
+   * correct.
+   *
+   * Still `estimated`: these are Replicate's list prices, not a reconciled
+   * invoice line. One metered run closes that, and until it does the models
+   * stay behind the flag.
+   *
+   * ## Priced on the Replicate route, deliberately
+   *
+   * Replicate is the operational path — it is the only adapter that exists, and
+   * every Veo generation goes through it. The rates below are Replicate's own,
+   * per model, and they are **not** interchangeable:
+   *
+   *   veo-3.1        $0.40/s     veo-3.1-fast   $0.15/s     veo-3.1-lite $0.05-$0.08/s
+   *
+   * Applying one tier's rate to the others is the specific mistake this comment
+   * exists to prevent: $0.15/s against `veo-3.1`'s real $0.40/s would price it
+   * at **1.13x**, well under the 3.0x floor, while overcharging Lite by ~3x.
+   *
+   * TODO(google-direct): Google's own API is cheaper for the Fast tier —
+   * $0.10/s at 720p and $0.12/s at 1080p against Replicate's flat $0.15/s, a
+   * 33%/20% saving (verified 2026-08-24, `docs/UNIT_ECONOMICS.md` § 3). Lite
+   * and Standard are identically priced on both, so only Fast justifies a
+   * direct adapter. Building one needs `GOOGLE_AI_API_KEY`,
+   * `ENABLE_GOOGLE_DIRECT`, a route-selection layer and a second set of cost
+   * entries keyed by route — a sprint of its own. Until then these figures are
+   * the ones that bill.
+   */
+  {
+    modelId: "replicate/veo-3.1-fast",
+    provider: "replicate",
+    modality: "VIDEO",
+    perOutputMicroUsd: 0,
+    perSecondMicroUsd: 150_000,
+    billingUnit: "per_second",
+    assumptions: {
+      maxDurationSeconds: 8,
+      resolution: "720p or 1080p — Replicate charges one flat rate",
+      note: "With audio. Silent is $0.10/s; priced on the dearer variant.",
+    },
+    // Base duration is 4s; the charge scales x2 at 8s via durationMultiplier.
+    // 4s x $0.15 x 3.0 / $0.005 = 360.
+    creditCost: 360,
+    enabled: true,
+    freeTierEligible: false,
+    minimumMarginMultiple: 3,
+    verification: "estimated",
+    checked: "2026-08-24 (Replicate published pricing panel)",
+  },
+  {
+    modelId: "replicate/veo-3.1",
+    provider: "replicate",
+    modality: "VIDEO",
+    perOutputMicroUsd: 0,
+    perSecondMicroUsd: 400_000,
+    billingUnit: "per_second",
+    assumptions: {
+      maxDurationSeconds: 8,
+      note: "With audio. Silent is $0.20/s; priced on the dearer variant.",
+    },
+    // 4s x $0.40 x 3.0 / $0.005 = 960, scaling to 1,920 at 8s.
+    creditCost: 960,
+    enabled: true,
+    freeTierEligible: false,
+    minimumMarginMultiple: 3,
+    verification: "estimated",
+    checked: "2026-08-24 (Replicate published pricing panel)",
+  },
+  {
+    modelId: "replicate/veo-3.1-lite",
+    provider: "replicate",
+    modality: "VIDEO",
+    perOutputMicroUsd: 0,
+    // 1080p, the dearer of the two rungs the customer can select.
+    perSecondMicroUsd: 80_000,
+    billingUnit: "per_second",
+    assumptions: {
+      maxDurationSeconds: 8,
+      resolution: "1080p worst case; 720p is $0.05/s",
+      note: "Audio cannot be disabled on this model.",
+    },
+    // 4s x $0.08 x 3.0 / $0.005 = 192, scaling to 384 at 8s.
+    creditCost: 192,
+    enabled: true,
+    freeTierEligible: false,
+    minimumMarginMultiple: 3,
+    verification: "estimated",
+    checked: "2026-08-24 (Replicate published pricing panel)",
+  },
   {
     modelId: "replicate/music",
     provider: "replicate",

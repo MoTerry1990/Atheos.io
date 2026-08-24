@@ -314,14 +314,26 @@ describe("the server rejects what the client might not", () => {
   });
 
   it("allows a model that can do the work", () => {
+    /**
+     * The duration is relaxed to 8 seconds, and that is a product fact rather
+     * than test convenience.
+     *
+     * `SHORT_PROMPT` asks for ten. The only model that could serve ten was
+     * `seedance-2.5`, whose routing row claimed a 30-second ceiling — and which
+     * no adapter has ever been able to reach. With the phantom removed, the
+     * longest clip Atheos can actually produce with native audio is **8
+     * seconds**, because that is Veo 3.1's ceiling.
+     *
+     * So this assertion now uses a brief the catalogue can genuinely satisfy.
+     * The ten-second case is covered by the refusal tests above, which is where
+     * it belongs until a real long-form model is registered.
+     */
     const relaxed = confirmField(
-      confirmField(brief, "shotCount", 1),
+      confirmField(confirmField(brief, "shotCount", 1), "durationSeconds", 8),
       "resolution" as never,
       "720p" as never,
     );
-    expect(rejectIfIncompatible(relaxed, "replicate/seedance-2.5").ok).toBe(
-      true,
-    );
+    expect(rejectIfIncompatible(relaxed, "replicate/veo-3.1").ok).toBe(true);
   });
 });
 

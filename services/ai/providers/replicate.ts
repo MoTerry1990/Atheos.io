@@ -61,6 +61,19 @@ const API = "https://api.replicate.com/v1";
  * Set `ENABLE_VEO_31=1` to exercise them. Do that only after the approved
  * benchmark has produced an invoice line to price against.
  */
+/**
+ * The Veo family, by id.
+ *
+ * Declared outside the flag-gated array so `videoShape` can recognise a Veo
+ * request whether or not the flag is on — the adapter's job is to know what a
+ * model's schema takes, and that does not change with a feature flag.
+ */
+const VEO_MODEL_IDS = new Set([
+  "replicate/veo-3.1",
+  "replicate/veo-3.1-fast",
+  "replicate/veo-3.1-lite",
+]);
+
 const VEO_MODELS: (ProviderModel & { version: string })[] =
   env.ENABLE_VEO_31 === "1"
     ? [
@@ -69,8 +82,20 @@ const VEO_MODELS: (ProviderModel & { version: string })[] =
           providerId: "replicate",
           displayName: "Cinematic Fast",
           modality: "VIDEO",
-          // 288 at the 4s base — see creditsAtMargin in services/ai/sequence.ts.
-          creditCost: 288,
+          /**
+           * 360, not 288.
+           *
+           * `creditCost` is the price at the model's **base** duration; the
+           * charge then scales by `durationSeconds / min(durations)` in
+           * `services/ai/pricing.ts`. So the floor has to hold at 4 seconds and
+           * the multiplier carries it to 8.
+           *
+           * At 4s with audio Replicate charges $0.15/s = $0.60. 288 credits is
+           * $1.44, which is 2.40x against a 3.0x video floor — the only Veo
+           * tier that was actually underpriced. 4s x $0.15 x 3.0 / $0.005 = 360,
+           * which charges 720 at 8s and holds exactly 3.00x there too.
+           */
+          creditCost: 360,
           version:
             "ba987aceebef53bebfede32973f842fe3aa2301bf2585878181e7a7677052e36",
           capabilities: {
@@ -90,6 +115,7 @@ const VEO_MODELS: (ProviderModel & { version: string })[] =
           providerId: "replicate",
           displayName: "Cinematic",
           modality: "VIDEO",
+          // 4s x $0.40 with audio x 3.0 / $0.005 = 960, scaling to 1,920 at 8s.
           creditCost: 960,
           version:
             "9c6ca0c25d89ac6102278405a0673fd929b7793856870d2718e3a84a5aa4ad4d",
@@ -110,6 +136,7 @@ const VEO_MODELS: (ProviderModel & { version: string })[] =
           providerId: "replicate",
           displayName: "Cinematic Lite",
           modality: "VIDEO",
+          // 4s at 1080p ($0.08/s, the dearer rung) = $0.32. x3.0 / $0.005 = 192.
           creditCost: 192,
           version:
             "fe0ac882f170a9ee79aa4940abe83fa09f68b1e074cde15c7693a1e2728a9558",
@@ -446,6 +473,72 @@ function videoFrames(durationSeconds: number | undefined): number {
   return durationSeconds && durationSeconds > 5 ? 121 : 81;
 }
 
+/**
+ * The length/resolution shape each video family actually accepts.
+ *
+ * ## Why this is a function and not a ternary
+ *
+ * It was a ternary: `video-pro` got seconds, and **everything else** got
+ * `num_frames` at 720p. That "everything else" silently included all three Veo
+ * models, whose schema has no `num_frames` field at all — it takes `duration`
+ * from the enum [4, 6, 8] plus `generate_audio`. Enabling `ENABLE_VEO_31` would
+ * therefore have sent every Veo job a parameter the model cannot parse, and the
+ * provider would have rejected it *after* the credits were reserved.
+ *
+ * That is the same defect class as the `image` field on Motion 1, and the same
+ * lesson: a default branch in an adapter is a promise that every future model
+ * looks like the one it was written for.
+ */
+function videoShape(
+  request: GenerationRequest,
+  model: ProviderModel,
+): Record<string, unknown> {
+  const aspect = request.aspectRatio === "9:16" ? "9:16" : "16:9";
+
+  if (VEO_MODEL_IDS.has(model.id)) {
+    /**
+     * Veo takes whole seconds from a fixed enum. A request for 5s has to become
+     * one of 4, 6 or 8 — snapping *down* so the customer is never billed for a
+     * second they did not ask for.
+     */
+    const allowed = model.capabilities.durations ?? [4, 6, 8];
+    const wanted = request.durationSeconds ?? 8;
+    const duration =
+      [...allowed].sort((a, b) => b - a).find((d) => d <= wanted) ??
+      Math.min(...allowed);
+
+    return {
+      duration,
+      aspect_ratio: aspect,
+      resolution: request.videoResolution === "1080p" ? "1080p" : "720p",
+      /**
+       * Audio is the model's own default and the reason these tiers exist.
+       * Sent explicitly rather than relied upon: `veo-3.1-lite` cannot turn it
+       * off at all, and a silent request has to be a refusal upstream rather
+       * than a flag the provider quietly ignores.
+       */
+      generate_audio: request.generateAudio ?? true,
+    };
+  }
+
+  if (model.id === "replicate/video-pro") {
+    // Seedance: seconds, 4-12, and its own resolution ladder.
+    return {
+      duration: Math.min(12, Math.max(4, request.durationSeconds ?? 5)),
+      aspect_ratio: request.aspectRatio ?? "16:9",
+      resolution: "1080p",
+      fps: 24,
+    };
+  }
+
+  // wan-2.2: length is frames at 16fps, 81-121.
+  return {
+    num_frames: videoFrames(request.durationSeconds),
+    aspect_ratio: aspect,
+    resolution: "720p",
+  };
+}
+
 function buildInput(
   request: GenerationRequest,
   model: ProviderModel,
@@ -479,20 +572,7 @@ function buildInput(
         ...(source && model.capabilities.supportsImageInput
           ? { image: source }
           : {}),
-        ...(model.id === "replicate/video-pro"
-          ? {
-              // Seedance: seconds, 4-12, and its own resolution ladder.
-              duration: Math.min(12, Math.max(4, request.durationSeconds ?? 5)),
-              aspect_ratio: request.aspectRatio ?? "16:9",
-              resolution: "1080p",
-              fps: 24,
-            }
-          : {
-              // wan-2.2: length is frames at 16fps, 81-121.
-              num_frames: videoFrames(request.durationSeconds),
-              aspect_ratio: request.aspectRatio === "9:16" ? "9:16" : "16:9",
-              resolution: "720p",
-            }),
+        ...videoShape(request, model),
         ...(request.seed !== undefined ? { seed: request.seed } : {}),
       };
 

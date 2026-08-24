@@ -148,6 +148,22 @@ export interface GenerationRequest {
   imageResolution?: string;
   /** Clip length in seconds. Video operations only. */
   durationSeconds?: number;
+  /**
+   * "720p" | "1080p" for video models that price by resolution.
+   *
+   * Separate from `imageResolution`: the vocabularies do not overlap, and one
+   * shared field would let a 4K request reach a clip.
+   */
+  videoResolution?: string;
+  /**
+   * Whether the model should produce sound in the same pass.
+   *
+   * Only meaningful on a model whose schema has an audio flag. Sent explicitly
+   * rather than relying on the provider default — `veo-3.1-lite` cannot turn
+   * audio off at all, and a silent request has to be refused upstream rather
+   * than become a flag the provider ignores.
+   */
+  generateAudio?: boolean;
   /** Frames per second, where the model exposes it. */
   fps?: number;
   /** Camera movement phrase, from the model's declared `cameraMotions`. */

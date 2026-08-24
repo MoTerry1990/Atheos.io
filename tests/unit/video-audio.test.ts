@@ -29,7 +29,12 @@ const MOTION_1 = AUDIO_CAPABILITIES["replicate/video-gen"];
 const MOTION_PRO = AUDIO_CAPABILITIES["replicate/video-pro"];
 const CINEMATIC_FAST = AUDIO_CAPABILITIES["replicate/veo-3.1-fast"];
 const CINEMATIC_LITE = AUDIO_CAPABILITIES["replicate/veo-3.1-lite"];
-const CINEMATIC_LONG = AUDIO_CAPABILITIES["replicate/seedance-2.5"];
+/**
+ * "Cinematic Long" (`seedance-2.5`) was removed with the rest of that phantom:
+ * it had an audio strategy, a routing row and a compiler, and no registry entry
+ * at all, so nothing could ever run it. See the TODO in `audio-strategy.ts`.
+ */
+const CINEMATIC = AUDIO_CAPABILITIES["replicate/veo-3.1"];
 
 const GOOD_AUDIO = {
   hasStream: true,
@@ -50,9 +55,10 @@ const PROMISED = {
 };
 
 describe("1. every video model declares an audio strategy", () => {
-  it("declares at least one, for all six tiers", () => {
+  it("declares at least one, for all five tiers", () => {
+    // Five, not six: the sixth was `seedance-2.5`, which no adapter served.
     const ids = Object.keys(AUDIO_CAPABILITIES);
-    expect(ids.length).toBeGreaterThanOrEqual(6);
+    expect(ids.length).toBeGreaterThanOrEqual(5);
     for (const id of ids) {
       const model = AUDIO_CAPABILITIES[id];
       expect(model.strategies.length, id).toBeGreaterThan(0);
@@ -122,7 +128,7 @@ describe("3-4. quoting the audio stage", () => {
 
 describe("5. native models do not invoke the added-audio provider", () => {
   it("resolves native and quotes zero extra calls", () => {
-    for (const model of [CINEMATIC_FAST, CINEMATIC_LONG]) {
+    for (const model of [CINEMATIC_FAST, CINEMATIC]) {
       const r = resolveAudioStrategy({ model, wantsSound: true });
       expect(r.strategy, model.label).toBe("NATIVE");
       expect(

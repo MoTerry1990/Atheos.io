@@ -83,13 +83,27 @@ export const AUDIO_CAPABILITIES: Record<string, AudioCapableModel> = {
     audioAlwaysOn: true,
     note: "This model always generates sound and offers no way to turn it off.",
   },
-  "replicate/seedance-2.5": {
-    id: "replicate/seedance-2.5",
-    label: "Cinematic Long",
-    strategies: ["NATIVE", "SILENT"],
-    note: "The video model generates synchronised sound in the same pass.",
-  },
 };
+
+/**
+ * TODO(motion-pro-upgrade): `replicate/seedance-2.5` — "Cinematic Long".
+ *
+ * Removed here because it was a **phantom**: routable, compilable and quoted at
+ * 1,387 credits, but absent from `services/ai/providers/replicate.ts`, so it had
+ * no version pin and no adapter path. Nothing could ever run it. A model the
+ * router can recommend and the provider has never heard of is worse than an
+ * absent one — the quote is real, the refusal happens after the user commits.
+ *
+ * Bring it back as part of the Motion Pro upgrade (seedance-1-lite ->
+ * seedance-2.x), which needs, together and in one change:
+ *   - a registry entry with a pinned version hash,
+ *   - a `model-costs` entry ($0.2312/s at 720p, verified 2026-08-24),
+ *   - its own `videoShape` branch (it takes `duration` in seconds, plus
+ *     `generate_audio`, `reference_images` and `last_frame_image`),
+ *   - the audio strategy and routing rows restored below,
+ *   - and a re-read of its live schema, because this one is nine months newer
+ *     than the entry that was removed.
+ */
 
 /**
  * The video-to-audio provider, audited 2026-08-23 without a paid call.

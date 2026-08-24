@@ -228,46 +228,15 @@ function compileVeo(
   };
 }
 
-/** Cinematic Long — seedance-2.5. Long form, native audio, many references. */
-function compileSeedance25(
-  brief: CreativeBrief,
-  model: ModelCapability,
-): CompiledRequest {
-  const sections: string[] = [];
-
-  if (brief.shotCount.value > 1) {
-    sections.push(
-      `An edited sequence of ${brief.shotCount.value} separate shots with ` +
-        `${brief.shotCount.value - 1} hard cuts between them.`,
-    );
-  }
-  sections.push(sceneLine(brief));
-  if (brief.shotCount.value > 1) sections.push(shotBlocks(brief));
-
-  const continuity = continuityLine(brief);
-  if (continuity) sections.push(continuity);
-  sections.push("Render no text, captions, titles, logos or watermarks.");
-
-  return {
-    modelId: model.id,
-    compilerVersion: COMPILER_VERSION,
-    prompt: sections.filter(Boolean).join("\n\n"),
-    // seedance-2.5 has no negative_prompt input.
-    negativePrompt: "",
-    parameters: {
-      duration: Math.min(brief.durationSeconds.value, model.maxDurationSeconds),
-      // 720p is this model's ceiling; the routing layer has already refused a
-      // 1080p brief, so reaching here with one would be a bug upstream.
-      resolution: "720p",
-      aspect_ratio: brief.aspectRatio.value,
-      generate_audio: brief.audioStrategy.value === "NATIVE",
-    },
-    omitted:
-      brief.resolution.value === "1080p"
-        ? ["1080p — Cinematic Long renders 720p only"]
-        : [],
-  };
-}
+/**
+ * TODO(motion-pro-upgrade): the "Cinematic Long" compiler lived here.
+ *
+ * Removed with the rest of the `replicate/seedance-2.5` phantom — it had no
+ * registry entry, so nothing it compiled could ever be submitted. Restore it
+ * alongside the registry entry, the cost entry and the `videoShape` branch, not
+ * before: a compiler for a model the adapter cannot reach is a quote the user
+ * is offered and then refused.
+ */
 
 /** Snap to a length the model will actually render. */
 function nearestAllowed(seconds: number, model: ModelCapability): number {
@@ -281,7 +250,12 @@ function nearestAllowed(seconds: number, model: ModelCapability): number {
     : Math.max(...model.allowedDurations);
 }
 
-const COMPILERS: Record<
+/**
+ * Exported so `tests/unit/catalogue-integrity.test.ts` can assert that every
+ * compiler names a model some adapter can actually serve. A compiler for an
+ * unservable model is a quote the user is offered and then refused.
+ */
+export const COMPILERS_BY_MODEL: Record<
   string,
   (brief: CreativeBrief, model: ModelCapability) => CompiledRequest
 > = {
@@ -289,7 +263,15 @@ const COMPILERS: Record<
   "replicate/video-pro": compileMotionPro,
   "replicate/veo-3.1-fast": compileVeo,
   "replicate/veo-3.1": compileVeo,
-  "replicate/seedance-2.5": compileSeedance25,
+  /**
+   * `veo-3.1-lite` is deliberately absent.
+   *
+   * It is registry- and cost-complete, but `compileVeo` always emits a negative
+   * prompt and Lite's schema has no `negative_prompt` field. Until the routing
+   * table carries per-model negative-prompt support, Lite stays reachable only
+   * on the direct-selection path — where the adapter's own capability check
+   * already drops the field — and is not offered to the Creative Director.
+   */
 };
 
 export class CapabilityConflictError extends Error {
@@ -317,7 +299,7 @@ export function compileForModel(
     throw new CapabilityConflictError(verdict.conflicts);
   }
 
-  const compiler = COMPILERS[model.id];
+  const compiler = COMPILERS_BY_MODEL[model.id];
   if (!compiler) {
     throw new CapabilityConflictError([
       `no compiler is registered for ${model.id}`,
