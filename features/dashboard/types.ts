@@ -32,11 +32,27 @@ export interface DashboardUser {
 }
 
 export interface CreditSummary {
+  /**
+   * The one true balance: `User.creditBalance`, the cached total the ledger
+   * writes in the same transaction it appends to. Every surface that shows a
+   * credit figure reads this one.
+   */
   balance: number;
-  /** Granted at the start of the current period — the denominator for the bar. */
-  monthlyAllowance: number;
+  /**
+   * What the plan grants, and whether it grants it again.
+   *
+   * Null when the plan promises nothing yet — `creditsPerMonth` is nullable and
+   * **null means undecided, not zero**, so nothing may render a number from it.
+   *
+   * `kind` matters as much as the number. Free's 300 is a *one-time* grant, so
+   * calling it a monthly allowance and dividing by it produces a progress bar
+   * measuring against a period that never arrives. This used to be a hardcoded
+   * `200` belonging to a "Starter" plan that no longer exists, which is how the
+   * dashboard came to read "635 of 200".
+   */
+  allowance: { credits: number; kind: "monthly" | "one-time" } | null;
   spentThisPeriod: number;
-  /** ISO date the allowance next resets. Null while on the free tier. */
+  /** ISO date the allowance next resets. Null when it does not recur. */
   renewsAt: string | null;
   planName: string;
 }

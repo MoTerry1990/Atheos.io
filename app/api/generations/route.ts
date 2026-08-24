@@ -94,6 +94,25 @@ const submitSchema = z.object({
   confirmedBrief: z.unknown().optional(),
   planConfirmed: z.boolean().optional(),
   clientIdempotencyKey: z.string().max(200).optional(),
+  /**
+   * The composer's inputs, before assembly.
+   *
+   * Stored alongside the expanded prompt so "reuse settings" can restore what
+   * was *typed* rather than what was sent. Bounded like every other free-text
+   * field, and the preset list is capped because it is a set of ids, not prose.
+   */
+  promptSource: z
+    .object({
+      text: z.string().max(4000),
+      presetIds: z.array(z.string().max(120)).max(24),
+      camera: z.object({
+        shot: z.string().max(120).nullable(),
+        angle: z.string().max(120).nullable(),
+        lens: z.string().max(120).nullable(),
+        lighting: z.string().max(120).nullable(),
+      }),
+    })
+    .optional(),
 });
 
 export async function POST(request: NextRequest) {

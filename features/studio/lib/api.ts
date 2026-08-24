@@ -46,6 +46,24 @@ export interface SubmitPayload {
   planConfirmed?: boolean;
   /** Distinguishes a deliberate re-run from a double-click on the same plan. */
   clientIdempotencyKey?: string;
+  /**
+   * The composer's inputs, before assembly.
+   *
+   * `prompt` above is what the provider is sent. This is what the user chose,
+   * and it is what history restores — reusing an entry must put the typed text
+   * back in the box, not the expanded string, or the fragments compound on the
+   * next submission.
+   */
+  promptSource?: {
+    text: string;
+    presetIds: string[];
+    camera: {
+      shot: string | null;
+      angle: string | null;
+      lens: string | null;
+      lighting: string | null;
+    };
+  };
 }
 
 export function submitGeneration(payload: SubmitPayload) {

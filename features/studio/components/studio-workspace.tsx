@@ -309,6 +309,18 @@ function useGenerationRunner() {
           // fragments the composer already shows. Camera *motion* is not in
           // here: the adapter appends it, and doing both would send it twice.
           prompt: assemblePrompt(params, installedStyles),
+          /**
+           * The same prompt, unassembled.
+           *
+           * Sent so history can restore what was typed instead of what was
+           * sent. Without it, reusing an entry puts the expanded string back in
+           * the box and the next submission expands it again.
+           */
+          promptSource: {
+            text: params.prompt,
+            presetIds: [...params.presetIds],
+            camera: { ...params.camera },
+          },
           negativePrompt: params.negativePrompt || undefined,
           aspectRatio: params.aspectRatio,
           seed: params.seed ?? undefined,

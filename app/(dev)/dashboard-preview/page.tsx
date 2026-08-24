@@ -51,7 +51,7 @@ const EMPTY: DashboardData = {
   },
   credits: {
     balance: 200,
-    monthlyAllowance: 200,
+    allowance: { credits: 300, kind: "one-time" as const },
     spentThisPeriod: 0,
     renewsAt: null,
     planName: "Starter",

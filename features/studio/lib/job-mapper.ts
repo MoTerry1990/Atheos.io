@@ -66,6 +66,40 @@ export function dtoToStudioJob(dto: GenerationDTO): Partial<StudioJob> & {
 }
 
 /**
+ * The composer inputs a generation recorded, if it recorded any.
+ *
+ * Defensive about every field: `parameters` is a JSON blob written by an older
+ * version of this application, and a shape that has drifted must degrade to
+ * "no source recorded" rather than throw inside history rendering.
+ */
+function readPromptSource(raw: unknown): {
+  text: string;
+  presetIds: string[];
+  camera: StudioParams["camera"];
+} | null {
+  if (!raw || typeof raw !== "object") return null;
+  const value = raw as Record<string, unknown>;
+  if (typeof value.text !== "string") return null;
+
+  const camera = (value.camera ?? {}) as Record<string, unknown>;
+  const slot = (name: string) =>
+    typeof camera[name] === "string" ? (camera[name] as string) : null;
+
+  return {
+    text: value.text,
+    presetIds: Array.isArray(value.presetIds)
+      ? value.presetIds.filter((id): id is string => typeof id === "string")
+      : [],
+    camera: {
+      shot: slot("shot"),
+      angle: slot("angle"),
+      lens: slot("lens"),
+      lighting: slot("lighting"),
+    },
+  };
+}
+
+/**
  * A complete `StudioJob` for history loaded from the server.
  *
  * `dtoToStudioJob` is intentionally partial — it patches a job we already hold.
@@ -80,16 +114,36 @@ export function dtoToHistoryJob(dto: GenerationDTO): StudioJob {
   const stored = (dto.parameters ?? {}) as Record<string, unknown>;
   const patch = dtoToStudioJob(dto);
 
+  /**
+   * What was typed, when the generation recorded it.
+   *
+   * `dto.prompt` is the *expanded* string: typed text plus camera and preset
+   * fragments. Restoring that as the typed prompt is what made reuse compound —
+   * the fragments were already in the text, the chips came back lit, and the
+   * next submission appended them again. Three reuses of one entry produced
+   * "…cinematic, cinematic, cinematic".
+   *
+   * Generations submitted before `promptSource` existed have no way to recover
+   * the original text, so they keep the expanded prompt and are marked
+   * `promptIsExpanded` — the composer warns rather than silently compounding.
+   */
+  const source = readPromptSource(stored.promptSource);
+
   const params: StudioParams = {
     // History predates the sequence work, and a stored job is a record of what
     // happened rather than something to re-plan. Every archived generation was
     // a single clip, so that is what it is restored as.
     sequenceMode: "continuous",
     modelId: dto.modelId,
-    prompt: dto.prompt,
+    prompt: source?.text ?? dto.prompt,
     negativePrompt: dto.negativePrompt ?? "",
-    presetIds: [],
-    camera: { shot: null, angle: null, lens: null, lighting: null },
+    presetIds: source?.presetIds ?? [],
+    camera: source?.camera ?? {
+      shot: null,
+      angle: null,
+      lens: null,
+      lighting: null,
+    },
     aspectRatio:
       typeof stored.aspectRatio === "string" ? stored.aspectRatio : "1:1",
     resolution: 1024,
@@ -108,6 +162,14 @@ export function dtoToHistoryJob(dto: GenerationDTO): StudioJob {
     id: dto.id,
     status: dto.status,
     params,
+    /**
+     * True for rows written before the composer's inputs were recorded.
+     *
+     * `params.prompt` then holds the expanded string, so reusing it would
+     * append fragments a second time. The composer shows this rather than
+     * quietly compounding.
+     */
+    promptIsExpanded: source === null,
     modelName: dto.modelId,
     creditCost: dto.creditCost,
     progress: patch.progress ?? null,

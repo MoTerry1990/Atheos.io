@@ -1,6 +1,6 @@
 "use client";
 
-import { Eye, EyeOff, Sparkles, Undo2, WandSparkles } from "lucide-react";
+import { Sparkles, Undo2, WandSparkles } from "lucide-react";
 import { useState } from "react";
 
 import { enhancePrompt } from "@/features/studio/lib/api";
@@ -56,8 +56,6 @@ export function PromptEditor({ onGenerate }: { onGenerate?: () => void } = {}) {
   const applyTemplate = useStudioStore((state) => state.applyTemplate);
   const installed = useStudioStore((state) => state.installed);
 
-  const [showAssembled, setShowAssembled] = useState(false);
-
   const model = useSelectedModel();
 
   /**
@@ -86,6 +84,13 @@ export function PromptEditor({ onGenerate }: { onGenerate?: () => void } = {}) {
   const facts = SEQUENCE_MODEL_FACTS[model.id];
 
   const assembled = assemblePrompt(params, installed.styles);
+  /**
+   * Whether anything was added to what the user typed.
+   *
+   * No longer decides whether the final prompt is *shown* — it always is, as
+   * soon as there is one. It only decides the explanatory line underneath,
+   * which has nothing to explain when nothing was appended.
+   */
   const hasAdditions = assembled !== prompt.trim() && assembled.length > 0;
 
   const [enhancing, setEnhancing] = useState(false);
@@ -259,18 +264,6 @@ export function PromptEditor({ onGenerate }: { onGenerate?: () => void } = {}) {
                 ))}
               </DropdownMenuContent>
             </DropdownMenu>
-
-            {hasAdditions ? (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setShowAssembled((open) => !open)}
-                aria-expanded={showAssembled}
-              >
-                {showAssembled ? <EyeOff /> : <Eye />}
-                {showAssembled ? "Hide" : "Show"} final prompt
-              </Button>
-            ) : null}
           </div>
 
           {/* Always present so `aria-live` has a node to watch — a region that
@@ -287,7 +280,16 @@ export function PromptEditor({ onGenerate }: { onGenerate?: () => void } = {}) {
             {notice}
           </p>
 
-          {showAssembled && hasAdditions ? (
+          {/*
+            Always shown, never behind a toggle.
+
+            This used to appear only once a preset or camera option had been
+            picked, so the common case — type a prompt, press Generate — never
+            revealed what was actually submitted. Nothing should be sent on a
+            user's behalf that they cannot read first, and that is exactly the
+            case where they could not.
+          */}
+          {assembled ? (
             <div className="space-y-1.5 rounded-lg border border-border bg-surface-sunken p-3">
               <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
                 <Sparkles className="size-3" aria-hidden />
@@ -296,10 +298,12 @@ export function PromptEditor({ onGenerate }: { onGenerate?: () => void } = {}) {
               <p className="font-mono text-xs leading-relaxed break-words">
                 {assembled}
               </p>
-              <p className="text-xs text-muted-foreground">
-                Style presets and camera settings are appended to your prompt.
-                Remove them above to change this.
-              </p>
+              {hasAdditions ? (
+                <p className="text-xs text-muted-foreground">
+                  Style presets and camera settings are appended to your prompt.
+                  Remove them above to change this.
+                </p>
+              ) : null}
             </div>
           ) : null}
         </div>

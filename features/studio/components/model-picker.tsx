@@ -13,6 +13,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useModels, useSelectedModel } from "@/features/studio/lib/use-model";
+import { creditsFor } from "@/services/ai/pricing";
 import { useStudioStore } from "@/store/studio-store";
 import { cn } from "@/lib/utils";
 
@@ -30,6 +31,20 @@ import { cn } from "@/lib/utils";
  * Switching models runs `reconcileParams` in the store, which repairs any
  * setting the new model cannot honour. Without that, the composer keeps
  * displaying values that will be silently ignored at submit.
+ *
+ * ## Every price here is the price of *this* generation
+ *
+ * The rows used to show `model.creditCost`, which is the price at the model's
+ * **base duration** for a single output. The Generate button showed
+ * `creditsFor(model, outputs, durationSeconds)`. For a video at any other
+ * duration those are different numbers, and the studio displayed 90 in the
+ * picker and 135 on the button for one unchanged request.
+ *
+ * Both now call `creditsFor` with the composer's actual parameters — the same
+ * function the server charges with. A price the user reads before choosing and
+ * a price they are charged after have to come from one place or they will
+ * eventually disagree, and the picker is exactly where a wrong one does the
+ * most damage: it is what the choice is made on.
  */
 const BADGES = {
   fastest: { label: "Fastest", variant: "info" as const },
@@ -42,6 +57,21 @@ export function ModelPicker() {
   const setModel = useStudioStore((state) => state.setModel);
   const models = useModels();
   const current = useSelectedModel();
+
+  /**
+   * Outputs and duration, so every row prices the request being made.
+   *
+   * Read from the store rather than passed in: the picker sits beside the
+   * controls that set them, and threading them through the tree would make it
+   * possible to render a stale price.
+   */
+  const outputs = useStudioStore((state) => state.params.outputs);
+  const durationSeconds = useStudioStore(
+    (state) => state.params.durationSeconds,
+  );
+
+  const priceOf = (model: (typeof models)[number]) =>
+    creditsFor(model, outputs, durationSeconds);
 
   const byModality = models.reduce<Record<string, typeof models>>(
     (groups, model) => {
@@ -68,7 +98,7 @@ export function ModelPicker() {
               ) : null}
             </span>
             <span className="text-xs text-muted-foreground">
-              {current.creditCost} credits · ~{current.typicalSeconds}s
+              {priceOf(current)} credits · ~{current.typicalSeconds}s
             </span>
           </span>
           <ChevronDown className="shrink-0 text-muted-foreground" />
@@ -113,7 +143,7 @@ export function ModelPicker() {
                 <span className="flex items-center gap-3 text-xs text-muted-foreground">
                   <span className="flex items-center gap-1">
                     <Coins className="size-3" aria-hidden />
-                    {model.creditCost}
+                    {priceOf(model)}
                   </span>
                   <span className="flex items-center gap-1">
                     <Clock className="size-3" aria-hidden />~

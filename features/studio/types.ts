@@ -142,6 +142,14 @@ export interface StudioJob {
   status: JobStatus;
   /** Snapshot of the params used. Editing the composer must not rewrite history. */
   params: StudioParams;
+  /**
+   * `params.prompt` is the expanded string rather than what was typed.
+   *
+   * True only for generations recorded before the composer's inputs were
+   * stored. Reusing one re-appends its fragments, so the composer warns instead
+   * of pretending the entry round-trips.
+   */
+  promptIsExpanded?: boolean;
   modelName: string;
   creditCost: number;
   /** 0–1 where known, null where the provider would not report it. */

@@ -32,12 +32,33 @@ import { cn } from "@/lib/utils";
  * `allowance - spent` would print a balance that contradicts the ledger.
  */
 export function CreditsCard({ credits }: { credits: CreditSummary }) {
-  const ratio =
-    credits.monthlyAllowance > 0
-      ? Math.min(1, Math.max(0, credits.balance / credits.monthlyAllowance))
-      : 0;
+  const allowance = credits.allowance;
 
-  const tone = ratio < 0.1 ? "destructive" : ratio < 0.25 ? "warning" : "brand";
+  /**
+   * How full the bar is, and whether it means anything.
+   *
+   * The bar measures the balance against what the plan grants. That only has a
+   * meaning while the balance is *within* the grant: a top-up, a rollover or a
+   * complimentary grant can put it above, and a bar clamped to 1 then reads as
+   * "completely full" whether somebody holds 300 credits or 6,000. Above the
+   * grant the ratio is not shown as a bar at all — the number is the truth and
+   * the bar would only dilute it.
+   */
+  const overAllowance = allowance ? credits.balance > allowance.credits : false;
+
+  const ratio =
+    allowance && !overAllowance
+      ? Math.max(0, credits.balance / allowance.credits)
+      : null;
+
+  const tone =
+    ratio === null
+      ? "brand"
+      : ratio < 0.1
+        ? "destructive"
+        : ratio < 0.25
+          ? "warning"
+          : "brand";
 
   return (
     <Card className="relative overflow-hidden">
@@ -58,9 +79,20 @@ export function CreditsCard({ credits }: { credits: CreditSummary }) {
             <p className="mt-2 text-4xl font-semibold tracking-tight">
               <Counter value={credits.balance} />
             </p>
+            {/*
+              The denominator says what kind of grant it is.
+
+              "of 300" alone reads as a monthly allowance on every plan, and
+              Free's 300 arrives once. A plan whose allowance is still undecided
+              shows its name and no number, because `creditsPerMonth` being null
+              means undecided rather than zero.
+            */}
             <p className="mt-1 text-xs text-muted-foreground">
-              of {credits.monthlyAllowance.toLocaleString("en-US")} on{" "}
-              {credits.planName}
+              {allowance
+                ? overAllowance
+                  ? `on ${credits.planName}, above its ${allowance.credits.toLocaleString("en-US")} ${allowance.kind === "monthly" ? "monthly allowance" : "welcome grant"}`
+                  : `of ${allowance.credits.toLocaleString("en-US")} ${allowance.kind === "monthly" ? "per month" : "granted once"} on ${credits.planName}`
+                : `on ${credits.planName}`}
             </p>
           </div>
 
@@ -73,21 +105,31 @@ export function CreditsCard({ credits }: { credits: CreditSummary }) {
         </div>
 
         <div className="space-y-2">
-          <div
-            className="h-2 w-full overflow-hidden rounded-full bg-muted"
-            role="progressbar"
-            aria-valuenow={Math.round(ratio * 100)}
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-label="Credits remaining"
-          >
-            {/* `initial` must not read the motion preference. The server
+          {/*
+            The bar is drawn only when it measures something.
+
+            With no allowance, or with a balance above it, there is no honest
+            fraction to show — and a bar clamped to 100% says "full" identically
+            for somebody holding their whole grant and somebody holding twenty
+            times it. The figure above is already the truth; an ornamental bar
+            beside it is a second, worse answer to the same question.
+          */}
+          {ratio !== null ? (
+            <div
+              className="h-2 w-full overflow-hidden rounded-full bg-muted"
+              role="progressbar"
+              aria-valuenow={Math.round(ratio * 100)}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-label="Credits remaining"
+            >
+              {/* `initial` must not read the motion preference. The server
                 cannot know it, so branching here renders one width on the
                 server and another on the client — a hydration mismatch React
                 does not patch up, which can strand the bar at zero. Reduced
                 motion is handled globally by MotionConfig. See
                 docs/DESIGN-SYSTEM.md. */}
-            {/* `scaleX`, not `width`.
+              {/* `scaleX`, not `width`.
                 Animating width makes the browser lay out and paint the bar on
                 every frame of a 0.9s animation. `scaleX` is composited — it
                 runs on the GPU and touches neither layout nor paint. Visually
@@ -96,22 +138,23 @@ export function CreditsCard({ credits }: { credits: CreditSummary }) {
 
                 The gradient variant does stretch rather than translate, which
                 is imperceptible at these dimensions and worth the frames. */}
-            <motion.div
-              initial={{ scaleX: 0 }}
-              animate={{ scaleX: ratio }}
-              transition={{
-                duration: 0.9,
-                ease: [0.25, 1, 0.5, 1],
-                delay: 0.1,
-              }}
-              className={cn(
-                "h-full w-full origin-left rounded-full",
-                tone === "brand" && "bg-gradient-brand",
-                tone === "warning" && "bg-warning",
-                tone === "destructive" && "bg-destructive",
-              )}
-            />
-          </div>
+              <motion.div
+                initial={{ scaleX: 0 }}
+                animate={{ scaleX: ratio }}
+                transition={{
+                  duration: 0.9,
+                  ease: [0.25, 1, 0.5, 1],
+                  delay: 0.1,
+                }}
+                className={cn(
+                  "h-full w-full origin-left rounded-full",
+                  tone === "brand" && "bg-gradient-brand",
+                  tone === "warning" && "bg-warning",
+                  tone === "destructive" && "bg-destructive",
+                )}
+              />
+            </div>
+          ) : null}
 
           <div className="flex justify-between text-xs text-muted-foreground">
             <span>

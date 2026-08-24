@@ -205,7 +205,19 @@ export function PreviewPanel({
             variant="ghost"
             size="sm"
             onClick={() => reuseParams(job.id)}
-            title="Load these settings into the composer"
+            title={
+              /**
+               * Generations from before the composer's inputs were recorded
+               * carry only the expanded prompt — typed text and style
+               * fragments already joined together. Reusing one loads that
+               * whole string as the prompt, which is honest but not editable
+               * the way the original was, so the button says so instead of
+               * pretending it round-trips.
+               */
+              job.promptIsExpanded
+                ? "Loads the full submitted prompt — this entry predates separate style tracking, so presets are part of the text"
+                : "Load these settings into the composer"
+            }
           >
             <RotateCcw />
             Reuse settings

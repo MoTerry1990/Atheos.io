@@ -179,7 +179,22 @@ export function assemblePrompt(
     Boolean,
   ) as string[];
 
-  return [params.prompt.trim(), ...cameraFragments, ...presetFragments]
+  /**
+   * The typed prompt, stripped of trailing punctuation before anything is
+   * joined onto it.
+   *
+   * `.filter(Boolean)` below already drops empty fragments, so a doubled comma
+   * cannot come from a missing preset. It came from the *user's own* text: a
+   * prompt ending "…fire from his mouth," joined to a fragment produced
+   * "…mouth,, cinematic". Real history rows carry that.
+   *
+   * Only trailing separators go. Internal commas are the user's phrasing and a
+   * final full stop is left alone, because a sentence that ends is not a
+   * fragment waiting to be continued.
+   */
+  const typed = params.prompt.trim().replace(/[,;:\s]+$/, "");
+
+  return [typed, ...cameraFragments, ...presetFragments]
     .filter(Boolean)
     .join(", ");
 }

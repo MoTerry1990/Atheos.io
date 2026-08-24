@@ -212,6 +212,26 @@ export interface SubmitInput {
   confirmedBrief?: CreativeBrief | ImageBrief;
   planConfirmed?: boolean;
   clientIdempotencyKey?: string;
+  /**
+   * The composer's inputs, before assembly.
+   *
+   * Optional because the Director path and programmatic callers have no
+   * composer state to describe. When absent, history falls back to the
+   * expanded prompt exactly as it did before.
+   */
+  promptSource?: {
+    /** Exactly what was typed. Not trimmed, not expanded. */
+    text: string;
+    /** Style preset ids that were lit, in the order they were applied. */
+    presetIds: string[];
+    /** Camera selections, each null when nothing was chosen. */
+    camera: {
+      shot: string | null;
+      angle: string | null;
+      lens: string | null;
+      lighting: string | null;
+    };
+  };
 }
 
 /**
@@ -532,6 +552,24 @@ export async function submitGeneration(input: SubmitInput) {
             durationSeconds,
             cameraMotion: input.cameraMotion,
             collectionId: input.collectionId,
+            /**
+             * What the user actually typed, and which styles were on.
+             *
+             * `prompt` above is the *expanded* string — typed text plus camera
+             * and preset fragments — because that is what the provider was
+             * sent and a replay has to reproduce it exactly. But it is the
+             * wrong thing to put back in the composer: restoring it as the
+             * typed prompt and then appending fragments again compounds them
+             * on every reuse, which is how a history entry ends up reading
+             * "…cinematic, cinematic, cinematic".
+             *
+             * So both are kept. The expanded string stays the record of what
+             * happened; this is the record of what was *asked for*, and it is
+             * what "reuse settings" restores.
+             */
+            ...(input.promptSource
+              ? { promptSource: { ...input.promptSource } }
+              : {}),
             // Sanitised planning record: hashes and counts, no URLs or payloads.
             ...(director ? { creativePlan: director.planMetadata } : {}),
           },

@@ -8,7 +8,6 @@ import {
   Images,
   LayoutDashboard,
   Layers,
-  Search,
   Store,
   Wand2,
   Clapperboard,
@@ -175,18 +174,11 @@ export function AppShell({
             </>
           }
         >
-          {/* Search is a placeholder control, and says so rather than opening
-              an empty palette. It becomes a command menu in Sprint 5, once
-              there are assets and projects worth searching. */}
-          <button
-            type="button"
-            disabled
-            className="hidden w-full max-w-xs items-center gap-2 rounded-lg border border-border bg-surface-sunken px-3 py-1.5 text-sm text-muted-foreground md:flex"
-            title="Search arrives with the asset library"
-          >
-            <Search className="size-3.5" aria-hidden />
-            <span>Search…</span>
-          </button>
+          {/* A disabled search box used to sit here, waiting for the asset
+              library. A control that can never be pressed is not a promise of a
+              feature — it is a dead affordance every visitor tries once. It
+              comes back as a real command menu when there is something to
+              search. */}
           <span className="sr-only">Workspace</span>
         </TopBar>
 

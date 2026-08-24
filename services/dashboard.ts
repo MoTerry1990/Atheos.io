@@ -1,6 +1,9 @@
 import "server-only";
 
 import { getClerkUser, getCurrentUser } from "@/lib/auth";
+import { planConfigFor } from "@/services/billing/plan-config";
+import { getEntitlement } from "@/services/billing/subscription";
+import type { PlanTier } from "@/lib/generated/prisma/enums";
 import { prisma } from "@/lib/prisma";
 import type {
   ActivityItem,
@@ -42,7 +45,44 @@ import type {
  * table nothing writes to would not be.
  */
 
-const STARTER_MONTHLY_CREDITS = 200;
+/**
+ * The credit figures for a plan, derived rather than hardcoded.
+ *
+ * There used to be a `STARTER_MONTHLY_CREDITS = 200` here, alongside a
+ * `planName: "Starter"`. Neither survived the plan system: no tier is called
+ * Starter and no tier grants 200. The dashboard went on dividing the real
+ * balance by that constant, which is how it came to read "635 of 200" — a true
+ * numerator over a denominator belonging to a plan that does not exist.
+ */
+function creditSummaryFor(
+  tier: PlanTier | null | undefined,
+  balance: number,
+  spentThisPeriod: number,
+  renewsAt: string | null,
+): CreditSummary {
+  const plan = planConfigFor(tier);
+
+  return {
+    balance,
+    /**
+     * `creditsPerMonth` is nullable and null means **undecided**, so a plan
+     * that has not settled its allowance shows no denominator at all rather
+     * than a zero the bar would read as "nothing left".
+     *
+     * Free's grant is one-time. Labelling it monthly would promise a renewal
+     * that never comes.
+     */
+    allowance: plan.creditsPerMonth
+      ? {
+          credits: plan.creditsPerMonth,
+          kind: plan.tier === "FREE" ? "one-time" : "monthly",
+        }
+      : null,
+    spentThisPeriod,
+    renewsAt,
+    planName: plan.displayName,
+  };
+}
 const STARTER_STORAGE_QUOTA = 2 * 1024 * 1024 * 1024; // 2GB
 
 const RECENT_PROJECT_LIMIT = 6;
@@ -87,13 +127,7 @@ export async function getDashboardData(): Promise<DashboardData> {
   if (!user) {
     return {
       ...base,
-      credits: {
-        balance: 0,
-        monthlyAllowance: STARTER_MONTHLY_CREDITS,
-        spentThisPeriod: 0,
-        renewsAt: null,
-        planName: "Starter",
-      },
+      credits: creditSummaryFor("FREE", 0, 0, null),
       storage: {
         usedBytes: 0,
         quotaBytes: STARTER_STORAGE_QUOTA,
@@ -198,13 +232,26 @@ export async function getDashboardData(): Promise<DashboardData> {
 
   const storageByKind = await storageByKindPromise;
 
-  const credits: CreditSummary = {
-    balance: user.creditBalance,
-    monthlyAllowance: STARTER_MONTHLY_CREDITS,
-    spentThisPeriod: Math.abs(spentAgg._sum.amount ?? 0),
-    renewsAt: null,
-    planName: "Starter",
-  };
+  /**
+   * The plan the balance should be read against.
+   *
+   * Fetched here rather than assumed: the denominator is the whole reason the
+   * card was wrong, and a hardcoded one is what made it wrong.
+   */
+  const entitlement = await getEntitlement(user.id);
+
+  const credits = creditSummaryFor(
+    entitlement.tier,
+    user.creditBalance,
+    Math.abs(spentAgg._sum.amount ?? 0),
+    /**
+     * Only a recurring plan renews. Free's grant is one-time, so it has no
+     * next date and must not borrow a period end from anywhere.
+     */
+    entitlement.currentPeriodEnd
+      ? new Date(entitlement.currentPeriodEnd).toISOString()
+      : null,
+  );
 
   const storage: StorageSummary = {
     usedBytes: storageAgg._sum.sizeBytes ?? 0,
@@ -306,7 +353,7 @@ async function getNotifications(
   const items: NotificationItem[] = [];
   const now = new Date().toISOString();
 
-  if (credits.balance <= credits.monthlyAllowance * 0.1) {
+  if (credits.allowance && credits.balance <= credits.allowance.credits * 0.1) {
     items.push({
       id: "credits-low",
       title: "Credit balance is low",
@@ -358,13 +405,20 @@ export async function getShellSummary(): Promise<{
     _sum: { sizeBytes: true },
   });
 
-  const credits: CreditSummary = {
-    balance: user.creditBalance,
-    monthlyAllowance: STARTER_MONTHLY_CREDITS,
-    spentThisPeriod: 0,
-    renewsAt: null,
-    planName: "Starter",
-  };
+  const entitlement = await getEntitlement(user.id);
+
+  const credits = creditSummaryFor(
+    entitlement.tier,
+    user.creditBalance,
+    0,
+    /**
+     * Only a recurring plan renews. Free's grant is one-time, so it has no
+     * next date and must not borrow a period end from anywhere.
+     */
+    entitlement.currentPeriodEnd
+      ? new Date(entitlement.currentPeriodEnd).toISOString()
+      : null,
+  );
 
   const storage: StorageSummary = {
     usedBytes: storageAgg._sum.sizeBytes ?? 0,

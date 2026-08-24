@@ -1,7 +1,7 @@
 "use client";
 
 import { motion } from "motion/react";
-import { Activity, Images, Sparkles } from "lucide-react";
+import { Images, Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { Counter } from "@/components/ui/counter";
@@ -21,10 +21,19 @@ import type { DashboardUser, UsageStats } from "@/features/dashboard/types";
  * The name renders server-side either way, so there is no layout shift — only
  * the time-of-day word settles.
  *
- * ## Success rate can be null
+ * ## Success rate is not shown
  *
- * A brand-new account has finished nothing. Showing "0%" would be both false
- * and discouraging; the stat is omitted until there is something to divide by.
+ * It used to sit here as a third stat, computed as
+ * `SUCCEEDED / (SUCCEEDED + FAILED)` across an account's whole history. Two
+ * things were wrong with it. It sat beside "Generations this period" while
+ * measuring all time, so one row mixed two time windows. And a failed
+ * generation is refunded — the customer pays nothing — so the number described
+ * Atheos's reliability while being displayed as if it were a fact about the
+ * user's work.
+ *
+ * `UsageStats.successRate` is still computed and still returned; only the
+ * display is gone. It belongs on an operations view, against a stated window,
+ * not on somebody's dashboard.
  */
 
 function greeting(): string {
@@ -55,16 +64,6 @@ export function WorkspaceHeader({
       value: stats.assetsTotal,
       format: (n: number) => Math.round(n).toLocaleString("en-US"),
     },
-    ...(stats.successRate !== null
-      ? [
-          {
-            icon: Activity,
-            label: "Success rate",
-            value: stats.successRate * 100,
-            format: (n: number) => `${Math.round(n)}%`,
-          },
-        ]
-      : []),
   ];
 
   return (

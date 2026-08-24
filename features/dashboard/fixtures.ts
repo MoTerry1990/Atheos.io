@@ -46,7 +46,7 @@ export function dashboardFixture(): DashboardData {
 
     credits: {
       balance: 1_284,
-      monthlyAllowance: 3_000,
+      allowance: { credits: 3_000, kind: "monthly" as const },
       spentThisPeriod: 1_716,
       renewsAt: daysAgo(-12),
       planName: "Studio",
