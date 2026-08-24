@@ -62,7 +62,30 @@ nobody else should be handling those keys.
 
 ## KI-2 — No machine-authentication path exists, so no automated live test can run
 
-**Filed** 2026-08-24 · **Severity** medium
+**Filed** 2026-08-24 · **Severity** medium · **RESOLVED** 2026-08-24
+
+### Resolution
+
+The owner created a key, and it still did not work — which exposed the real
+cause. `requireApiUser()` had always accepted a key, but nothing ever reached
+it: `guard()` runs first on every route and refused a key-bearing request twice
+before that fallback could run, with a 403 on the missing `Origin` header and
+then a 401 on the missing session. A server-to-server client sends neither, so
+the whole feature was unreachable in production while reading as fully
+implemented.
+
+`guard()` now resolves a caller as a session **or** a valid bearer key, skipping
+CSRF for bearer callers only (an `Authorization` header is never ambient, so it
+cannot be forged cross-origin) while keeping rate limits, in a per-key bucket.
+Two routes that called the redirecting `requireUser()` after the guard were
+fixed alongside it.
+
+Proven live: `GET /api/generations` with a bearer key returns 200, and the Step 3
+generation below ran entirely through key authentication.
+
+---
+
+### Original report
 
 ### Symptom
 
@@ -146,3 +169,66 @@ scales by `durationSeconds / min(durations)`.
 Recorded rather than repriced because it changes what customers pay, which is a
 product decision. `tests/unit/catalogue-integrity.test.ts` pins the current
 behaviour so it cannot drift further while the decision is pending.
+
+---
+
+## KI-5 — The intent planner extracts nothing, and the compiler used to ship the gap
+
+**Filed** 2026-08-24 · **Severity** high · **Partially mitigated**
+
+### Symptom
+
+`planFromPrompt` returns a brief whose scene fields are all empty.
+`primarySubject` comes back with the reason string _"not identified without a
+planner call"_ — the extraction step it names has never been built. Every
+`from` is `"default"`.
+
+### What it caused
+
+`sceneLine()` composed the model prompt from those fields alone, so a prompt
+with no extracted subject compiled to boilerplate. Found live against a real
+deployment, one step before a paid call:
+
+```
+in : A single slow push-in on a cup of coffee steaming on a windowsill at dawn.
+out: natural daylight One continuous shot, no cuts.
+```
+
+Nothing errored. That generation would have succeeded, charged 90 credits, and
+returned a grey clip — worse than a failure, because a failure is visible.
+
+### What has been fixed
+
+The compiler now falls back to the user's own words when no subject was
+extracted (`originalPrompt` was already preserved byte-for-byte for exactly this
+reason). Pinned by `tests/unit/prompt-integrity.test.ts`.
+
+### What has not
+
+The planner itself. Every brief still arrives with empty structured fields, so
+the Creative Director's routing, conflict detection and shot planning are all
+reasoning about a brief that contains almost nothing. The fallback stops a
+wrong prompt shipping; it does not make the Director work as designed.
+
+---
+
+## KI-6 — The clarification questions offer options the model cannot honour
+
+**Filed** 2026-08-24 · **Severity** medium
+
+### Symptom
+
+Planning a Motion 1 video returns two clarifications, both wrong in a small way:
+
+- `shotCount` offers **"1 edited shots"** — a grammar fault, and both of its
+  options carry the same value `1`, so the two choices are indistinguishable.
+- `audioStrategy` recommends **NATIVE**, but `AUDIO_CAPABILITIES` declares Motion
+  1's strategies as `ATHEOS_SOUND_DESIGN` and `SILENT`. NATIVE is not among them.
+  This is [KI-3](#ki-3--the-audio-delivery-gate-is-not-connected-to-the-pipeline)
+  surfacing as a user-visible option rather than a silent gap.
+
+### Why it matters
+
+The recommended answer to a question Atheos asks should be one Atheos can
+deliver. Accepting the recommendation here selects a sound mode the model has no
+way to produce.
