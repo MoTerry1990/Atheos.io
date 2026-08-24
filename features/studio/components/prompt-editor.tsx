@@ -289,23 +289,35 @@ export function PromptEditor({ onGenerate }: { onGenerate?: () => void } = {}) {
             user's behalf that they cannot read first, and that is exactly the
             case where they could not.
           */}
-          {assembled ? (
-            <div className="space-y-1.5 rounded-lg border border-border bg-surface-sunken p-3">
-              <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                <Sparkles className="size-3" aria-hidden />
-                Submitted as
+          <div className="space-y-1.5 rounded-lg border border-border bg-surface-sunken p-3">
+            <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+              <Sparkles className="size-3" aria-hidden />
+              Submitted as
+            </p>
+            <p
+              className={cn(
+                "font-mono text-xs leading-relaxed break-words",
+                assembled ? "" : "text-muted-foreground italic",
+              )}
+            >
+              {/*
+                  The panel holds its place while the prompt is empty.
+
+                  Rendering it only once there is text means it appears at the
+                  moment the user starts typing, which is both a layout shift
+                  and a worse promise: "we will show you what gets sent" should
+                  be true before they have typed anything, not conditional on
+                  it.
+                */}
+              {assembled || "Nothing yet — your prompt will appear here."}
+            </p>
+            {hasAdditions ? (
+              <p className="text-xs text-muted-foreground">
+                Style presets and camera settings are appended to your prompt.
+                Remove them above to change this.
               </p>
-              <p className="font-mono text-xs leading-relaxed break-words">
-                {assembled}
-              </p>
-              {hasAdditions ? (
-                <p className="text-xs text-muted-foreground">
-                  Style presets and camera settings are appended to your prompt.
-                  Remove them above to change this.
-                </p>
-              ) : null}
-            </div>
-          ) : null}
+            ) : null}
+          </div>
         </div>
       </Control>
 
