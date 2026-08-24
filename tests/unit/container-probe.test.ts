@@ -62,12 +62,20 @@ function audioStsd(
   channels: number,
   sampleRate: number,
 ): Buffer {
-  // AudioSampleEntry body: reserved(6) dri(2) version(2) revision(2) vendor(4)
-  //                        channels(2) samplesize(2) predefined(2) reserved(2)
-  //                        samplerate(4, 16.16)
+  /**
+   * AudioSampleEntry body, offsets from the end of the entry's box header:
+   *   +0  reserved(6) dri(2)
+   *   +8  version(2) revision(2) vendor(4)
+   *   +16 channelcount(2) · +18 samplesize(2) · +20 predefined(2) reserved(2)
+   *   +24 samplerate(4, 16.16)
+   *
+   * Written at +8 and +16 in the first draft — the same error the parser had,
+   * so the two agreed with each other and disagreed with every real MP4. That
+   * is what `real-mp4.test.ts` exists to prevent.
+   */
   const entryBody = Buffer.alloc(28);
-  entryBody.writeUInt16BE(channels, 8);
-  entryBody.writeUInt16BE(sampleRate, 16);
+  entryBody.writeUInt16BE(channels, 16);
+  entryBody.writeUInt16BE(sampleRate, 24);
 
   const entry = box(codec, entryBody);
   const payload = Buffer.alloc(8);

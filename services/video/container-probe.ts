@@ -270,20 +270,31 @@ function readAudioTrack(bytes: Buffer, mdia: Box): AudioTrackInfo {
   track.codec = bytes.toString("latin1", entryStart + 4, entryStart + 8);
 
   /**
-   * `AudioSampleEntry`, after the 8-byte box header:
-   *   reserved(6) data_reference_index(2)
-   *   version(2) revision(2) vendor(4)
-   *   channelcount(2) samplesize(2) pre_defined(2) reserved(2)
-   *   samplerate(4, 16.16 fixed point)
+   * `AudioSampleEntry`, measured from the end of the 8-byte box header:
+   *
+   *   +0   reserved(6) data_reference_index(2)   — SampleEntry
+   *   +8   version(2) revision(2) vendor(4)
+   *   +16  channelcount(2)
+   *   +18  samplesize(2)
+   *   +20  pre_defined(2) reserved(2)
+   *   +24  samplerate(4, 16.16 fixed point)
    *
    * The rate's low 16 bits are a fraction that is always zero in practice, so
-   * the high half is the value — which is why it is read as a 16-bit integer
-   * rather than shifted out of a 32-bit one.
+   * the high half is the value — which is why it is read as a 16-bit integer at
+   * +24 rather than shifted out of a 32-bit one.
+   *
+   * These offsets were wrong by eight bytes in the first version: channels was
+   * read at +8 and the rate at +16, which lands in the version/revision fields.
+   * A real Veo file reported `sampleRate: 2`, the gate refused it for being
+   * below 44100, and a correct generation was failed and refunded. The unit
+   * fixtures did not catch it because they were built at the same wrong
+   * offsets — a fixture that shares the parser's assumption tests nothing. The
+   * regression test now uses a real `moov` from that file.
    */
   const body = entryStart + HEADER_BYTES;
   if (entrySize >= 36 && body + 28 <= stsd.end) {
-    const channels = bytes.readUInt16BE(body + 8);
-    const sampleRate = bytes.readUInt16BE(body + 16);
+    const channels = bytes.readUInt16BE(body + 16);
+    const sampleRate = bytes.readUInt16BE(body + 24);
 
     /**
      * Reported only when plausible.

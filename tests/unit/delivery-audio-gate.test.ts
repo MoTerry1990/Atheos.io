@@ -46,10 +46,16 @@ function hdlr(handler: string): Buffer {
   return box("hdlr", payload);
 }
 
+/**
+ * AudioSampleEntry: channelcount at +16, samplerate's integer half at +24,
+ * measured from the end of the entry's box header. See `container-probe.ts` —
+ * these were eight bytes out in the first version and a real Veo render was
+ * failed and refunded because of it.
+ */
 function stsd(codec: string, channels = 2, sampleRate = 48_000): Buffer {
   const entryBody = Buffer.alloc(28);
-  entryBody.writeUInt16BE(channels, 8);
-  entryBody.writeUInt16BE(sampleRate, 16);
+  entryBody.writeUInt16BE(channels, 16);
+  entryBody.writeUInt16BE(sampleRate, 24);
   const count = Buffer.alloc(8);
   count.writeUInt32BE(1, 4);
   return box("stsd", Buffer.concat([count, box(codec, entryBody)]));
