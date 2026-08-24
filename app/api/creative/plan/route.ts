@@ -2,7 +2,6 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 
 import { guard, withHeaders } from "@/lib/api-guard";
-import { requireUser } from "@/lib/auth";
 import {
   MODEL_CAPABILITIES,
   recommendModels,
@@ -130,7 +129,17 @@ export async function POST(request: NextRequest) {
   });
   if (gate instanceof NextResponse) return gate;
 
-  const user = await requireUser();
+  /**
+   * The caller the guard already resolved.
+   *
+   * Not `requireUser()`. That helper *redirects* a session-less caller to sign
+   * in, which is right for a page and wrong for an API route — it would refuse
+   * a valid API key with a redirect rather than serve it. The guard has already
+   * resolved a session or a key and returned 401 if neither held, so
+   * `gate.user` is non-null here and its provisioning branch was unreachable
+   * anyway: the guard 401s on a missing row before this line is reached.
+   */
+  const user = gate.user!;
   const body = gate.body;
 
   if (body.modality === "image") {
