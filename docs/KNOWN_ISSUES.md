@@ -120,8 +120,56 @@ Fixing KI-1 also resolves this, since the key could then be created locally.
 
 ## KI-3 — The audio delivery gate is not connected to the pipeline
 
-**Filed** 2026-08-24 · **Severity** high — it is a guarantee the product does
-not actually provide
+**Filed** 2026-08-24 · **Severity** high · **Largely resolved** 2026-08-24
+
+### Resolution
+
+`services/video/container-probe.ts` parses the MP4 box tree in pure TypeScript,
+and `delivery-audio-check.ts` feeds it into `runAudioGate` from `settleSuccess`,
+**before** the asset transaction. A model that promised sound and returned a
+file with no audio track now fails with `AUDIO_PROMISED_BUT_ABSENT` and the
+credits are released. Silent models skip the requirement entirely.
+
+Proven on the live Veo 3.1 Fast benchmark of 2026-08-24 — including a false
+positive it produced on its first run, which is recorded below because it is the
+more useful half of the result.
+
+### What is still open
+
+Two things, and neither is small:
+
+1. **Silence is still undetectable.** A container probe reads the file's index;
+   it decodes nothing, so a valid AAC track holding eight seconds of silence
+   passes. `MeasuredAudio.scope` is `"container"` here and an unmeasured
+   loudness is a warning at that scope rather than a failure. The encoded data
+   rate is measured as a partial signal — 256.5 kbps on the benchmark render,
+   warned below 8 kbps — but it warns rather than fails, for the reason in
+   [`DELIVERY_MEASUREMENT_SPEC.md`](DELIVERY_MEASUREMENT_SPEC.md).
+
+2. **`assets.width`, `height` and `durationMs` are still NULL.** The probe reads
+   track durations but nothing writes them to the asset row yet.
+
+### The false positive, recorded
+
+The first live run failed a generation that was correct. The parser read
+`channelcount` and `samplerate` at +8 and +16 in the `AudioSampleEntry` when
+both sit eight bytes further in; Veo returned stereo AAC at 48 kHz and the
+parser reported `sampleRate: 2` — the entry's revision level — which tripped the
+gate's "below 44100" rule.
+
+Every unit test passed throughout, because the fixtures were built at the same
+wrong offsets. **A fixture that shares the parser's assumption tests nothing.**
+`tests/unit/real-mp4-offsets.test.ts` now pins 36 bytes lifted verbatim from
+that render.
+
+Settlement was correct: reserve −720, capture 0, refund +720, drift zero. The
+customer paid nothing for the bug. The provider call was still spent.
+
+---
+
+### Original report
+
+**Severity** high — it is a guarantee the product does not actually provide
 
 ### Symptom
 
@@ -232,3 +280,40 @@ Planning a Motion 1 video returns two clarifications, both wrong in a small way:
 The recommended answer to a question Atheos asks should be one Atheos can
 deliver. Accepting the recommendation here selects a sound mode the model has no
 way to produce.
+
+---
+
+## KI-7 — An orphaned R2 object from the failed audio benchmark
+
+**Filed** 2026-08-24 · **Severity** low
+
+### Symptom
+
+Generation `fa92a879-1d01-5881-bb42-35e84726e3db` failed at the audio gate
+_after_ its output had been written to R2 and _before_ the asset transaction. A
+7.3 MB object therefore exists at
+
+```
+users/…/generations/fa92a879-…/0-1d201fec….mp4
+```
+
+with no `assets` row pointing at it. It is not visible to the customer, not
+counted in their storage total, and not reachable from the application.
+
+### Why it was left there
+
+Deliberately. Objects are keyed by content hash, so a redelivery overwrites
+rather than accumulates, and deleting on the failure path would add a second
+failure mode to a path that is already failing.
+
+### What it costs
+
+One object, and the general shape of the problem: any delivery that fails after
+`r2_upload` leaves one behind. There is no sweeper. At the current volume this
+is a rounding error; at scale it is a storage bill nobody is reading.
+
+### Note
+
+This particular file is a **good render** — the gate that rejected it was wrong.
+It is the only copy of the 2026-08-24 Veo 3.1 Fast benchmark and is worth
+keeping until its audio has been listened to.
