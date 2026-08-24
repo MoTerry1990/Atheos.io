@@ -64,6 +64,15 @@ export const FAILURE_CODES = {
   INVALID_CONTENT_TYPE: "INVALID_CONTENT_TYPE",
   OUTPUT_TOO_LARGE: "OUTPUT_TOO_LARGE",
   STORAGE_FAILED: "STORAGE_FAILED",
+  /**
+   * The model promised synchronised sound and the delivered file has none.
+   *
+   * Its own code rather than `INTERNAL_FINALIZATION_FAILED`: this is a provider
+   * outcome, not an Atheos bug, and the two need to be separable in the failure
+   * report. If a model starts silently dropping audio, that shows up here as a
+   * rate rather than being buried in a bucket that also holds our own faults.
+   */
+  AUDIO_PROMISED_BUT_ABSENT: "AUDIO_PROMISED_BUT_ABSENT",
   INTERNAL_FINALIZATION_FAILED: "INTERNAL_FINALIZATION_FAILED",
 } as const;
 

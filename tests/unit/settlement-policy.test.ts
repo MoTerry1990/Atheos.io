@@ -374,6 +374,47 @@ describe("one delivery path, and it is idempotent", () => {
     );
   });
 
+  it("runs the audio gate before the asset transaction, not after", () => {
+    /**
+     * Ordering is the whole guarantee.
+     *
+     * The asset transaction is the point of no return: it creates the rows the
+     * library reads and flips the generation to SUCCEEDED. A gate that ran
+     * after it would be judging a video the customer can already see, and
+     * refunding a generation that had already been delivered.
+     *
+     * Asserted on the source for the same reason as the test above — importing
+     * `generation.ts` pulls in `server-only` and a Prisma client bound to
+     * production.
+     */
+    const service = read("services/generation.ts");
+    const settle = service.slice(
+      service.indexOf("export async function settleSuccess"),
+    );
+
+    const gate = settle.indexOf("checkDeliveredAudio");
+    const transaction = settle.indexOf('inStage("asset_transaction"');
+
+    expect(gate).toBeGreaterThan(-1);
+    expect(transaction).toBeGreaterThan(-1);
+    expect(gate).toBeLessThan(transaction);
+  });
+
+  it("refunds and throws when the gate refuses", () => {
+    // Fail closed. A promised-audio generation that arrives silent must not be
+    // billed, and must not fall through to delivery on the strength of a
+    // logged warning.
+    const service = read("services/generation.ts");
+    const settle = service.slice(
+      service.indexOf("export async function settleSuccess"),
+    );
+
+    expect(settle).toMatch(
+      /settleFailedDelivery\(\{[\s\S]{0,200}AUDIO_PROMISED_BUT_ABSENT/,
+    );
+    expect(settle).toMatch(/throw new GenerationError\(/);
+  });
+
   it("guards asset creation on the storage key before inserting", () => {
     // The idempotency that stops a redelivery showing the customer their image
     // twice. Paired with the deterministic key above: same bytes, same key,

@@ -15,8 +15,31 @@ import type { AudioStrategy } from "@/services/ai/audio-strategy";
  * spend carelessly and that is exactly why it needs the same discipline.
  */
 
+/**
+ * How deeply the file was actually inspected.
+ *
+ * `container` — the box tree was read: a track exists, with a codec, a rate and
+ * a channel count. **No sample was decoded**, so silence cannot be ruled out.
+ *
+ * `full` — a decoder ran and produced loudness figures.
+ *
+ * The distinction is load-bearing. The gate's job is to refuse what it can
+ * disprove, and a container probe can disprove "there is sound here" only in
+ * the total case — no track at all. Treating a missing loudness reading as a
+ * failure at container scope would fail every generation; treating it as a pass
+ * at full scope would let digital silence through, which is the hole this gate
+ * was written to close. So the scope decides, and neither default is silently
+ * applied.
+ */
+export type MeasurementScope = "container" | "full";
+
 export interface MeasuredAudio {
   hasStream: boolean;
+  /**
+   * Defaults to `full` when absent, so every existing caller keeps the strict
+   * behaviour it was written against.
+   */
+  scope?: MeasurementScope;
   codec?: string;
   sampleRate?: number;
   channels?: number;
@@ -114,18 +137,33 @@ export function runAudioGate(input: {
     }
 
     /**
-     * Loudness must be *measurable*, not merely present.
+     * Loudness must be *measurable*, not merely present — once anything has
+     * tried to measure it.
      *
      * `NaN` from a failed loudness parse is the exact hole that let a file
      * through the video gate's silence check: `??` does not catch it and every
-     * comparison against it is false. Unmeasurable is a failure on a stage that
-     * was paid for.
+     * comparison against it is false. At `full` scope, unmeasurable is a
+     * failure on a stage that was paid for.
+     *
+     * At `container` scope nothing decoded a sample, so there is no reading to
+     * be missing. Failing here would refuse every generation for not doing work
+     * this stage never claimed to do. It is recorded as a warning instead, so
+     * the limit of the check is visible in the result rather than implied by
+     * its absence.
      */
     const lufs = measured.integratedLufs;
+    const containerOnly = (measured.scope ?? "full") === "container";
+
     if (lufs === undefined || !Number.isFinite(lufs)) {
-      failures.push(
-        "audio was promised and its loudness could not be measured, so silence cannot be ruled out",
-      );
+      if (containerOnly) {
+        warnings.push(
+          "loudness was not measured — an audio track exists, but silence has not been ruled out",
+        );
+      } else {
+        failures.push(
+          "audio was promised and its loudness could not be measured, so silence cannot be ruled out",
+        );
+      }
     } else if (lufs < -60) {
       failures.push("the audio track is digital silence");
     }
@@ -137,7 +175,18 @@ export function runAudioGate(input: {
       );
     }
 
-    if (measured.durationSeconds !== undefined) {
+    /**
+     * Drift is only checkable against a duration we actually know.
+     *
+     * A zero here means the caller had no reference — no video track was read
+     * and no duration was requested. Comparing against it would report the
+     * audio's entire length as drift and fail every file, which is a
+     * measurement that did not happen masquerading as one that failed.
+     */
+    if (
+      measured.durationSeconds !== undefined &&
+      promised.videoDurationSeconds > 0
+    ) {
       const drift = Math.abs(
         measured.durationSeconds - promised.videoDurationSeconds,
       );

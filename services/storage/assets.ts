@@ -44,6 +44,18 @@ export interface StoredAsset {
   mimeType: string;
   sizeBytes: number;
   checksum: string;
+  /**
+   * The file as stored, for checks that must run before delivery completes.
+   *
+   * Returned rather than re-fetched from R2. These are the identical bytes that
+   * were just uploaded — the checksum above is taken from them — so reading
+   * them back over the network would add a failure mode to the delivery path in
+   * exchange for the same buffer.
+   *
+   * Not persisted anywhere and not part of the asset row; it lives only for the
+   * remainder of the request.
+   */
+  bytes: Buffer;
 }
 
 function extensionFor(mimeType: string): string {
@@ -280,6 +292,7 @@ export async function storeGeneratedAsset(options: {
     mimeType,
     sizeBytes: bytes.byteLength,
     checksum,
+    bytes,
   };
 }
 
@@ -387,6 +400,7 @@ export async function storeUploadedAsset(options: {
     url: r2PublicUrl(storageKey),
     mimeType: options.mimeType,
     sizeBytes: options.bytes.byteLength,
+    bytes: options.bytes,
     checksum: createHash("sha256").update(options.bytes).digest("hex"),
   };
 }

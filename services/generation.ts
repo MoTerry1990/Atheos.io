@@ -41,6 +41,11 @@ import {
   isStorageConfigured,
   storeGeneratedAsset,
 } from "@/services/storage/assets";
+import { checkDeliveredAudio } from "@/services/video/delivery-audio-check";
+import {
+  FAILURE_CODES,
+  settleFailedDelivery,
+} from "@/services/billing/settlement";
 import {
   AnimationSourceError,
   resolveAnimationSource,
@@ -905,6 +910,87 @@ export async function settleSuccess(
       index,
     });
     stored.push({ asset, output });
+  }
+
+  /**
+   * The audio gate, before anything is marked delivered.
+   *
+   * Placed here on purpose: after the bytes are in R2, before the asset rows
+   * and the SUCCEEDED transition. A model that promised sound and returned a
+   * silent file must not reach the customer's library at all, and the
+   * transaction below is the point of no return.
+   *
+   * The objects already uploaded are left where they are. They are keyed by
+   * content hash, so a retry overwrites them rather than accumulating — and
+   * deleting them here would add a second failure mode to a path that is
+   * already failing.
+   */
+  const audioVerdict = await inStage("content_validation", async () => {
+    const row = await prisma.generation.findUnique({
+      where: { id: generationId },
+      select: { model: true, parameters: true, modality: true },
+    });
+
+    if (!row || row.modality !== "VIDEO") return null;
+
+    const parameters = (row.parameters ?? {}) as Record<string, unknown>;
+    const plan = parameters.creativePlan as
+      { audioStrategy?: string } | undefined;
+
+    /**
+     * What was actually asked of the provider.
+     *
+     * `generate_audio` is sent as `request.generateAudio ?? true` and nothing
+     * sets it, so every Veo job requested sound. A Director plan that resolved
+     * to SILENT is the one case where it did not.
+     */
+    const wantsSound = plan?.audioStrategy !== "SILENT";
+
+    for (const { asset } of stored) {
+      const verdict = checkDeliveredAudio({
+        modelId: row.model,
+        mimeType: asset.mimeType,
+        bytes: asset.bytes,
+        wantsSound,
+        requestedDurationSeconds:
+          typeof parameters.durationSeconds === "number"
+            ? parameters.durationSeconds
+            : undefined,
+      });
+
+      // Safe by construction: `detail` has no field that can hold a URL, a
+      // prompt or a signed link. See `delivery-audio-check.ts`.
+      console.info("audio gate", { generationId, ...verdict.detail });
+
+      if (!verdict.ok) return verdict;
+    }
+
+    return null;
+  });
+
+  if (audioVerdict && !audioVerdict.ok) {
+    /**
+     * Fail closed, and refund.
+     *
+     * The provider ran and we will be invoiced for it — `costMicroUsd` records
+     * that, because the loss is Atheos's to absorb and hiding it would
+     * understate exactly the spend most worth knowing about. The customer pays
+     * nothing for a video that does not do what its model promised.
+     */
+    await settleFailedDelivery({
+      generationId,
+      code: FAILURE_CODES.AUDIO_PROMISED_BUT_ABSENT,
+      message:
+        audioVerdict.customerMessage ??
+        "This model was supposed to deliver sound and the finished video has none. You have not been charged.",
+    });
+
+    throw new GenerationError(
+      audioVerdict.customerMessage ??
+        "This model was supposed to deliver sound and the finished video has none. You have not been charged.",
+      502,
+      "audio_promised_but_absent",
+    );
   }
 
   await inStage("asset_transaction", () =>

@@ -1,9 +1,49 @@
 # Delivery measurement — specification
 
-**Status: specification only. Nothing here is built.**
+**Status: partially built.** The container half shipped on 2026-08-24. The
+loudness half remains a specification.
 
 Written 2026-08-24, after Step 4 of the Truth & Audio sprint was found to be
 unverifiable.
+
+---
+
+## 0. What now exists, and what does not
+
+`services/video/container-probe.ts` parses the MP4 box tree in pure TypeScript —
+no ffmpeg, no native dependency, no binary to spawn — and reports whether a
+`soun` track exists along with its codec, channel count, sample rate and
+duration. `services/video/delivery-audio-check.ts` feeds that into
+`runAudioGate` and is called from `settleSuccess` **before** the asset
+transaction, so a model that promised sound and returned a silent file fails and
+refunds rather than being delivered.
+
+That closes the gap this document was written about: the gate is no longer
+called by tests alone.
+
+**It does not close the whole question.** A container probe reads the file's
+index; it decodes nothing. It can prove a track is _absent_ and it cannot prove
+that a track which exists carries anything but silence. The distinction is
+explicit in the type — `MeasuredAudio.scope` is `"container"` here — and at that
+scope a missing loudness reading is recorded as a warning rather than a failure,
+because failing on it would refuse every generation for not doing work this
+stage never claimed to do.
+
+### Still specification, and still needed
+
+Everything below that requires a **decoder**:
+
+| Measurement                | Why a probe cannot give it                       |
+| -------------------------- | ------------------------------------------------ |
+| Integrated loudness (LUFS) | Requires decoding samples and an EBU R128 filter |
+| True peak (dBTP)           | Requires oversampled sample values               |
+| Longest digital silence    | Requires reading the waveform                    |
+
+These matter for the failure a container check cannot see: a file with a valid
+AAC track that is **eight seconds of silence**. That is still deliverable today,
+and it is why the worker phase below is not optional. At `full` scope the gate
+already treats an unmeasurable loudness as a failure — the code is written and
+waiting for something to produce the number.
 
 ---
 
