@@ -46,8 +46,17 @@ describe("1. the canonical credit value", () => {
 });
 
 describe("2-4. the plan table", () => {
-  it("grants 1,900 / 7,000 / 18,000 and 100 once", () => {
-    expect(planConfigFor("FREE").creditsPerMonth).toBe(100);
+  it("grants 1,900 / 7,000 / 18,000 and 300 once", () => {
+    /**
+     * Free is 300, not the 100 this pinned until the free-tier sprint.
+     *
+     * The increase is safe because the grant stopped being automatic at the
+     * same time: it now waits for a verified, non-disposable address and is
+     * recorded against an address hash that survives account deletion. Free is
+     * also capped at the `economical` model class, so 300 credits is about 75
+     * draft images — roughly $0.23 of provider spend, once, per address.
+     */
+    expect(planConfigFor("FREE").creditsPerMonth).toBe(300);
     expect(planConfigFor("CREATOR").creditsPerMonth).toBe(1_900);
     expect(planConfigFor("PRO").creditsPerMonth).toBe(7_000);
     expect(planConfigFor("STUDIO").creditsPerMonth).toBe(18_000);

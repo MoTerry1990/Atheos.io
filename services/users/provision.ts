@@ -1,7 +1,7 @@
 import "server-only";
 
 import { prisma } from "@/lib/prisma";
-import { SIGNUP_GRANT } from "@/services/billing/catalogue";
+import { grantSignupCreditsIfEligible } from "@/services/users/signup-grant";
 // Prisma 7 names generated model types with a `Model` suffix.
 import type { UserModel } from "@/lib/generated/prisma/models";
 
@@ -43,15 +43,24 @@ export async function provisionUser(input: {
   email: string;
   name: string | null;
   imageUrl: string | null;
+  /**
+   * Whether Clerk has confirmed the address.
+   *
+   * The account is created either way — somebody who has not clicked the link
+   * still needs a row to sign in against. Only the **grant** waits.
+   */
+  emailVerified?: boolean;
 }): Promise<UserModel> {
-  // The ledger entry and the cached balance must commit together, or the
-  // balance is a number nobody can explain. See docs/DECISIONS.md.
-  return prisma.$transaction(async (tx) => {
-    const existing = await tx.user.findUnique({
-      where: { clerkId: input.clerkId },
-      select: { id: true },
-    });
-
+  /**
+   * Creating the account is now the whole of this transaction.
+   *
+   * It used to also read the row first, to decide whether this was a first
+   * creation and therefore whether to write the grant. The grant moved to
+   * `grantSignupCreditsIfEligible`, which is exactly-once by unique constraint
+   * rather than by a read — so the lookup went with it. A read-then-decide is
+   * what a unique index is for.
+   */
+  const created = await prisma.$transaction(async (tx) => {
     const user = await tx.user.upsert({
       where: { clerkId: input.clerkId },
       create: {
@@ -59,7 +68,16 @@ export async function provisionUser(input: {
         email: input.email,
         name: input.name,
         imageUrl: input.imageUrl,
-        creditBalance: SIGNUP_GRANT,
+        /**
+         * Zero, not `SIGNUP_GRANT`.
+         *
+         * The welcome credits are no longer part of creating an account. They
+         * are granted by `grantSignupCreditsIfEligible` once the address is
+         * verified, and only if it has never been granted before — see
+         * `services/users/signup-grant.ts`. Seeding a balance here would hand
+         * out the credits before either check ran.
+         */
+        creditBalance: 0,
       },
       // A profile edit in Clerk must not reset the balance, so `creditBalance`
       // is absent here. It is set once, on create, and moves only through the
@@ -71,21 +89,31 @@ export async function provisionUser(input: {
       },
     });
 
-    // Only on first creation. An existing row whose grant row is missing is a
-    // repair job for an operator, not something to silently top up — a
-    // self-healing grant is a self-healing way to give away credits.
-    if (!existing) {
-      await tx.creditTransaction.create({
-        data: {
-          userId: user.id,
-          amount: SIGNUP_GRANT,
-          reason: "SIGNUP_GRANT",
-          balanceAfter: user.creditBalance,
-          idempotencyKey: `signup-grant:${input.clerkId}`,
-        },
-      });
-    }
-
     return user;
   });
+
+  /**
+   * The grant, outside the provisioning transaction and after it.
+   *
+   * Separate on purpose. It has its own transaction, its own idempotency and
+   * two failure modes — unverified and already-granted — that are *normal*
+   * rather than exceptional. Folding it back in here would mean a refused grant
+   * rolled back the account creation, and somebody who has not yet clicked a
+   * verification link could not sign in at all.
+   */
+  if (input.emailVerified) {
+    await grantSignupCreditsIfEligible({
+      userId: created.id,
+      clerkId: input.clerkId,
+      email: input.email,
+      emailVerified: true,
+    });
+
+    // Re-read: the grant moved the balance, and the caller uses this row.
+    return (
+      (await prisma.user.findUnique({ where: { id: created.id } })) ?? created
+    );
+  }
+
+  return created;
 }

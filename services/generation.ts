@@ -420,6 +420,9 @@ export async function submitGeneration(input: SubmitInput) {
   const limits = await checkGenerationLimits({
     userId: user.id,
     tier: entitledTier,
+    // Drives the per-modality daily cap. Free is ten images a day; video is
+    // capped at two and separately unreachable from that plan.
+    modality: model.modality,
   });
 
   if (!limits.allowed) {

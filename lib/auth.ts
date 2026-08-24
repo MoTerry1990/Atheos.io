@@ -110,10 +110,11 @@ async function resolveOrProvision(userId: string): Promise<UserModel | null> {
   // Only reached once per account, so the extra Clerk API call costs nothing
   // in the steady state.
   const clerkUser = await currentUser();
-  const email =
+  const primary =
     clerkUser?.emailAddresses.find(
       (address) => address.id === clerkUser.primaryEmailAddressId,
-    )?.emailAddress ?? clerkUser?.emailAddresses[0]?.emailAddress;
+    ) ?? clerkUser?.emailAddresses[0];
+  const email = primary?.emailAddress;
 
   if (!clerkUser || !email) return null;
 
@@ -124,6 +125,14 @@ async function resolveOrProvision(userId: string): Promise<UserModel | null> {
       [clerkUser.firstName, clerkUser.lastName].filter(Boolean).join(" ") ||
       null,
     imageUrl: clerkUser.imageUrl || null,
+    /**
+     * The fallback path for the grant.
+     *
+     * Normally `user.updated` grants when the link is clicked. This covers the
+     * case where that webhook never arrived — the user verified, signed in, and
+     * the row is being created here for the first time.
+     */
+    emailVerified: primary?.verification?.status === "verified",
   });
 }
 

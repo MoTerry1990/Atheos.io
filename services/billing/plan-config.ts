@@ -60,9 +60,12 @@ import {
  * work is not lost, and `status: "launch_disabled"` keeps it off the pricing
  * page until the costs are measured.
  *
- * The Free plan is the exception: 100 credits is what it already grants, it is
- * bounded by being one-time, and its worst case is ~$0.18 of image generation
- * because video is not reachable from it at all.
+ * The Free plan is the exception: 300 credits, bounded by being one-time, and
+ * its worst case is ~$0.23 of image generation because video is not reachable
+ * from it at all and the `economical` class ceiling caps the rest. The grant is
+ * also gated on a verified, non-disposable address and recorded against an
+ * address hash that survives account deletion — see
+ * `services/users/signup-grant.ts`.
  */
 
 /**
@@ -120,6 +123,20 @@ export interface PlanConfig {
   generationsPerMinute: number;
 
   eligibleModalities: readonly Modality[];
+
+  /**
+   * Jobs per rolling day, per modality. Absent means uncapped.
+   *
+   * Distinct from `generationsPerHour`, which is a burst control shared across
+   * every modality. This is a *volume* control and it is per-modality because
+   * the modalities cost wildly different amounts: ten draft images is about
+   * $0.03, ten clips is about $1.00.
+   *
+   * Enforced server-side at reservation, inside the same check that refuses an
+   * over-concurrency request — see `services/limits/generation-limits.ts`. A
+   * cap enforced in the client is a cap enforced for honest users only.
+   */
+  dailyJobCaps?: Partial<Record<Modality, number>>;
   maxModelClass: ModelClass;
 
   /**
@@ -139,12 +156,18 @@ export const PLAN_CONFIGS: readonly PlanConfig[] = [
     monthlyPriceCents: 0,
     // Not monthly — a **one-time** grant. Sprint 4 changed this; see
     // `services/billing/free-grant.ts` for why the renewal was a liability.
-    creditsPerMonth: 100,
-    provisionalCreditsPerMonth: 100,
-    // Worst-case provider spend, once, per account: 100 x $0.002 = $0.20.
-    // Observed worst case is ~7 flux-dev images at $0.025 = $0.18, which is the
-    // same number arrived at from the other direction.
-    providerAllowanceUsd: 0.2,
+    creditsPerMonth: 300,
+    provisionalCreditsPerMonth: 300,
+    /**
+     * Worst-case provider spend, once, per account: 300 x $0.002 = $0.60.
+     *
+     * That figure uses the catalogue-wide worst case. The *reachable* worst
+     * case is far lower, because Free is capped at the `economical` class: 300
+     * credits buys 75 draft images at $0.003, about **$0.23**. The larger
+     * number is kept because it is the one that holds if the class ceiling ever
+     * moves.
+     */
+    providerAllowanceUsd: 0.6,
     // One at a time. The audit rates parallel free generation as Critical, and
     // a concurrency of 1 is what makes the 20-parallel-request attack a queue
     // rather than a bill.
@@ -153,6 +176,19 @@ export const PLAN_CONFIGS: readonly PlanConfig[] = [
     generationsPerMinute: 3,
     // No video. Not a margin decision — a volume one. See `freeTierEligible`.
     eligibleModalities: ["IMAGE", "AUDIO"],
+    /**
+     * Ten images and two clips a day.
+     *
+     * The video cap is **defence in depth, not the active control**: `VIDEO` is
+     * absent from `eligibleModalities`, so a free account is refused a clip
+     * before the cap is ever consulted. It is declared anyway so that enabling
+     * video on Free is a one-line change with a limit already attached, rather
+     * than a one-line change that quietly uncaps it.
+     *
+     * Ten images at the economical ceiling is ~$0.10 of provider spend per day,
+     * against a 300-credit grant that is exhausted after 75 of them.
+     */
+    dailyJobCaps: { IMAGE: 10, VIDEO: 2 },
     maxModelClass: "economical",
     status: "active",
   },

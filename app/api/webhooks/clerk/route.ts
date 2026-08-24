@@ -8,6 +8,7 @@ import { env } from "@/lib/env";
 import { isUniqueViolation } from "@/lib/prisma-errors";
 import { prisma } from "@/lib/prisma";
 import { provisionUser } from "@/services/users/provision";
+import { grantSignupCreditsIfEligible } from "@/services/users/signup-grant";
 
 /**
  * Clerk → database user sync.
@@ -53,6 +54,24 @@ function primaryEmail(data: UserJSON): string | null {
   );
 }
 
+/**
+ * Whether Clerk has confirmed the primary address.
+ *
+ * The grant waits for this. An unverified address costs nothing to invent, so
+ * granting before the click is granting to anybody who can type.
+ *
+ * Read from the *primary* address specifically — a user can add a second,
+ * unverified address without invalidating the one they signed up with.
+ */
+function primaryEmailVerified(data: UserJSON): boolean {
+  const primary =
+    data.email_addresses.find(
+      (email) => email.id === data.primary_email_address_id,
+    ) ?? data.email_addresses[0];
+
+  return primary?.verification?.status === "verified";
+}
+
 function fullName(data: UserJSON): string | null {
   const name = [data.first_name, data.last_name]
     .filter(Boolean)
@@ -79,6 +98,7 @@ async function handleUserCreated(data: UserJSON) {
     email,
     name: fullName(data),
     imageUrl: data.image_url || null,
+    emailVerified: primaryEmailVerified(data),
   });
 }
 
@@ -95,6 +115,32 @@ async function handleUserUpdated(data: UserJSON) {
       name: fullName(data),
       imageUrl: data.image_url || null,
     },
+  });
+
+  /**
+   * The moment the welcome credits are actually granted, for most accounts.
+   *
+   * A sign-up with an unverified address creates the row and no grant. Clicking
+   * the verification link fires `user.updated` with the address now verified —
+   * this is where that becomes credits.
+   *
+   * Safe to run on every `user.updated`, including the thousands that are just
+   * a changed avatar: `grantSignupCreditsIfEligible` is exactly-once by two
+   * unique constraints, so a repeat is one indexed lookup and a refusal.
+   */
+  if (!email || !primaryEmailVerified(data)) return;
+
+  const user = await prisma.user.findUnique({
+    where: { clerkId: data.id },
+    select: { id: true },
+  });
+  if (!user) return;
+
+  await grantSignupCreditsIfEligible({
+    userId: user.id,
+    clerkId: data.id,
+    email,
+    emailVerified: true,
   });
 }
 

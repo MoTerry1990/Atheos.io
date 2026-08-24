@@ -140,10 +140,19 @@ export const PLAN_DEFINITIONS: readonly PlanDefinition[] = [
     // the wording here changed with it. A free tier that renews forever is a
     // cost that grows with signups and never with revenue, which on a $500
     // ceiling is the one shape that cannot be managed.
-    monthlyCredits: 100,
+    monthlyCredits: 300,
     features: [
-      "100 credits when you join, one time",
-      "Around 25 images, or 7 on the quality model",
+      "300 credits when you join, one time",
+      /**
+       * 300 / 4 credits on the draft model.
+       *
+       * The old bullet read "Around 25 images, or 7 on the quality model" and
+       * the second half was never true: Free is capped at the `economical`
+       * model class (worst case <= $0.01) and the quality model costs $0.025,
+       * so `planAllowsModel` refuses it. Advertising a model the plan cannot
+       * reach is the kind of claim somebody discovers after signing up.
+       */
+      "Around 75 images on the draft model",
       "Full asset library and projects",
       "Commercial rights to everything you make",
     ],
@@ -234,11 +243,17 @@ export const PACK_DEFINITIONS: readonly PackDefinition[] = [
  * inside the transaction that creates the user, keyed on the Clerk id so a
  * retried webhook cannot double it.
  *
- * At $0.005 a credit this is $0.50 of retail value. The real exposure is lower:
- * video is not reachable from the Free plan, so the worst case is about seven
- * quality images, or $0.18 of provider spend.
+ * At $0.005 a credit this is $1.50 of retail value. The real exposure is much
+ * lower: the Free plan reaches only `economical` models, so the worst case is
+ * about 75 draft images at $0.003 each — roughly **$0.23** of provider spend.
+ *
+ * Raised from 100 in the free-tier sprint. The grant is no longer written at
+ * account creation: `services/users/signup-grant.ts` waits for a verified
+ * address, refuses known disposable domains, and records the address hash in a
+ * table that survives account deletion — so tripling it does not triple the
+ * faucet.
  */
-export const SIGNUP_GRANT = 100;
+export const SIGNUP_GRANT = 300;
 
 /** Plans that may be bought today. */
 export function sellablePlanDefinitions(): readonly PlanDefinition[] {

@@ -303,8 +303,8 @@ export function BillingScreen({
    *      monthly" asserts a relationship that does not exist.
    *   2. A plan is actually granting credits — complimentary access grants
    *      none, so there is no denominator to show.
-   *   3. That grant is **recurring**. Free's 100 credits are a one-time
-   *      welcome grant, and rendering "82 of 100 used this period" would
+   *   3. That grant is **recurring**. Free's 300 credits are a one-time
+   *      welcome grant, and rendering "82 of 300 used this period" would
    *      invent a monthly allowance the Free plan has never had.
    *
    * When any fails the bar is dropped and the facts are stated separately,

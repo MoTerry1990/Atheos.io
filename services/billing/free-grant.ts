@@ -8,7 +8,7 @@ import { SIGNUP_GRANT } from "@/services/billing/catalogue";
  *
  * ## What changed, and why
  *
- * Sprint 26 built `grantFreeMonthlyCredits()` because the pricing page said
+ * Sprint 26 built `grantFreeMonthlyCredits()` because the pricing page then said
  * "100 credits monthly" and the product only ever granted them once. That fixed
  * a real mismatch — in the wrong direction.
  *
@@ -26,18 +26,22 @@ import { SIGNUP_GRANT } from "@/services/billing/catalogue";
  *
  * ## Where the grant actually happens
  *
- * `services/users/provision.ts`, inside the transaction that creates the user,
- * with `idempotencyKey = signup-grant:{clerkId}`. That is the correct place and
- * it needs no help from here:
+ * `services/users/signup-grant.ts`, called after the account row exists rather
+ * than inside the transaction that creates it. It used to live in
+ * `provision.ts`, keyed on the Clerk id alone; the free-tier sprint moved it so
+ * the grant could wait for a verified address and be refused for an address
+ * that has already had one.
  *
- *   - It runs once because the key is unique in the database, not because the
- *     code checks first. A retried webhook, a race between the webhook and the
- *     first sign-in, and a double-clicked sign-up button all collide on the
- *     same key and the second one is refused by Postgres.
- *   - It is keyed on the Clerk id, which is stable for the life of the account,
- *     so deleting and restoring a user does not re-grant.
- *   - Existing users cannot receive a second grant, because their key already
- *     exists. No backfill, no exclusion list, no dated cutoff.
+ *   - It runs once per **account** because `signup-grant:{clerkId}` is unique
+ *     in the database, not because the code checks first. A retried webhook, a
+ *     race between the webhook and the first sign-in, and a double-clicked
+ *     sign-up button all collide on that key.
+ *   - It runs once per **address** because `signup_grants.emailHash` is a
+ *     primary key on a table with no foreign key to `User`. Deleting the
+ *     account does not delete the record, which is the whole reason the ledger
+ *     could not be the record — `credit_transactions` cascades.
+ *   - Existing users cannot receive a second grant, because both keys already
+ *     exist. No backfill, no exclusion list, no dated cutoff.
  *
  * ## The abuse limitation, stated plainly
  *

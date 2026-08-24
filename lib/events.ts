@@ -48,6 +48,13 @@ export type EventName =
   | "limit.rate_blocked"
   | "limit.concurrency_blocked"
   | "limit.store_unavailable"
+  // Free-tier daily caps, per modality, enforced at reservation.
+  | "limit.daily_cap_blocked"
+  // Signup grant. `grant.signup` is the success; the other two are the
+  // signals an abuse view is built from.
+  | "grant.signup"
+  | "grant.blocked_disposable"
+  | "grant.blocked_repeat_email"
   // Financial controls
   | "spend.threshold"
   | "spend.blocked"

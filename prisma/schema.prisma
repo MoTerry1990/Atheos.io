@@ -1222,3 +1222,43 @@ model RateLimitBucket {
   @@index([expiresAt])
   @@map("rate_limit_buckets")
 }
+
+/// One signup grant per verified email address, ever.
+///
+/// ## Why this is not a column on `User`
+///
+/// The grant is already idempotent per *account*: `provisionUser` writes a
+/// `CreditTransaction` keyed `signup-grant:{clerkId}`, and the unique index
+/// refuses a second one. That stops retried webhooks and double-clicked sign-up
+/// buttons, and it is not the same thing as stopping abuse.
+///
+/// `CreditTransaction` is `onDelete: Cascade` from `User`. So deleting the
+/// account deletes the evidence, and signing up again with the same address
+/// grants again. At 300 credits a time that is a free, unlimited faucet for
+/// anybody willing to click "delete account".
+///
+/// This table has **no foreign key to `User` on purpose**. It is not part of a
+/// user's data; it is a record that an address has been used, and it has to
+/// outlive every account that address ever had. Deleting a user does not touch
+/// it.
+///
+/// ## What is stored, and what is not
+///
+/// The address is **hashed, never stored**. `emailHash` is a SHA-256 of the
+/// normalised address (see `services/users/signup-grant.ts`), so the table can
+/// answer "has this address been granted before" without holding a list of
+/// every email that ever signed up — which would be a needless liability, and
+/// one that survives account deletion by design.
+model SignupGrant {
+  /// SHA-256 of the normalised address. The whole point of the table.
+  emailHash String @id
+
+  /// What was granted, so a change to `SIGNUP_GRANT` is auditable after the
+  /// fact rather than inferred from the date.
+  creditsGranted Int
+
+  grantedAt DateTime @default(now())
+
+  @@index([grantedAt])
+  @@map("signup_grants")
+}
