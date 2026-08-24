@@ -305,6 +305,7 @@ describe("nothing logged can carry a secret", () => {
       "audioDurationSeconds",
       "channels",
       "codec",
+      "dataRateKbps",
       "hasAudioStream",
       "modelId",
       "promisedAudio",

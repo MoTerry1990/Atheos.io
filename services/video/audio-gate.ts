@@ -50,6 +50,13 @@ export interface MeasuredAudio {
   truePeakDb?: number;
   /** Longest run of digital silence, seconds. */
   longestSilenceSeconds?: number;
+  /**
+   * Average encoded data rate, kbps, read from the container's index.
+   *
+   * Available without a decoder, and treated as a hint rather than a verdict —
+   * see the warning it raises below.
+   */
+  dataRateKbps?: number;
   /** Set when a decoder could not read the file at all. */
   decodeError?: string;
 }
@@ -199,6 +206,27 @@ export function runAudioGate(input: {
             : `audio is ${drift.toFixed(3)}s longer than the video`,
         );
       }
+    }
+
+    /**
+     * A track carrying almost no data, warned about but not failed.
+     *
+     * A real 8-second stereo render measures around 256 kbps; AAC encoding pure
+     * silence collapses one to two orders of magnitude below that. Eight kbps
+     * sits in the gap with margin on both sides.
+     *
+     * **A warning, deliberately.** The threshold rests on a single measured
+     * example and no measured silent baseline, and a check built on one data
+     * point is exactly how this gate already failed a good Veo render and
+     * refunded it. It earns a failure once the worker phase has real loudness
+     * to calibrate against; until then it flags a file for a human rather than
+     * refusing one on a guess.
+     */
+    const rate = measured.dataRateKbps;
+    if (rate !== undefined && Number.isFinite(rate) && rate < 8) {
+      warnings.push(
+        `the audio track carries only ${rate.toFixed(1)} kbps — it may be silent`,
+      );
     }
 
     if ((measured.longestSilenceSeconds ?? 0) > 2) {

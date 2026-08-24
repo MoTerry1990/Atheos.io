@@ -45,6 +45,34 @@ and it is why the worker phase below is not optional. At `full` scope the gate
 already treats an unmeasurable loudness as a failure — the code is written and
 waiting for something to produce the number.
 
+### One free signal in the meantime: encoded data rate
+
+The container indexes every frame's byte length in `stsz`, so summing it and
+dividing by the track duration costs one pass over a table already in memory and
+no decoder at all.
+
+Measured on the Veo 3.1 Fast benchmark render of 2026-08-24:
+
+|               |                |
+| ------------- | -------------- |
+| Frames        | 377            |
+| Mean frame    | 683 bytes      |
+| Duration      | 8.033 s        |
+| **Data rate** | **256.5 kbps** |
+
+AAC encoding pure digital silence collapses to near-minimum frames, one to two
+orders of magnitude below that. The gate warns below **8 kbps**, which sits in
+the gap with margin on both sides.
+
+**It warns; it does not fail.** The threshold rests on a single measured example
+and no measured silent baseline — and a check built on one data point is exactly
+how this gate failed a good Veo render and refunded it (see
+`tests/unit/real-mp4-offsets.test.ts`). It earns a failure once the worker has
+real loudness to calibrate against.
+
+It is also not a proof of audibility even then: a track can carry a healthy
+bitrate of room tone nobody can hear. Only loudness settles that.
+
 ---
 
 ## 1. The problem

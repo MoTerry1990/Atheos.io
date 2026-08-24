@@ -33,6 +33,21 @@ export interface AudioTrackInfo {
   channels?: number;
   /** Track duration in seconds, from `mdhd` timescale and duration. */
   durationSeconds?: number;
+  /**
+   * Average encoded data rate, kbps, from the sample-size table.
+   *
+   * A weak but genuinely free signal about whether the track carries anything.
+   * The container indexes every frame's byte length, so summing `stsz` and
+   * dividing by the duration costs one pass over a table already in memory —
+   * no decoder, no samples touched.
+   *
+   * A real 8-second stereo render measured 256 kbps. AAC encoding pure digital
+   * silence collapses to near-minimum frames, one or two orders of magnitude
+   * below that. It is **not** proof of audibility: a track can carry a healthy
+   * bitrate of room tone nobody can hear, and only a loudness measurement
+   * settles that. See `docs/DELIVERY_MEASUREMENT_SPEC.md`.
+   */
+  dataRateKbps?: number;
 }
 
 export interface ContainerProbe {
@@ -249,12 +264,54 @@ function readTrackDuration(bytes: Buffer, mdia: Box): number | undefined {
   return undefined;
 }
 
+/**
+ * Total encoded bytes across every sample, from `stsz`.
+ *
+ * `stsz` carries either one uniform size for all samples, or a table of
+ * per-sample sizes. Both forms are handled; anything else returns undefined
+ * rather than a partial sum, because a data rate computed from half a table
+ * would understate and could only ever produce a false alarm.
+ */
+function totalSampleBytes(bytes: Buffer, stbl: Box): number | undefined {
+  const stsz = findChild(bytes, stbl, "stsz");
+  if (!stsz || stsz.end - stsz.start < 12) return undefined;
+
+  // `stsz`: version(1) flags(3) sample_size(4) sample_count(4) [sizes(4n)]
+  const uniform = bytes.readUInt32BE(stsz.start + 4);
+  const count = bytes.readUInt32BE(stsz.start + 8);
+  if (count === 0) return undefined;
+
+  if (uniform > 0) return uniform * count;
+
+  const tableEnd = stsz.start + 12 + count * 4;
+  if (tableEnd > stsz.end) return undefined;
+
+  let total = 0;
+  for (let i = 0; i < count; i++) {
+    total += bytes.readUInt32BE(stsz.start + 12 + i * 4);
+  }
+  return total;
+}
+
 /** Codec, sample rate, channels and duration for one `soun` track. */
 function readAudioTrack(bytes: Buffer, mdia: Box): AudioTrackInfo {
   const track: AudioTrackInfo = { codec: "unknown" };
 
   // --- Duration, from the media header ---------------------------------
   track.durationSeconds = readTrackDuration(bytes, mdia);
+
+  // --- Data rate, from the sample-size table ----------------------------
+  const stblForSizes = (() => {
+    const minf = findChild(bytes, mdia, "minf");
+    return minf ? findChild(bytes, minf, "stbl") : undefined;
+  })();
+
+  if (stblForSizes && track.durationSeconds && track.durationSeconds > 0) {
+    const total = totalSampleBytes(bytes, stblForSizes);
+    if (total !== undefined) {
+      track.dataRateKbps = (total * 8) / track.durationSeconds / 1000;
+    }
+  }
 
   // --- Codec and format, from the sample description --------------------
   const minf = findChild(bytes, mdia, "minf");

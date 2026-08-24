@@ -89,6 +89,8 @@ export interface AudioDeliveryVerdict {
     channels?: number;
     audioDurationSeconds?: number;
     videoDurationSeconds?: number;
+    /** Average encoded kbps. Logged so a silent-looking track is visible. */
+    dataRateKbps?: number;
     parseError?: string;
   };
   /** Shown to the customer when `ok` is false. Never a parser message. */
@@ -164,6 +166,7 @@ export function checkDeliveredAudio(input: {
       sampleRate: track?.sampleRate,
       channels: track?.channels,
       durationSeconds: track?.durationSeconds,
+      dataRateKbps: track?.dataRateKbps,
       // A parse failure is a decode failure as far as the gate is concerned:
       // nothing was measured, so nothing may be concluded.
       decodeError: probe.error,
@@ -198,6 +201,7 @@ export function checkDeliveredAudio(input: {
       channels: track?.channels,
       audioDurationSeconds: track?.durationSeconds,
       videoDurationSeconds: probe.videoDurationSeconds,
+      dataRateKbps: track?.dataRateKbps,
       ...(probe.error ? { parseError: probe.error } : {}),
     },
     customerMessage:
