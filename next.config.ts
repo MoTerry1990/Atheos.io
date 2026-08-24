@@ -260,8 +260,22 @@ const nextConfig: NextConfig = {
    */
   htmlLimitedBots: /.*/,
 
-  // Keep server-only native dependencies out of the bundler's way.
-  serverExternalPackages: ["@prisma/client", "@prisma/adapter-pg"],
+  /**
+   * Keep server-only native dependencies out of the bundler's way.
+   *
+   * `audio-decode` and its codec packages load their WASM through dynamic
+   * requires, which webpack cannot trace statically — it warns "the request of
+   * a dependency is an expression" and then bundles something that resolves
+   * locally and throws in the lambda. Listing them here means Next.js leaves
+   * the `require` alone and Vercel's file tracing ships the real package, which
+   * is the same reason Prisma is on this list.
+   */
+  serverExternalPackages: [
+    "@prisma/client",
+    "@prisma/adapter-pg",
+    "audio-decode",
+    "@audio/decode",
+  ],
 
   /**
    * Serve R2 objects through our own origin.
