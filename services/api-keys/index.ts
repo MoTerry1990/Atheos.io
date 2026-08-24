@@ -1,4 +1,5 @@
 import "server-only";
+import { API_KEY_PREFIX } from "@/services/api-keys/prefix";
 
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 
@@ -43,7 +44,9 @@ import type { UserModel } from "@/lib/generated/prisma/models";
  * somebody's key. Losing it means issuing a new one.
  */
 
-const PREFIX = "atk";
+// Re-exported from its own module so `lib/request-identity.ts` can recognise a
+// bearer token without importing Prisma. See `./prefix.ts`.
+const PREFIX = API_KEY_PREFIX;
 /** How much of the key is stored in clear, for display. */
 const VISIBLE = 12;
 

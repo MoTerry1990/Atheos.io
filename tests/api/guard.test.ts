@@ -29,6 +29,11 @@ vi.mock("@/services/admin/auth", () => ({
   isAdmin: (...a: unknown[]) => isAdmin(...a),
 }));
 
+const resolveApiKey = vi.fn();
+vi.mock("@/services/api-keys", () => ({
+  resolveApiKey: (...a: unknown[]) => resolveApiKey(...a),
+}));
+
 const { guard } = await import("@/lib/api-guard");
 
 const USER = { id: "db_1", clerkId: "clerk_1", email: "a@example.com" };
@@ -58,6 +63,8 @@ beforeEach(() => {
   getUserId.mockResolvedValue("clerk_1");
   getCurrentUser.mockResolvedValue(USER);
   isAdmin.mockResolvedValue(false);
+  // No key unless a test presents a good one.
+  resolveApiKey.mockResolvedValue(null);
 });
 
 describe("cross-origin", () => {
@@ -285,5 +292,151 @@ describe("input validation", () => {
     );
 
     expect((gate as NextResponse).status).toBe(400);
+  });
+});
+
+describe("API keys", () => {
+  /**
+   * A key is the machine door into the same house.
+   *
+   * `requireApiUser()` has always contained this fallback, but nothing ever
+   * reached it: the guard 401'd on the missing session first, and before that
+   * 403'd on the missing `Origin`, because a server-to-server client sends
+   * neither. The whole feature was unreachable in production while looking
+   * fully implemented in the code.
+   */
+  const KEY = "atk_live_abcdefghijklmnopqrstuvwxyz";
+  const anonymous = () => getUserId.mockResolvedValue(null);
+  const bearer = (key: string) => ({ authorization: `Bearer ${key}` });
+
+  it("authenticates a POST carrying a valid key", async () => {
+    anonymous();
+    resolveApiKey.mockResolvedValue(USER);
+
+    const gate = await guard(
+      req({ method: "POST", headers: bearer(KEY), body: { a: 1 } }),
+      { policy: "mutation", body: z.object({ a: z.number() }) },
+    );
+
+    expect(gate).not.toBeInstanceOf(NextResponse);
+    const ctx = gate as Exclude<typeof gate, NextResponse>;
+    expect(ctx.user).toBe(USER);
+    expect(ctx.body).toEqual({ a: 1 });
+    expect(resolveApiKey).toHaveBeenCalledWith(KEY);
+  });
+
+  it("gives the key its owner's identity, not an anonymous one", async () => {
+    /**
+     * Requirement of the ledger: a generation billed through a key must be
+     * attributable exactly as a session generation is. Both the row and the
+     * Clerk id come from the key's owner, so nothing downstream can tell — or
+     * needs to tell — which door the request used.
+     */
+    anonymous();
+    resolveApiKey.mockResolvedValue(USER);
+
+    const gate = await guard(req({ method: "POST", headers: bearer(KEY) }), {
+      policy: "mutation",
+    });
+
+    const ctx = gate as Exclude<typeof gate, NextResponse>;
+    expect(ctx.user?.id).toBe(USER.id);
+    expect(ctx.sessionId).toBe(USER.clerkId);
+    expect(ctx.viaApiKey).toBe(true);
+  });
+
+  it("401s a revoked key", async () => {
+    // `resolveApiKey` returns null for revoked, unknown and malformed alike —
+    // the guard must not distinguish them to a caller either.
+    anonymous();
+    resolveApiKey.mockResolvedValue(null);
+
+    const gate = await guard(req({ method: "POST", headers: bearer(KEY) }), {
+      policy: "mutation",
+    });
+
+    expect((gate as NextResponse).status).toBe(401);
+  });
+
+  it("401s with neither key nor session", async () => {
+    anonymous();
+
+    const gate = await guard(req({ method: "POST", headers: sameOrigin }), {
+      policy: "mutation",
+    });
+
+    expect((gate as NextResponse).status).toBe(401);
+    expect(resolveApiKey).not.toHaveBeenCalled();
+  });
+
+  it("skips CSRF for a bearer key and keeps it for a cookie session", async () => {
+    /**
+     * The exemption is specific, not a hole. CSRF defends against a browser
+     * attaching an *ambient* credential to a request another site caused; an
+     * `Authorization` header is never ambient. A cookie session with no
+     * same-origin signal is still refused in the very next assertion.
+     */
+    anonymous();
+    resolveApiKey.mockResolvedValue(USER);
+    const withKey = await guard(req({ method: "POST", headers: bearer(KEY) }), {
+      policy: "mutation",
+    });
+    expect(withKey).not.toBeInstanceOf(NextResponse);
+
+    getUserId.mockResolvedValue("clerk_1");
+    const withCookie = await guard(req({ method: "POST" }), {
+      policy: "mutation",
+    });
+    expect((withCookie as NextResponse).status).toBe(403);
+  });
+
+  it("does not exempt a header that is not one of our keys", async () => {
+    // A stray `Authorization: Bearer eyJ...` on a browser request must not buy
+    // a CSRF exemption. Only the `atk_` prefix does.
+    getUserId.mockResolvedValue("clerk_1");
+
+    const gate = await guard(
+      req({
+        method: "POST",
+        headers: { authorization: "Bearer eyJhbGciOiJIUzI1NiJ9.x.y" },
+      }),
+      { policy: "mutation" },
+    );
+
+    expect((gate as NextResponse).status).toBe(403);
+    expect(resolveApiKey).not.toHaveBeenCalled();
+  });
+
+  it("prefers the session when a request somehow carries both", async () => {
+    // Belt and braces: the browser's own credential wins, and no key lookup is
+    // spent deciding that.
+    getUserId.mockResolvedValue("clerk_1");
+
+    const gate = await guard(req({ method: "POST", headers: bearer(KEY) }), {
+      policy: "mutation",
+    });
+
+    const ctx = gate as Exclude<typeof gate, NextResponse>;
+    expect(ctx.viaApiKey).toBe(false);
+    expect(resolveApiKey).not.toHaveBeenCalled();
+  });
+
+  it("still rate limits a key caller, in its own bucket", async () => {
+    /**
+     * The exemption is from CSRF only. Keys are bucketed on a hash of the token
+     * rather than the IP, so one customer's automation cannot exhaust another's
+     * allowance from behind the same NAT.
+     */
+    anonymous();
+    resolveApiKey.mockResolvedValue(USER);
+
+    const gate = await guard(req({ method: "POST", headers: bearer(KEY) }), {
+      policy: "mutation",
+    });
+    // The limiter ran: its headers came back on the success path, exactly as
+    // they do for a session caller. Which bucket the key lands in is asserted
+    // against `callerKey` in tests/unit/request-identity.test.ts.
+    const ctx = gate as Exclude<typeof gate, NextResponse>;
+    expect(Object.keys(ctx.headers)).toContain("RateLimit-Limit");
   });
 });

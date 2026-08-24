@@ -13,7 +13,8 @@ import {
   checkRateLimit,
   rateLimitHeaders,
 } from "@/lib/rate-limit";
-import { callerKey, verifyCsrf } from "@/lib/request-identity";
+import { bearerApiKey, callerKey, verifyCsrf } from "@/lib/request-identity";
+import { resolveApiKey } from "@/services/api-keys";
 
 /**
  * The gate every route handler passes through.
@@ -54,6 +55,15 @@ export interface GuardContext<TBody, TQuery> {
   user: UserModel | null;
   /** Clerk id. Present whenever there is a session, even before the row exists. */
   sessionId: string | null;
+  /**
+   * True when `user` was resolved from an `Authorization: Bearer` API key
+   * rather than a browser session.
+   *
+   * The permission scope is identical either way — a key acts as its owner —
+   * so no handler should branch on this to decide *what* a caller may do. It is
+   * here so a handler can log which door a request came through.
+   */
+  viaApiKey: boolean;
   body: TBody;
   query: TQuery;
   /** `RateLimit-*` headers, for handlers that want to echo them on success. */
@@ -117,7 +127,32 @@ export async function guard<TBody = undefined, TQuery = undefined>(
 ): Promise<GuardContext<TBody, TQuery> | NextResponse> {
   const method = request.method.toUpperCase();
   const authMode = options.auth ?? "required";
-  const checkCsrf = options.csrf ?? !SAFE_METHODS.has(method);
+
+  /**
+   * Does the caller present a bearer key? Pure header inspection, no I/O.
+   *
+   * Answered here, before anything is spent, because it changes two later
+   * decisions: whether CSRF applies, and which rate-limit bucket this request
+   * lands in. Resolving the key properly is a database read and stays where the
+   * other database reads are.
+   */
+  const bearer = authMode === "none" ? null : bearerApiKey(request);
+
+  /**
+   * CSRF does not apply to a bearer key.
+   *
+   * The attack it defends against is a browser attaching an *ambient*
+   * credential to a request some other site caused. A cookie is ambient; an
+   * `Authorization` header is not — a cross-origin page cannot set one on a
+   * request the browser sends for it, and a non-browser client has no cookie to
+   * be tricked out of. Requiring an `Origin` from a server-to-server caller is
+   * what made the whole API-key feature unreachable.
+   *
+   * A malformed or revoked key skips CSRF and then fails authentication a few
+   * lines below, which costs nothing: CSRF only ever protected the session, and
+   * a caller presenting a bearer token is not using one.
+   */
+  const checkCsrf = (options.csrf ?? !SAFE_METHODS.has(method)) && !bearer;
 
   // 1. Cross-origin ------------------------------------------------------
   if (checkCsrf) {
@@ -160,8 +195,34 @@ export async function guard<TBody = undefined, TQuery = undefined>(
 
   // 4. User row — the first database read --------------------------------
   let user: UserModel | null = null;
-  if (authMode !== "none" && sessionId) {
-    user = await getCurrentUser();
+  let viaApiKey = false;
+
+  if (authMode !== "none") {
+    if (sessionId) {
+      user = await getCurrentUser();
+    } else if (bearer) {
+      /**
+       * The session is absent, so try the key — the same fallback
+       * `requireApiUser()` has always performed, finally reachable.
+       *
+       * `resolveApiKey` does the hash lookup, refuses a revoked key and
+       * compares in constant time. It returns the key's **owner**, so
+       * everything downstream — the credit ledger, the plan tier, the spend
+       * ceiling — attributes the work to that user exactly as a session would.
+       */
+      user = await resolveApiKey(bearer);
+      viaApiKey = user !== null;
+
+      /**
+       * Adopt the owner's Clerk id as the session id.
+       *
+       * Every consumer of `sessionId` means "which principal is this", and a
+       * key acts as its owner. Leaving it null would make an API-key request
+       * look anonymous to anything that attributes work by Clerk id, which is
+       * precisely the drift requirement 2 forbids.
+       */
+      if (user) sessionId = user.clerkId;
+    }
   }
 
   if (authMode === "required" && !user) {
@@ -210,7 +271,7 @@ export async function guard<TBody = undefined, TQuery = undefined>(
     body = parsed.data;
   }
 
-  return { user, sessionId, body, query, headers };
+  return { user, sessionId, viaApiKey, body, query, headers };
 }
 
 /**

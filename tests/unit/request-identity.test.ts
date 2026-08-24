@@ -128,3 +128,54 @@ describe("callerKey", () => {
     );
   });
 });
+
+describe("bearer keys get their own rate-limit bucket", () => {
+  const withKey = (key: string) =>
+    new Request("http://localhost/api/x", {
+      headers: { authorization: `Bearer ${key}` },
+    });
+
+  it("buckets on the key, not the shared IP", () => {
+    /**
+     * Two customers automating from the same office would otherwise share an
+     * `ip:` bucket and throttle each other. Keying on the *user* would be
+     * better still, but the rate limit deliberately runs before the first
+     * database read, so the token's own hash is the closest identity available
+     * for free.
+     */
+    const a = callerKey(withKey("atk_live_aaaaaaaaaaaaaaaa"), null);
+    const b = callerKey(withKey("atk_live_bbbbbbbbbbbbbbbb"), null);
+
+    expect(a).toMatch(/^k:[0-9a-f]{24}$/);
+    expect(b).not.toBe(a);
+  });
+
+  it("is stable for one key", () => {
+    const key = "atk_live_aaaaaaaaaaaaaaaa";
+    expect(callerKey(withKey(key), null)).toBe(callerKey(withKey(key), null));
+  });
+
+  it("never puts the token itself in the bucket name", () => {
+    // Bucket names reach logs. A key must not.
+    const key = "atk_live_secretsecretsecret";
+    expect(callerKey(withKey(key), null)).not.toContain("secret");
+  });
+
+  it("lets a session win over a key", () => {
+    // A signed-in caller is bucketed by who they are, which is better than any
+    // hash of a credential.
+    expect(callerKey(withKey("atk_live_aaaaaaaaaaaaaaaa"), "u_1")).toBe(
+      "u:u_1",
+    );
+  });
+
+  it("falls back to the IP for a header that is not one of our keys", () => {
+    const req = new Request("http://localhost/api/x", {
+      headers: {
+        authorization: "Bearer eyJ.x.y",
+        "x-forwarded-for": "9.9.9.9",
+      },
+    });
+    expect(callerKey(req, null)).toBe("ip:9.9.9.9");
+  });
+});

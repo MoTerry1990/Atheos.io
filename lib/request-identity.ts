@@ -1,6 +1,9 @@
 import "server-only";
 
+import { createHash } from "node:crypto";
+
 import { env } from "@/lib/env";
+import { API_KEY_PREFIX } from "@/services/api-keys/prefix";
 
 /**
  * Who is making this request, for rate limiting and for cross-origin defence.
@@ -53,7 +56,45 @@ export function clientIp(request: Request): string {
  * the fallback for anonymous traffic, where nothing better exists.
  */
 export function callerKey(request: Request, userId: string | null): string {
-  return userId ? `u:${userId}` : `ip:${clientIp(request)}`;
+  if (userId) return `u:${userId}`;
+
+  /**
+   * A bearer key gets its own bucket, keyed on a hash of the token.
+   *
+   * Without this every API-key caller behind one NAT would share an IP bucket
+   * and throttle each other. Keying on the *user* would be better still, but
+   * that needs a database read and the rate limit deliberately runs before the
+   * first one — so the token's own hash is the closest identity available for
+   * free. Truncated because this is a bucket name, not a credential check.
+   */
+  const bearer = bearerApiKey(request);
+  if (bearer) {
+    return `k:${createHash("sha256").update(bearer).digest("hex").slice(0, 24)}`;
+  }
+
+  return `ip:${clientIp(request)}`;
+}
+
+/**
+ * The API key on this request, if the header even looks like one.
+ *
+ * Pure string inspection — no database, no crypto beyond a prefix test. That is
+ * what lets `guard()` decide about CSRF and rate-limit keying before it has
+ * spent anything, and still resolve the key properly afterwards.
+ *
+ * Returns the raw token, not a verdict. A malformed or revoked key returns a
+ * token here and fails authentication later, which is the correct split: this
+ * answers "is the caller *presenting* a key", not "is the key good".
+ */
+export function bearerApiKey(request: Request): string | null {
+  const header = request.headers.get("authorization");
+  if (!header) return null;
+
+  const token = header.startsWith("Bearer ")
+    ? header.slice(7).trim()
+    : header.trim();
+
+  return token.startsWith(`${API_KEY_PREFIX}_`) ? token : null;
 }
 
 /**
