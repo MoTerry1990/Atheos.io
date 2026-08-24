@@ -44,33 +44,44 @@ export interface PlanDefinition {
    * — the pricing page shows the plan as not yet available instead, which is
    * true. The paid tiers stayed null until Sprint 6A could prove the arithmetic.
    *
-   * ## Why 500 / 1,800 / 4,800 is safe
+   * ## Why 1,900 / 7,000 / 18,000 is safe
    *
    * A credit retails at $0.005, and `model-costs.ts` enforces a minimum margin
    * of 2.5x on every enabled model (3.0x on video), asserted per-model against
    * each model's *longest* duration by `tests/unit/model-costs.test.ts`. That
    * floor is what bounds the exposure: worst-case provider cost is therefore at
    * most $0.005 / 2.5 = **$0.002 per credit**, whatever the customer spends it
-   * on.
+   * on. `openai/gpt-image-1` sits exactly on that floor, so it is not a
+   * theoretical worst case — it is a model in the catalogue.
    *
    * At 100% burn, against price minus Stripe's 2.9% + $0.30 and a 5% refund
    * allowance:
    *
-   *   Creator  $9.99  net $8.90   500 credits → $1.00 cost → $7.90  (79%)
-   *   Pro      $34.99 net $31.93  1,800       → $3.60       → $28.33 (81%)
-   *   Studio   $89.99 net $82.58  4,800       → $9.60       → $72.98 (81%)
+   *   Creator  $9.99  net $8.93   1,900 credits → $3.80 cost → 57.5%
+   *   Pro      $34.99 net $31.99  7,000         → $14.00     → 56.2%
+   *   Studio   $89.99 net $82.73  18,000        → $36.00     → 56.5%
    *
-   * No plan can reach a negative gross margin through ordinary use. Against the
-   * $500 monthly provider ceiling, full burn by 500 Creator, 138 Pro or 52
-   * Studio subscribers would reach it — and `services/billing/spending.ts`
+   * These replace 500 / 1,800 / 4,800, which were derived at the retail $0.005
+   * rather than the real $0.002 and therefore carried ~2.5x more headroom than
+   * the arithmetic required. The headroom was the point while the costs were
+   * unmeasured; it is no longer worth four times less product than competitors
+   * offer at the same price.
+   *
+   * ## Why Creator is 1,900 and not the 2,000 that was proposed
+   *
+   * 2,000 gives 55.2% — **nine credits** above the 55% floor. An international
+   * card at 3.9% takes it to 54.7%; so does a 6% refund rate. The ceiling under
+   * an international card is 1,987, below the proposal itself. 1,900 holds at
+   * 55.4% under the same shock and is still 3.8x the old allowance.
+   *
+   * `docs/UNIT_ECONOMICS.md` carries the verified provider costs, the
+   * sensitivity table and the direct-versus-Replicate comparison.
+   *
+   * Against the $500 monthly provider ceiling, full burn by 131 Creator, 35 Pro
+   * or 13 Studio subscribers would reach it — and `services/billing/spending.ts`
    * enforces that ceiling transactionally inside the credit reservation, so it
-   * is a brake rather than a hope.
-   *
-   * These are the figures `plan-config.ts` has carried as
-   * `provisionalCreditsPerMonth` since Sprint 4. They were derived at the
-   * retail $0.005 rather than the real $0.002, so they are roughly 2.5x more
-   * conservative than the arithmetic above requires. Promoted unchanged: the
-   * headroom is the point.
+   * is a brake rather than a hope. That is a materially smaller number of
+   * subscribers than before and is the real cost of this change.
    */
   monthlyCredits: number | null;
   features: readonly string[];
@@ -143,7 +154,7 @@ export const PLAN_DEFINITIONS: readonly PlanDefinition[] = [
     name: "Creator",
     description: "For one person publishing on a schedule.",
     monthly: 999,
-    monthlyCredits: 500,
+    monthlyCredits: 1_900,
     features: [
       "Both video models, including Motion Pro",
       "1080p video up to 12 seconds",
@@ -160,7 +171,7 @@ export const PLAN_DEFINITIONS: readonly PlanDefinition[] = [
     name: "Pro",
     description: "For channels shipping every day.",
     monthly: 3499,
-    monthlyCredits: 1_800,
+    monthlyCredits: 7_000,
     features: [
       "Everything in Creator",
       "5 generations at once",
@@ -176,7 +187,7 @@ export const PLAN_DEFINITIONS: readonly PlanDefinition[] = [
     name: "Studio",
     description: "For studios producing at volume.",
     monthly: 8999,
-    monthlyCredits: 4_800,
+    monthlyCredits: 18_000,
     features: [
       "Everything in Pro",
       "8 generations at once",

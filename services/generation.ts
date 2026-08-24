@@ -41,6 +41,16 @@ import {
   isStorageConfigured,
   storeGeneratedAsset,
 } from "@/services/storage/assets";
+import {
+  AnimationSourceError,
+  resolveAnimationSource,
+} from "@/services/ai/animate-source";
+import type { CreativeBrief } from "@/services/ai/creative-brief";
+import type { ImageBrief } from "@/services/ai/image-brief";
+import {
+  DirectorError,
+  resolveDirectorSubmission,
+} from "@/services/ai/director-submit";
 import type {
   AssetKind,
   GenerationOperation as DbOperation,
@@ -171,17 +181,134 @@ export interface SubmitInput {
   inputImageUrls?: string[];
   inputStrength?: number;
   scale?: number;
+  /** "1K" | "2K" | "4K", for image models that size by class. */
+  imageResolution?: string;
   durationSeconds?: number;
   cameraMotion?: string;
+  /**
+   * The owned image to animate. An id, never a URL.
+   *
+   * A URL from a client is an instruction to fetch whatever it likes on our
+   * credentials; an id is a claim the server checks against a row it owns.
+   */
+  sourceAssetId?: string;
   /** Generation this derives from, for lineage. */
   parentId?: string;
   /** Collection to file the results into on success. */
   collectionId?: string;
+
+  /**
+   * Creative Director: the signed plan, the brief it was signed over, and the
+   * user's explicit confirmation.
+   *
+   * When the Director is enabled these are required and `prompt` is ignored —
+   * the server recompiles from the brief. When it is disabled they are absent
+   * and the existing path runs unchanged.
+   */
+  planToken?: string;
+  confirmedBrief?: CreativeBrief | ImageBrief;
+  planConfirmed?: boolean;
+  clientIdempotencyKey?: string;
 }
 
 /** Submit a generation. Returns the persisted job id. */
 export async function submitGeneration(input: SubmitInput) {
   const user = await requireApiUser();
+
+  /**
+   * The Creative Director gate.
+   *
+   * Returns null when the feature is off, and everything below runs exactly as
+   * it did. When it is on, a request without a confirmed plan is refused — so
+   * the old client-built-prompt shape cannot be used to bypass planning — and
+   * the compiled prompt replaces whatever the client sent.
+   */
+  /**
+   * The source picture for "animate this", resolved from an owned asset id.
+   *
+   * Resolved **here**, not in the browser and not from anything the browser
+   * sent. `sourceAssetId` is opaque; `resolveAnimationSource` turns it into a
+   * signed URL only after proving the row belongs to this user, and a foreign
+   * id is a 404 rather than a fetch.
+   *
+   * This is the half of "now make this image a video" that was missing
+   * entirely: the audited follow-up generation recorded `inputImageUrls: []`
+   * and `parentId: null`, so the picture the user was looking at reached
+   * nothing and no link was kept to say it had been meant to.
+   */
+  let animationSource: Awaited<
+    ReturnType<typeof resolveAnimationSource>
+  > | null = null;
+  if (input.sourceAssetId) {
+    try {
+      animationSource = await resolveAnimationSource({
+        userId: user.id,
+        assetId: input.sourceAssetId,
+      });
+    } catch (error) {
+      if (error instanceof AnimationSourceError) {
+        throw new GenerationError(error.message, error.status, error.code);
+      }
+      throw error;
+    }
+  }
+
+  const resolvedReferenceUrls =
+    animationSource?.status === "resolved" ? [animationSource.url] : [];
+
+  let director: ReturnType<typeof resolveDirectorSubmission> = null;
+  try {
+    director = resolveDirectorSubmission({
+      userId: user.id,
+      planToken: input.planToken,
+      brief: input.confirmedBrief,
+      confirmed: input.planConfirmed,
+      clientIdempotencyKey: input.clientIdempotencyKey,
+      referenceUrls: resolvedReferenceUrls,
+    });
+  } catch (error) {
+    if (error instanceof DirectorError) {
+      throw new GenerationError(error.message, error.status, error.code);
+    }
+    throw error;
+  }
+
+  if (director) {
+    // The client's prompt, model and duration are overridden, not merged. A
+    // merge would leave a path for client text to reach the provider.
+    input = {
+      ...input,
+      modelId: director.modelId,
+      prompt: director.prompt,
+      negativePrompt: director.negativePrompt,
+      durationSeconds: director.durationSeconds ?? input.durationSeconds,
+      aspectRatio: director.aspectRatio ?? input.aspectRatio,
+      imageResolution: director.imageResolution ?? input.imageResolution,
+      /**
+       * References are replaced, not merged.
+       *
+       * The Director's URLs were minted from asset ids this user was proved to
+       * own. Merging would let a client-supplied URL ride along beside them —
+       * and a URL from a client is an instruction to fetch whatever it likes on
+       * our credentials.
+       */
+      ...(director.inputImageUrls
+        ? { inputImageUrls: director.inputImageUrls }
+        : {}),
+      /**
+       * The parent-child link, finally written.
+       *
+       * `Generation.parentId` has existed since Sprint 4 and this path never
+       * set it, which is why the audited "make this image a video" record shows
+       * `parentId: null` beside an image it was derived from. No migration was
+       * needed to fix that — only for something to write the column.
+       */
+      ...(animationSource?.status === "resolved" &&
+      animationSource.parentGenerationId
+        ? { parentId: animationSource.parentGenerationId }
+        : {}),
+    };
+  }
 
   const model = findModel(input.modelId);
   if (!model) {
@@ -315,6 +442,13 @@ export async function submitGeneration(input: SubmitInput) {
     .$transaction(async (tx) => {
       const created = await tx.generation.create({
         data: {
+          /**
+           * Derived from the plan token when the Director is on, so a replayed
+           * token collides on the primary key inside this transaction — the
+           * database refuses the second generation rather than application
+           * logic a concurrent request could race past.
+           */
+          ...(director ? { id: director.generationId } : {}),
           userId: user.id,
           modality: model.modality,
           operation: OPERATION_TO_DB[input.operation],
@@ -328,6 +462,7 @@ export async function submitGeneration(input: SubmitInput) {
           parameters: {
             operation: input.operation,
             aspectRatio: input.aspectRatio,
+            imageResolution: input.imageResolution,
             seed: input.seed,
             outputs,
             inputImageUrls: input.inputImageUrls ?? [],
@@ -336,6 +471,8 @@ export async function submitGeneration(input: SubmitInput) {
             durationSeconds,
             cameraMotion: input.cameraMotion,
             collectionId: input.collectionId,
+            // Sanitised planning record: hashes and counts, no URLs or payloads.
+            ...(director ? { creativePlan: director.planMetadata } : {}),
           },
           creditsCost: cost,
           status: "QUEUED",
@@ -389,6 +526,7 @@ export async function submitGeneration(input: SubmitInput) {
       inputImageUrls: input.inputImageUrls,
       inputStrength: input.inputStrength,
       scale: input.scale,
+      imageResolution: input.imageResolution,
       durationSeconds,
       cameraMotion: input.cameraMotion,
     };

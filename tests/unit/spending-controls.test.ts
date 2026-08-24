@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { scrub } from "@/lib/events";
+import { maxSafeAllowance } from "@/services/billing/pricing-formula";
 import {
   MODEL_CLASS_CEILING_MICRO_USD,
+  WORST_CASE_COST_PER_CREDIT_MICRO_USD,
   PLAN_CONFIGS,
   creditsForAllowance,
   isFreeTier,
@@ -419,23 +421,106 @@ describe("plan configuration", () => {
     for (const plan of PLAN_CONFIGS) {
       if (plan.creditsPerMonth === null) continue;
 
-      const worstCase = plan.creditsPerMonth * WORST_COST_PER_CREDIT_USD;
+      // Compared in micro-USD integers. In floats `1900 * 0.002` is
+      // 3.8000000000000003, which is "over budget" by 4e-16 and fails a
+      // comparison that is arithmetically exact.
+      const worstCaseMicro = Math.round(
+        plan.creditsPerMonth * WORST_COST_PER_CREDIT_USD * 1_000_000,
+      );
+      const allowanceMicro = Math.round(plan.providerAllowanceUsd * 1_000_000);
       expect(
-        worstCase,
-        `${plan.displayName} can burn $${worstCase.toFixed(2)} against a $${plan.providerAllowanceUsd} allowance`,
-      ).toBeLessThanOrEqual(plan.providerAllowanceUsd);
+        worstCaseMicro,
+        `${plan.displayName} can burn $${(worstCaseMicro / 1e6).toFixed(2)} against a $${plan.providerAllowanceUsd} allowance`,
+      ).toBeLessThanOrEqual(allowanceMicro);
     }
   });
 
-  it("keeps every plan's provider allowance under a third of its price", () => {
-    // The margin the plans were sold on: ≥ 67% gross before infrastructure.
+  it("keeps every allowance inside the floor that actually applies", () => {
+    /**
+     * The binding floor today is **55%**, not 60%.
+     *
+     * The brief sets 60% for "the preferred direct provider" and 55% for an
+     * approved fallback. Atheos has no direct provider integration — the audit
+     * in `docs/UNIT_ECONOMICS.md` § 3 found only Veo 3.1 Fast is cheaper direct,
+     * and no adapter for it exists. Every generation goes through Replicate, so
+     * the fallback floor is the one every plan has to clear.
+     *
+     * Checked against `maxSafeAllowance`, the same function the pricing
+     * formula uses, rather than a hand-written ratio. A magic threshold is a
+     * number somebody nudges when a plan fails; this one recomputes.
+     */
+    for (const plan of PLAN_CONFIGS) {
+      if (plan.monthlyPriceCents === 0 || plan.creditsPerMonth === null) {
+        continue;
+      }
+
+      const ceiling = maxSafeAllowance({
+        monthlyPriceCents: plan.monthlyPriceCents,
+        costPerCreditMicroUsd: WORST_CASE_COST_PER_CREDIT_MICRO_USD,
+        floor: 0.55,
+      });
+
+      expect(
+        plan.creditsPerMonth,
+        `${plan.displayName} grants ${plan.creditsPerMonth} against a ${ceiling} ceiling at the 55% floor`,
+      ).toBeLessThanOrEqual(ceiling);
+    }
+  });
+
+  it("survives an international card without breaching the floor", () => {
+    /**
+     * Why Creator is 1,900 rather than the 2,000 that was proposed.
+     *
+     * At 2,000 the plan clears 55% by nine credits. A 3.9% international card —
+     * ordinary for a product sold in English and Spanish — takes it to 54.7%,
+     * and the ceiling under that card is 1,987, below the proposal itself.
+     *
+     * This is the test that stops the allowance being nudged back up.
+     */
+    for (const plan of PLAN_CONFIGS) {
+      if (plan.monthlyPriceCents === 0 || plan.creditsPerMonth === null) {
+        continue;
+      }
+
+      const stressed = maxSafeAllowance({
+        monthlyPriceCents: plan.monthlyPriceCents,
+        costPerCreditMicroUsd: WORST_CASE_COST_PER_CREDIT_MICRO_USD,
+        floor: 0.55,
+        stripePercent: 0.039,
+      });
+
+      expect(
+        plan.creditsPerMonth,
+        `${plan.displayName} breaches 55% on an international card`,
+      ).toBeLessThanOrEqual(stressed);
+    }
+  });
+
+  it("records where each plan lands on gross margin", () => {
+    /**
+     * Documentation as an assertion. Provider spend over *gross* price, before
+     * payment fees — the number § 4 of the economics doc quotes.
+     *
+     * Pro and Studio land at 59.99% and 60.00%: essentially exactly the
+     * preferred floor, and fractionally under it for Pro. That is recorded
+     * rather than rounded away, because the honest statement is "these two sit
+     * on the line" and not "these two clear 60%".
+     */
+    const gross = (plan: (typeof PLAN_CONFIGS)[number]) =>
+      1 - plan.providerAllowanceUsd / (plan.monthlyPriceCents / 100);
+
+    const byTier = Object.fromEntries(
+      PLAN_CONFIGS.map((p) => [p.tier, Number((gross(p) * 100).toFixed(1))]),
+    );
+
+    expect(byTier.CREATOR).toBeCloseTo(62.0, 1);
+    expect(byTier.PRO).toBeCloseTo(60.0, 1);
+    expect(byTier.STUDIO).toBeCloseTo(60.0, 1);
+
+    // None may fall below the fallback floor even on gross.
     for (const plan of PLAN_CONFIGS) {
       if (plan.monthlyPriceCents === 0) continue;
-      const priceUsd = plan.monthlyPriceCents / 100;
-      expect(
-        plan.providerAllowanceUsd / priceUsd,
-        `${plan.displayName} allowance ratio`,
-      ).toBeLessThanOrEqual(0.34);
+      expect(gross(plan)).toBeGreaterThanOrEqual(0.55);
     }
   });
 

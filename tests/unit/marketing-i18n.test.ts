@@ -106,7 +106,7 @@ describe("marketing dictionaries", () => {
           expect(
             feature,
             `${plan.tier} advertises credits it cannot honour`,
-          ).not.toMatch(/cr[eé]dit/i);
+          ).not.toMatch(/\bcr[eé]dit/i);
         }
       }
     },

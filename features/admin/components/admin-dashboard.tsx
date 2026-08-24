@@ -16,7 +16,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { InputField } from "@/components/ui/field";
+import { SearchInput } from "@/components/ui/field";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState, ErrorState } from "@/components/ui/state";
 import { Textarea } from "@/components/ui/textarea";
@@ -332,9 +332,10 @@ function UsersSection() {
 
   return (
     <div className="space-y-4">
-      <InputField
+      <SearchInput
         value={search}
         onChange={(event) => setSearch(event.target.value)}
+        onClear={() => setSearch("")}
         placeholder="Search by email, name or handle"
         aria-label="Search users"
       />

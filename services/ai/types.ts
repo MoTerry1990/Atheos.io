@@ -137,6 +137,15 @@ export interface GenerationRequest {
   inputStrength?: number;
   /** Upscale factor. Only meaningful for `upscale`. */
   scale?: number;
+  /**
+   * Output size class for models that take one, as "1K" | "2K" | "4K".
+   *
+   * Distinct from `width`/`height`: the Google image models size by a named
+   * class rather than by pixels, and translating between the two here would be
+   * a guess about what "2K" means on a 21:9 frame. The provider is asked in its
+   * own units.
+   */
+  imageResolution?: string;
   /** Clip length in seconds. Video operations only. */
   durationSeconds?: number;
   /** Frames per second, where the model exposes it. */

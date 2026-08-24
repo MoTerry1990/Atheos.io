@@ -269,6 +269,91 @@ export const MODEL_COSTS: readonly ModelCostEntry[] = [
     checked: "never",
   },
 
+  /**
+   * Smart Image — google/nano-banana-2, behind `ENABLE_SMART_IMAGE`.
+   *
+   * Priced on **2K**, which is what Atheos asks for, not on the provider's own
+   * 1K default. Pricing the cheap end of a ladder the product does not use is
+   * how a margin table reports health that the invoice does not share.
+   *
+   *   1K $0.067   2K $0.101   4K $0.151   per output image
+   *
+   * 55 credits = $0.275 against $0.101 = 2.72x. The 4K tier is 80 credits
+   * = $0.400 against $0.151 = 2.65x; `image-capabilities.ts` holds the full
+   * ladder, and this entry holds the worst case the catalogue can reach at the
+   * default resolution.
+   */
+  {
+    modelId: "replicate/nano-banana-2",
+    provider: "replicate",
+    modality: "IMAGE",
+    perOutputMicroUsd: 101_000,
+    billingUnit: "per_output",
+    assumptions: {
+      resolution: "2K",
+      note: "4K is 151000 and 80 credits — 2.65x, also above the floor.",
+    },
+    creditCost: 55,
+    enabled: true,
+    // An image that costs us ten cents is not something to hand out free.
+    freeTierEligible: false,
+    minimumMarginMultiple: 2.5,
+    verification: "estimated",
+    checked: "2026-08-24 (Replicate published per-resolution pricing panel)",
+  },
+  /**
+   * Pro Image — google/nano-banana-pro.
+   *
+   *   1K $0.150   2K $0.150   4K $0.300   per output image
+   *
+   * 1K and 2K cost the provider the same, which is why Pro defaults to 2K:
+   * asking for the smaller one would cost the customer the same and give them
+   * less.
+   */
+  {
+    modelId: "replicate/nano-banana-pro",
+    provider: "replicate",
+    modality: "IMAGE",
+    perOutputMicroUsd: 150_000,
+    billingUnit: "per_output",
+    assumptions: {
+      resolution: "2K",
+      note: "4K is 300000 and 160 credits — the same 2.67x.",
+    },
+    creditCost: 80,
+    enabled: true,
+    freeTierEligible: false,
+    minimumMarginMultiple: 2.5,
+    verification: "estimated",
+    checked: "2026-08-24 (Replicate published per-resolution pricing panel)",
+  },
+  /**
+   * Studio Image — black-forest-labs/flux-2-pro. Audited, not sold.
+   *
+   * `$0.015/run + $0.015 per input megapixel + $0.015 per output megapixel`.
+   * The input term is the customer's to choose, so the cost of a run is not
+   * knowable from the catalogue — four 4MP references add $0.24 to a job quoted
+   * from the output size alone. `perOutputMicroUsd` is therefore null rather
+   * than the 2MP figure: recording the output-only cost as *the* cost is
+   * precisely the mistake that would make this look profitable.
+   */
+  {
+    modelId: "replicate/flux-2-pro",
+    provider: "replicate",
+    modality: "IMAGE",
+    perOutputMicroUsd: null,
+    billingUnit: "per_output",
+    assumptions: {
+      note: "Output-only cost at 2MP is 45000, but inputs are customer-controlled and unbounded.",
+    },
+    creditCost: 0,
+    enabled: false,
+    freeTierEligible: false,
+    minimumMarginMultiple: 2.5,
+    verification: "unknown",
+    checked: "2026-08-24 (schema and pricing read; cost is input-dependent)",
+  },
+
   // ------------------------------------------------------------------------
   // Video — the expensive modality, and the one B5 was about
   // ------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 "use client";
 
-import { AlertCircle } from "lucide-react";
+import { AlertCircle, Search, X } from "lucide-react";
 import * as React from "react";
 
 import { Label } from "@/components/ui/label";
@@ -136,15 +136,26 @@ export function InputField({
       <input
         data-slot="input"
         className={cn(
-          "h-9 w-full rounded-lg border border-input bg-background px-3 py-1 text-sm text-foreground",
+          /**
+           * 40px tall, 12px of horizontal padding.
+           *
+           * Was 36px, which is under the 40px a touch target wants and made the
+           * field look cramped beside a 40px button. The single line centres
+           * itself in the box, so no vertical padding is needed to fake it.
+           */
+          "h-10 w-full rounded-lg border border-input bg-background px-3 text-sm text-foreground",
           "placeholder:text-muted-foreground",
           "transition-[color,box-shadow,border-color] duration-150",
           "focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none",
           "disabled:cursor-not-allowed disabled:opacity-50",
+          "read-only:cursor-default read-only:opacity-90",
           "aria-invalid:border-destructive aria-invalid:focus-visible:ring-destructive/30",
           // 16px on mobile: anything smaller makes iOS Safari zoom the viewport
           // when the field receives focus.
           "text-base sm:text-sm",
+          // 36px where an adornment sits: the icon starts at 12px and is 16px
+          // wide, so 36 leaves 8px between it and the first character. Anything
+          // less and a password-reveal or clear button sits on the text.
           leading && "pl-9",
           trailing && "pr-9",
           className,
@@ -158,5 +169,63 @@ export function InputField({
         </span>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * SearchInput — a search field with its icon and clear button already placed.
+ *
+ * Search was the one shape being rebuilt at every call site: a magnifier
+ * positioned by hand, sometimes a clear button, each with its own padding
+ * guess. Four screens had four slightly different versions, which is how one of
+ * them ends up with the icon overlapping the text.
+ *
+ * `type="search"` is deliberate. It gives the field the right on-screen
+ * keyboard on mobile and the right semantics to assistive technology; the
+ * browser's own clear affordance is suppressed in favour of ours, which is
+ * keyboard-reachable and visible in both themes.
+ */
+export interface SearchInputProps extends Omit<
+  InputWithAdornmentsProps,
+  "leading" | "trailing" | "type"
+> {
+  /** Shown when there is text to clear. Omit for an uncontrolled field. */
+  onClear?: () => void;
+}
+
+export function SearchInput({
+  className,
+  onClear,
+  value,
+  ...props
+}: SearchInputProps) {
+  const hasValue = typeof value === "string" && value.length > 0;
+
+  return (
+    <InputField
+      type="search"
+      value={value}
+      leading={<Search aria-hidden />}
+      trailing={
+        onClear && hasValue ? (
+          <button
+            type="button"
+            onClick={onClear}
+            // Not `aria-hidden`: this is a real control, and a mouse user who
+            // can see it should not be the only one able to reach it.
+            aria-label="Clear search"
+            className="pointer-events-auto rounded-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none"
+          >
+            <X aria-hidden />
+          </button>
+        ) : undefined
+      }
+      className={cn(
+        // The browser's own clear button would sit on top of ours.
+        "[&::-webkit-search-cancel-button]:appearance-none",
+        className,
+      )}
+      {...props}
+    />
   );
 }

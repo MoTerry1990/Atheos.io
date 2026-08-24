@@ -212,7 +212,17 @@ export function HomeComposer() {
               placeholder={composer.placeholders[modality]}
               rows={3}
               maxLength={2000}
-              className="resize-y border-0 bg-transparent px-0 text-base focus-visible:ring-0"
+              /**
+               * Grammarly attaches to this field exactly as it does to the
+               * studio prompt — it is the most prose-like box on the site. A
+               * measured test caught the caret arriving underneath the badge
+               * at the end of a long prompt.
+               */
+              overlayRight
+              // `px-0` used to be here, which put the first character of every
+              // homepage prompt flush against the card edge. The border and the
+              // ring belong to the card, but the padding belongs to the text.
+              className="resize-y border-0 bg-transparent shadow-none focus-visible:ring-0"
               // A real label rather than the placeholder as one: the
               // placeholder changes with the modality and disappears the moment
               // somebody types, so a screen reader would lose the field's name

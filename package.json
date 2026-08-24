@@ -7,6 +7,8 @@
   },
   "scripts": {
     "dev": "next dev --turbopack",
+    "verify:project": "node scripts/verify-project.mjs",
+    "dev:atheos": "node scripts/verify-project.mjs --port 3000 && next dev --turbopack --port 3000",
     "build": "prisma generate && next build",
     "start": "next start",
     "lint": "eslint .",
@@ -92,5 +94,13 @@
     "prisma@7.9.1": true,
     "@prisma/engines@7.9.1": true,
     "msgpackr-extract@3.0.4": true
+  },
+  "projectIdentity": {
+    "name": "atheos",
+    "remote": "MoTerry1990/Atheos.io",
+    "port": 3000,
+    "conflictsWith": [
+      "wasipe"
+    ]
   }
 }

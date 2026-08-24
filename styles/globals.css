@@ -67,6 +67,54 @@
   --color-neutral-950: oklch(0.129 0.005 300);
   --color-neutral-1000: oklch(0.09 0.004 300);
 
+  /* ---------------------------------------------------------------------
+     Luminous Editorial — ink, lavender and cyan
+
+     ## Why a second dark ramp rather than editing the neutrals
+
+     The neutral scale is near-hueless (chroma 0.004–0.009) and its deep end is
+     effectively black: `neutral-1000` is L=0.09. Measured, adjacent steps in
+     that range are almost the same colour — page against surface was a 1.028
+     contrast ratio, and `--surface-sunken` resolved to the *same token* as
+     `--background`, so a "sunken" section was mathematically invisible. That is
+     why the marketing page reads as one uninterrupted black field.
+
+     This ramp fixes both problems at once. Chroma rises to ~0.03 at hue 312 so
+     the dark end is aubergine rather than black, and the lightness steps are
+     widened so each layer separates:
+
+       ink-1000 vs ink-950   1.114   (was 1.028)
+       ink-950  vs ink-900   1.174
+       ink-900  vs ink-850   1.223
+
+     The neutral scale is left untouched: the application shell, the design
+     system page and every existing component are built on it, and rewriting a
+     scale everything depends on is not a visual change, it is a migration.
+     --------------------------------------------------------------------- */
+
+  /* Deep ink / aubergine. `1000` is the darkest page ground. */
+  --color-ink-1000: oklch(0.148 0.026 312);
+  --color-ink-950: oklch(0.212 0.03 312);
+  --color-ink-900: oklch(0.272 0.032 312);
+  --color-ink-850: oklch(0.33 0.032 312);
+  --color-ink-800: oklch(0.392 0.03 312);
+  /* Text on ink. Off-white with the same hue, so it reads warm rather than
+     clinical — pure white on aubergine looks like a rendering error. */
+  --color-ink-25: oklch(0.972 0.006 312);
+  --color-ink-300: oklch(0.76 0.022 308);
+
+  /* Light editorial. Soft lavender page, white cards, aubergine text. */
+  --color-lav-50: oklch(0.984 0.006 300);
+  --color-lav-100: oklch(0.966 0.01 300);
+  --color-lav-200: oklch(0.905 0.012 300);
+  --color-lav-600: oklch(0.505 0.03 305);
+  --color-lav-950: oklch(0.245 0.05 312);
+
+  /* Cyan, the second accent. Chroma is capped at 0.115/0.112 because anything
+     higher leaves sRGB and clips to a flatter colour than the token claims. */
+  --color-cyan-400: oklch(0.8 0.115 210);
+  --color-cyan-500: oklch(0.7 0.112 215);
+
   /* ---- Semantic --------------------------------------------------------- */
   --color-success-500: oklch(0.696 0.17 162.48);
   --color-success-600: oklch(0.596 0.145 163.225);
@@ -379,6 +427,11 @@
   --input: var(--color-neutral-200);
   --ring: var(--color-brand-500);
 
+  /* The two atmospheric accents. Named by role so a section can glow without
+     any component learning which purple it is. */
+  --accent-purple: var(--color-brand-600);
+  --accent-cyan: var(--color-cyan-500);
+
   --chart-1: var(--color-brand-500);
   --chart-2: var(--color-info-500);
   --chart-3: var(--color-success-500);
@@ -437,6 +490,9 @@
   --input: oklch(1 0 0 / 0.14);
   --ring: var(--color-brand-400);
 
+  --accent-purple: var(--color-brand-400);
+  --accent-cyan: var(--color-cyan-400);
+
   --sidebar: var(--color-neutral-950);
   --sidebar-foreground: var(--color-neutral-100);
   --sidebar-primary: var(--color-brand-500);
@@ -445,6 +501,132 @@
   --sidebar-accent-foreground: var(--color-neutral-100);
   --sidebar-border: oklch(1 0 0 / 0.1);
   --sidebar-ring: var(--color-brand-400);
+}
+
+/* ==========================================================================
+   2b. Editorial bands
+
+   ## The problem this solves
+
+   The marketing page needs a deliberate rhythm — cinematic dark hero, soft
+   light explanation, dark showcase — and that is impossible while every
+   section's colour follows the *reader's* theme. `next-themes` runs with
+   `enableSystem`, so a visitor whose OS is set to light currently sees an
+   entirely white homepage: the "dark hero" is white, and the alternation the
+   design depends on does not exist.
+
+   A band is a section that carries its own light/dark identity regardless of
+   the theme. It works by redefining the same **semantic roles** inside its
+   subtree, so every component already built on `bg-card`, `text-muted-
+   foreground` or `border-border` adapts with no changes at the call site. That
+   is the whole point of the role indirection, used rather than bypassed.
+
+   ## What a band is not
+
+   Not a licence to hard-code colour. A component inside a band still uses
+   roles; the band decides what those roles mean. Anything reaching past this
+   for a raw scale re-creates the problem the indirection exists to prevent.
+
+   ## Contrast
+
+   Every pairing below was measured, not eyeballed:
+
+     text on page-dark              18.22
+     muted on page-dark              9.15
+     muted on surface-elevated       7.00
+     muted on input                  5.72
+     text on page-light             15.71
+     muted on white card             5.94
+     purple-600 on white             5.53
+
+   All clear WCAG AA for body text.
+   ========================================================================== */
+
+[data-band="dark"] {
+  color-scheme: dark;
+
+  --background: var(--color-ink-1000);
+  --foreground: var(--color-ink-25);
+
+  --surface: var(--color-ink-950);
+  --surface-raised: var(--color-ink-900);
+  /* Genuinely *below* the page, which `--surface-sunken` never was in the
+     neutral ramp — there it resolved to the same value as `--background`. */
+  --surface-sunken: oklch(0.11 0.022 312);
+
+  --card: var(--color-ink-950);
+  --card-foreground: var(--color-ink-25);
+  --popover: var(--color-ink-900);
+  --popover-foreground: var(--color-ink-25);
+
+  --primary: var(--color-brand-500);
+  --primary-foreground: var(--color-ink-1000);
+
+  --secondary: var(--color-ink-900);
+  --secondary-foreground: var(--color-ink-25);
+
+  --muted: var(--color-ink-900);
+  --muted-foreground: var(--color-ink-300);
+
+  --accent: var(--color-ink-900);
+  --accent-foreground: var(--color-brand-200);
+
+  /* Inputs sit *above* the panel they are in, and carry a visible edge. An
+     input that matches its panel is the "where do I type" failure. */
+  --input: var(--color-ink-850);
+  --border: oklch(1 0 0 / 0.12);
+  --ring: var(--color-brand-400);
+
+  --accent-purple: var(--color-brand-400);
+  --accent-cyan: var(--color-cyan-400);
+}
+
+[data-band="light"] {
+  color-scheme: light;
+
+  --background: var(--color-lav-50);
+  --foreground: var(--color-lav-950);
+
+  --surface: var(--color-neutral-0);
+  --surface-raised: var(--color-neutral-0);
+  --surface-sunken: var(--color-lav-100);
+
+  /* White cards on a lavender page. The card is the brighter surface, which is
+     the opposite of the dark band and the reason "elevation" has to be defined
+     per band rather than once. */
+  --card: var(--color-neutral-0);
+  --card-foreground: var(--color-lav-950);
+  --popover: var(--color-neutral-0);
+  --popover-foreground: var(--color-lav-950);
+
+  /* brand-600 rather than 500: 5.53 against white, where 500 does not reach
+     4.5 and would fail as a link or a button label. */
+  --primary: var(--color-brand-600);
+  --primary-foreground: var(--color-neutral-0);
+
+  --secondary: var(--color-lav-100);
+  --secondary-foreground: var(--color-lav-950);
+
+  --muted: var(--color-lav-100);
+  --muted-foreground: var(--color-lav-600);
+
+  --accent: var(--color-lav-100);
+  --accent-foreground: var(--color-brand-700);
+
+  --input: var(--color-neutral-0);
+  --border: var(--color-lav-200);
+  --ring: var(--color-brand-500);
+
+  --accent-purple: var(--color-brand-600);
+  --accent-cyan: var(--color-cyan-500);
+}
+
+/* The band paints itself. Without this the roles change but the section keeps
+   whatever ground the page had, which is how a "light" band ends up as light
+   text on a dark page. */
+[data-band] {
+  background-color: var(--background);
+  color: var(--foreground);
 }
 
 /* ==========================================================================
@@ -486,6 +668,9 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+
+  --color-accent-purple: var(--accent-purple);
+  --color-accent-cyan: var(--accent-cyan);
 
   --color-chart-1: var(--chart-1);
   --color-chart-2: var(--chart-2);

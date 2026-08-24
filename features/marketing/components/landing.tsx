@@ -81,28 +81,80 @@ export function Landing({ locale }: { locale: Locale }) {
         fetchPriority="high"
       />
 
-      <Hero />
+      {/**
+       * The editorial rhythm.
+       *
+       * ## What it replaces
+       *
+       * Measured on the live page before this change: nine of the ten sections
+       * computed to `background: rgba(0,0,0,0)` and the tenth to a 40%-opacity
+       * near-black over near-black. Every section carried identical 112px
+       * padding. The page was one uninterrupted dark field with cards floating
+       * on it — no boundaries, no emphasis, and nothing to give the eye a place
+       * to rest between ideas.
+       *
+       * ## Why bands rather than background classes
+       *
+       * A `bg-*` class follows the *reader's* theme, and `next-themes` runs
+       * with `enableSystem` — so a visitor whose OS is light saw a white
+       * "cinematic dark hero". Alternation was impossible by construction. A
+       * band redefines the semantic roles for its subtree, so its identity is
+       * the page's decision rather than the operating system's.
+       *
+       * ## The order
+       *
+       * Grouped, not checkerboarded. Two dark sections in a row are one dark
+       * *movement*; alternating on every section would be noise:
+       *
+       *   dark    hero + prompt      what is this, and can I try it
+       *   light   modalities         what does it actually do
+       *   dark    made with Atheos   show me
+       *   light   templates          can I start quickly
+       *   dark    how it works + why what is it like to use
+       *   light   pricing + FAQ      what does it cost, what is the catch
+       *
+       * The footer supplies the closing dark band on its own.
+       */}
+      <div data-band="dark">
+        <Hero />
 
-      {/* One field, directly under the fold. It generates nothing — it carries
-          the prompt into sign-up and on to the studio. See home-composer.tsx
-          for why it is worded to avoid looking like it will generate. */}
-      <HomeComposer />
+        {/* One field, directly under the fold. It generates nothing — it
+            carries the prompt into sign-up and on to the studio. See
+            home-composer.tsx for why it is worded to avoid looking like it
+            will generate. */}
+        <HomeComposer />
+      </div>
 
-      <AIShowcase />
+      <div data-band="light">
+        <AIShowcase />
+      </div>
 
       {/* The only media gallery on the page.
-      
+
           "A look at the surface" used to sit further down showing the same
           eight generations in a masonry grid, so the homepage proved the same
           point twice, four sections apart. This one carries the prompt and the
-          modality into the studio; that one linked nowhere. */}
-      <MadeWithAtheos />
+          modality into the studio; that one linked nowhere.
 
-      <Templates locale={locale} />
-      <HowItWorks locale={locale} />
-      <Features locale={locale} />
-      <Pricing />
-      <Faq />
+          Dark deliberately: media is the subject here, and a bright surround
+          competes with it for the eye. */}
+      <div data-band="dark">
+        <MadeWithAtheos />
+      </div>
+
+      <div data-band="light">
+        <Templates locale={locale} />
+      </div>
+
+      <div data-band="dark">
+        <HowItWorks locale={locale} />
+        <Features locale={locale} />
+      </div>
+
+      <div data-band="light">
+        <Pricing />
+        <Faq />
+      </div>
     </>
   );
 }

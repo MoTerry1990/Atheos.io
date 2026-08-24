@@ -13,21 +13,59 @@ import { cn } from "@/lib/utils";
  * — the eye reads the inconsistency long before it reads the copy.
  */
 
+/**
+ * Which editorial band a section belongs to.
+ *
+ * ## Why this is not just a background class
+ *
+ * The page needs a deliberate rhythm — cinematic dark, soft light, dark again —
+ * and `bg-*` classes cannot provide it, because every colour on the page
+ * currently follows the *reader's* theme. `next-themes` runs with
+ * `enableSystem`, so a visitor whose OS is light saw an entirely white homepage
+ * and no alternation at all.
+ *
+ * A band redefines the semantic roles for its subtree (see `styles/globals.css`
+ * § 2b), so everything inside it — cards, muted text, borders, buttons —
+ * follows the band rather than the theme, with no changes at any call site.
+ *
+ * `none` keeps a section transparent, which is right for one that sits on the
+ * hero's own media.
+ */
+export type Band = "dark" | "light" | "none";
+
 export function Section({
   id,
+  band = "none",
+  size = "default",
   className,
   children,
 }: {
   id?: string;
+  band?: Band;
+  /**
+   * Vertical rhythm.
+   *
+   * The audit found all ten sections on 112px top and bottom — uniform, and
+   * therefore no rhythm at all: nothing was emphasised because everything was.
+   * `wide` is for the one or two sections that carry the page.
+   */
+  size?: "default" | "wide" | "tight";
   className?: string;
   children: ReactNode;
 }) {
   return (
     <section
       id={id}
+      data-band={band === "none" ? undefined : band}
       // scroll-mt clears the fixed header when an anchor link lands here.
       // Without it every in-page link puts the heading underneath the nav.
-      className={cn("scroll-mt-20 py-20 sm:py-28", className)}
+      className={cn(
+        "scroll-mt-20",
+        size === "wide" && "py-24 sm:py-36",
+        size === "default" && "py-20 sm:py-28",
+        size === "tight" && "py-14 sm:py-20",
+        className,
+      )}
     >
       <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
         {children}
@@ -84,12 +122,22 @@ export function SectionHeading({
   title,
   description,
   align = "center",
+  as: Heading = "h2",
   className,
 }: {
   eyebrow?: string;
   title: ReactNode;
   description?: string;
   align?: "center" | "left";
+  /**
+   * The heading level.
+   *
+   * `h2` by default, because the landing page has exactly one `h1` and it is
+   * in the hero. A *standalone* page — `/models`, a model page — opens with
+   * this component and therefore needs `h1`, or the document has no top-level
+   * heading at all and a screen reader has nothing to land on.
+   */
+  as?: "h1" | "h2";
   className?: string;
 }) {
   return (
@@ -106,12 +154,13 @@ export function SectionHeading({
         </p>
       ) : null}
 
-      {/* h2 throughout: the page has exactly one h1, in the hero. Sections that
-          each open with an h1 destroy the document outline that screen readers
-          and search engines both navigate by. */}
-      <h2 className="text-3xl font-semibold tracking-tight text-balance sm:text-4xl">
+      {/* h2 by default: a landing page has exactly one h1, in the hero, and
+          sections that each open with an h1 destroy the document outline that
+          screen readers and search engines both navigate by. Pages that open
+          with this component pass `as="h1"` instead. */}
+      <Heading className="text-3xl font-semibold tracking-tight text-balance sm:text-4xl">
         {title}
-      </h2>
+      </Heading>
 
       {description ? (
         <p className="mt-4 text-base text-balance text-muted-foreground sm:text-lg">

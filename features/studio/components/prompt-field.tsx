@@ -4,6 +4,7 @@ import { Eraser, Maximize2, Minimize2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
 /**
@@ -178,7 +179,7 @@ export function PromptField({
           disabled && "opacity-60",
         )}
       >
-        <textarea
+        <Textarea
           ref={ref}
           id={id}
           value={value}
@@ -188,31 +189,38 @@ export function PromptField({
           onCompositionEnd={() => (composing.current = false)}
           placeholder={PLACEHOLDERS[modality]}
           disabled={disabled}
-          aria-invalid={invalid || undefined}
+          invalid={invalid}
           aria-describedby={describedBy}
           spellCheck
           data-studio-prompt
           style={{ minHeight: MIN_HEIGHT }}
+          /**
+           * The spacing, typography and wrapping now come from the shared
+           * primitive rather than being restated here. This file proved the
+           * numbers; `components/ui/textarea.tsx` owns them, so every other
+           * multiline field in Atheos gets them too and this one cannot drift
+           * away from the rest of the product.
+           */
+          overlayRight
           className={cn(
-            "block w-full resize-none bg-transparent",
+            // The container draws the border and the focus ring, so the control
+            // itself has neither.
+            "resize-none border-0 bg-transparent shadow-none",
+            "focus-visible:border-0 focus-visible:ring-0",
+            // Height is measured in `resize()` below, so the content-sizing and
+            // the shared ceiling would both fight the explicit value.
+            "[field-sizing:fixed] max-h-none min-h-0",
             /**
-             * 18px left, 16px top and bottom, and a 48px right gutter.
+             * No `text-*` here on purpose.
              *
-             * Written as `pl`/`pr` rather than `px` + `pr` because the two
-             * conflict: with both present the left padding resolved to **0** in
-             * the browser while the class string still read `px-[18px]`. A test
-             * asserting the class passed; the rendered field had text against
-             * the border. Naming each side leaves nothing to resolve.
-             *
-             * The asymmetry is deliberate in any case — the right side is a
-             * lane for injected writing-assistant buttons, not spacing.
+             * Tailwind's `text-{size}` sets a line-height too, so tailwind-merge
+             * treats it as conflicting with `leading-*` and drops the shared
+             * `leading-[1.6]` when a caller adds a size. The field silently fell
+             * back to `text-sm`'s 1.43 — below the 1.55-1.65 band this whole
+             * change exists to hold. The primitive's own responsive size is
+             * already correct, so the caller says nothing.
              */
-            "py-4 pr-12 pl-[18px]",
-            "text-sm leading-[1.6] text-foreground",
-            "placeholder:leading-[1.6] placeholder:text-muted-foreground/70",
-            // The ring lives on the container, so the control itself has none.
-            "border-0 outline-none focus:outline-none focus-visible:outline-none",
-            "disabled:cursor-not-allowed",
+            "placeholder:text-muted-foreground/70",
           )}
         />
 

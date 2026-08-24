@@ -81,6 +81,10 @@ export function dtoToHistoryJob(dto: GenerationDTO): StudioJob {
   const patch = dtoToStudioJob(dto);
 
   const params: StudioParams = {
+    // History predates the sequence work, and a stored job is a record of what
+    // happened rather than something to re-plan. Every archived generation was
+    // a single clip, so that is what it is restored as.
+    sequenceMode: "continuous",
     modelId: dto.modelId,
     prompt: dto.prompt,
     negativePrompt: dto.negativePrompt ?? "",

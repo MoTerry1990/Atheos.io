@@ -74,6 +74,9 @@ function defaultParams(): StudioParams {
     references: [],
     durationSeconds: 5,
     cameraMotion: null,
+    // One clip unless the user explicitly asks for a sequence. A cut nobody
+    // requested is not a default worth having, and it is never the cheaper one.
+    sequenceMode: "continuous",
   };
 }
 
@@ -486,7 +489,10 @@ export const useStudioStore = create<StudioState>()(
       // 3: params gained durationSeconds and cameraMotion. A v2 payload
       // restores without them, and `reconcileParams` cannot repair a field that
       // is absent rather than wrong - so the version bump discards it.
-      version: 3,
+      // 4: params gained sequenceMode. A v3 payload restores without it, and
+      // an absent mode would leave the price and the plan disagreeing, so the
+      // bump discards it for the same reason version 3 did.
+      version: 4,
       /**
        * Persist the composer only.
        *

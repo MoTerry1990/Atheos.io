@@ -56,8 +56,8 @@ export const EN: MarketingCopy = {
    */
   nav: [
     { href: "/studio", label: "Create" },
+    { href: "/models", label: "Models" },
     { href: "/explore", label: "Explore" },
-    { href: "/marketplace", label: "Tools" },
     { href: "/pricing", label: "Pricing" },
   ],
 

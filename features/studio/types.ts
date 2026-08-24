@@ -1,5 +1,6 @@
 import type { ModelCapabilities, ProviderId } from "@/services/ai/types";
 import type { Modality } from "@/lib/generated/prisma/enums";
+import type { SequenceMode } from "@/services/ai/sequence";
 
 /**
  * Studio types.
@@ -96,6 +97,16 @@ export interface StudioParams {
    * by default would quietly make every clip worse.
    */
   cameraMotion: string | null;
+  /**
+   * One continuous clip, or a shot sequence.
+   *
+   * A param rather than local component state because it changes the price: a
+   * four-shot sequence is four provider calls and four times the credits. The
+   * generate button and the plan panel reading two different copies of this is
+   * exactly how "Generate · 90 credits" ended up over a four-shot plan that 90
+   * credits could not buy.
+   */
+  sequenceMode: SequenceMode;
 }
 
 export type JobStatus =

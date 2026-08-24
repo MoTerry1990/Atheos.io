@@ -108,6 +108,40 @@ export const env = createEnv({
     // against every one of these routes. Never set it on the production
     // deployment.
     ENABLE_DEV_PREVIEWS: z.enum(["0", "1"]).optional(),
+    /**
+     * Offer the Veo 3.1 tiers in the studio.
+     *
+     * Off by default and deliberately not set anywhere yet. The models are
+     * callable — the Replicate token already reaches them — but their real
+     * invoice rate is unverified, so enabling them would put a price in front of
+     * customers that has never been checked against a bill. The flag exists so
+     * the adapter can be exercised and benchmarked before that happens.
+     */
+    ENABLE_VEO_31: z.enum(["0", "1"]).optional(),
+    ENABLE_SMART_IMAGE: z.enum(["0", "1"]).optional(),
+    /**
+     * The interactive Creative Director.
+     *
+     * Absent means off, and off is enforced on the server rather than by hiding
+     * a button: a forged request reaches the same check. It stays off until the
+     * planner has been benchmarked, and nothing in the build depends on it — the
+     * deterministic planner needs no credentials at all.
+     */
+    ENABLE_CREATIVE_DIRECTOR: z.enum(["0", "1"]).optional(),
+    /**
+     * Signs creative plan tokens. Server-only, and its own secret.
+     *
+     * Deliberately not derived from `CLERK_SECRET_KEY` or `STRIPE_SECRET_KEY`,
+     * which was the previous approach: reusing an authentication or payment
+     * secret to sign a second kind of artefact means rotating either one
+     * silently invalidates the other's tokens, and it widens what a single
+     * leaked value is good for.
+     *
+     * Optional while the Director is off so the build and every existing
+     * environment keep working untouched. Required the moment it is on — see
+     * `creativePlanConfigProblems`.
+     */
+    CREATIVE_PLAN_SIGNING_SECRET: z.string().min(1).optional(),
 
     // ---- Administration -------------------------------------------------
     // Comma-separated Clerk user ids with admin access.
@@ -225,6 +259,10 @@ export const env = createEnv({
     WEBHOOK_SIGNING_SECRET: process.env.WEBHOOK_SIGNING_SECRET,
 
     ENABLE_DEV_PREVIEWS: process.env.ENABLE_DEV_PREVIEWS,
+    ENABLE_VEO_31: process.env.ENABLE_VEO_31,
+    ENABLE_SMART_IMAGE: process.env.ENABLE_SMART_IMAGE,
+    ENABLE_CREATIVE_DIRECTOR: process.env.ENABLE_CREATIVE_DIRECTOR,
+    CREATIVE_PLAN_SIGNING_SECRET: process.env.CREATIVE_PLAN_SIGNING_SECRET,
 
     ADMIN_USER_IDS: process.env.ADMIN_USER_IDS,
     ATHEOS_KILL_SWITCH: process.env.ATHEOS_KILL_SWITCH,

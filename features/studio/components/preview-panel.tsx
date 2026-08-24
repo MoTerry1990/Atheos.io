@@ -2,6 +2,7 @@
 
 import {
   AlertCircle,
+  Clapperboard,
   Download,
   Globe,
   ImageIcon,
@@ -133,7 +134,18 @@ function Elapsed({ since }: { since: number }) {
   );
 }
 
-export function PreviewPanel() {
+export function PreviewPanel({
+  /**
+   * "Animate this", when the Director is available to run it.
+   *
+   * Optional because the preview panel is also mounted by `/studio-preview`,
+   * which has no Director. An absent handler hides the button rather than
+   * offering an action that would do nothing.
+   */
+  onAnimate,
+}: {
+  onAnimate?: (assetId?: string) => void | Promise<void>;
+} = {}) {
   const selectedJobId = useStudioStore((state) => state.selectedJobId);
   const queue = useStudioStore((state) => state.queue);
   const history = useStudioStore((state) => state.history);
@@ -198,6 +210,28 @@ export function PreviewPanel() {
             <RotateCcw />
             Reuse settings
           </Button>
+
+          {/* Only for a still that actually exists.
+
+              The old studio had no such action at all: "now make this image a
+              video" was typed into the prompt box, which switched the modality
+              and submitted a fresh text-to-video carrying the *image's* prompt
+              and no picture. The button exists so the intent has somewhere to
+              go that carries the asset with it. */}
+          {onAnimate &&
+          job.status === "succeeded" &&
+          job.outputs[0]?.url &&
+          job.outputs[0].mimeType.startsWith("image/") ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => void onAnimate(job.outputs[0].id)}
+              title="Plan a video that starts from this picture"
+            >
+              <Clapperboard />
+              Animate this
+            </Button>
+          ) : null}
 
           {job.outputs.length > 0 ? (
             <Button

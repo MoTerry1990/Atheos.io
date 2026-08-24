@@ -3,10 +3,10 @@
 import {
   Copy,
   Download,
+  Eye,
   ImageIcon,
   Mail,
   MoreHorizontal,
-  Search,
   Sparkles,
   Trash2,
 } from "lucide-react";
@@ -53,7 +53,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Field, InputField } from "@/components/ui/field";
+import { Field, InputField, SearchInput } from "@/components/ui/field";
 import { Icon } from "@/components/ui/icon";
 import {
   LoadingOverlay,
@@ -539,8 +539,17 @@ export function BadgeSection() {
   );
 }
 
+/** A prompt with paragraphs, an unbreakable URL and accents, for the demos. */
+const LONG_SAMPLE = [
+  "Una toma aérea cinematográfica de un carro rojo descapotable en la carretera de la costa.",
+  "",
+  "El mar queda siempre al lado derecho del encuadre, con acantilados y cielo azul.",
+  "https://example.test/a-very-long-reference-url-that-cannot-break-on-spaces?take=1&angle=aerial",
+].join("\n");
+
 export function InputSection() {
   const [error, setError] = useState("");
+  const [search, setSearch] = useState("");
 
   return (
     <Section
@@ -586,10 +595,77 @@ export function InputSection() {
 
             <Field label="Search" hideLabel>
               {(props) => (
+                <SearchInput
+                  {...props}
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  onClear={() => setSearch("")}
+                  placeholder="Search assets…"
+                />
+              )}
+            </Field>
+
+            {/*
+              The states side by side, at the real sizes, using the real
+              components. A spacing standard that only exists in a comment is a
+              standard nobody can check.
+            */}
+            <Field
+              label="With a trailing control"
+              hint="36px is reserved for it."
+            >
+              {(props) => (
                 <InputField
                   {...props}
-                  placeholder="Search assets…"
-                  leading={<Search />}
+                  // Not a key-shaped string: a demo value that looks like a live
+                  // secret trips the repository secret scan on every future diff.
+                  defaultValue="Hidden while not focused"
+                  trailing={<Eye />}
+                />
+              )}
+            </Field>
+
+            <Field label="Disabled">
+              {(props) => (
+                <InputField {...props} disabled defaultValue="Cannot edit" />
+              )}
+            </Field>
+
+            <Field label="Read only">
+              {(props) => (
+                <InputField {...props} readOnly defaultValue="Fixed value" />
+              )}
+            </Field>
+
+            <Field
+              label="Long multiline"
+              hint="Wraps a bare URL instead of scrolling sideways."
+            >
+              {(props) => <Textarea {...props} defaultValue={LONG_SAMPLE} />}
+            </Field>
+
+            <Field
+              label="Writing-assistant lane reserved"
+              hint="56px on the right, where Grammarly and similar inject a button."
+            >
+              {(props) => (
+                <Textarea
+                  {...props}
+                  overlayRight
+                  defaultValue="Text stops before the corner an extension will claim."
+                />
+              )}
+            </Field>
+
+            <Field
+              label="Footer controls reserved"
+              hint="58px at the bottom, for a counter or an expand button."
+            >
+              {(props) => (
+                <Textarea
+                  {...props}
+                  overlayBottom
+                  defaultValue="Text stops above the controls rather than running under them."
                 />
               )}
             </Field>

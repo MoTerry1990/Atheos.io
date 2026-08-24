@@ -48,7 +48,167 @@ const API = "https://api.replicate.com/v1";
  * rejected at submit time with a clear error rather than sent to the API, so a
  * misconfiguration fails loudly instead of as an opaque 422.
  */
+/**
+ * The Veo 3.1 tiers, behind a flag that is off everywhere.
+ *
+ * All three are callable today — the existing Replicate token reaches them, and
+ * their schemas were read on 2026-08-22. They are gated because their **real
+ * invoice rate is unverified**: Google publishes $0.10-$0.40 per second, and
+ * Replicate's margin on top of that is not exposed by its API and could not be
+ * read from the model pages. Offering them to customers at a price never checked
+ * against a bill is how a catalogue ends up losing money on its best feature.
+ *
+ * Set `ENABLE_VEO_31=1` to exercise them. Do that only after the approved
+ * benchmark has produced an invoice line to price against.
+ */
+const VEO_MODELS: (ProviderModel & { version: string })[] =
+  env.ENABLE_VEO_31 === "1"
+    ? [
+        {
+          id: "replicate/veo-3.1-fast",
+          providerId: "replicate",
+          displayName: "Cinematic Fast",
+          modality: "VIDEO",
+          // 288 at the 4s base — see creditsAtMargin in services/ai/sequence.ts.
+          creditCost: 288,
+          version:
+            "ba987aceebef53bebfede32973f842fe3aa2301bf2585878181e7a7677052e36",
+          capabilities: {
+            supportsNegativePrompt: true,
+            supportsImageInput: true,
+            supportsSeed: true,
+            aspectRatios: ["16:9", "9:16"],
+            maxOutputs: 1,
+            durations: [4, 6, 8],
+            maxDurationSeconds: 8,
+            cameraMotions: CAMERA_MOTIONS,
+            operations: ["text-to-video", "image-to-video"],
+          },
+        },
+        {
+          id: "replicate/veo-3.1",
+          providerId: "replicate",
+          displayName: "Cinematic",
+          modality: "VIDEO",
+          creditCost: 960,
+          version:
+            "9c6ca0c25d89ac6102278405a0673fd929b7793856870d2718e3a84a5aa4ad4d",
+          capabilities: {
+            supportsNegativePrompt: true,
+            supportsImageInput: true,
+            supportsSeed: true,
+            aspectRatios: ["16:9", "9:16"],
+            maxOutputs: 1,
+            durations: [4, 6, 8],
+            maxDurationSeconds: 8,
+            cameraMotions: CAMERA_MOTIONS,
+            operations: ["text-to-video", "image-to-video"],
+          },
+        },
+        {
+          id: "replicate/veo-3.1-lite",
+          providerId: "replicate",
+          displayName: "Cinematic Lite",
+          modality: "VIDEO",
+          creditCost: 192,
+          version:
+            "fe0ac882f170a9ee79aa4940abe83fa09f68b1e074cde15c7693a1e2728a9558",
+          capabilities: {
+            // Its schema is seed, image, prompt, duration, last_frame,
+            // resolution, aspect_ratio — and nothing else. No negative prompt.
+            supportsNegativePrompt: false,
+            supportsImageInput: true,
+            supportsSeed: true,
+            aspectRatios: ["16:9", "9:16"],
+            maxOutputs: 1,
+            durations: [4, 6, 8],
+            maxDurationSeconds: 8,
+            cameraMotions: CAMERA_MOTIONS,
+            operations: ["text-to-video", "image-to-video"],
+          },
+        },
+      ]
+    : [];
+
+/**
+ * Models whose input shape is the Google image schema rather than the FLUX one.
+ *
+ * A set rather than a capability flag because it is not a capability — it is
+ * which field names the provider parses, and two models with identical
+ * capabilities can still disagree about that.
+ */
+const NANO_BANANA_MODELS = new Set([
+  "replicate/nano-banana-2",
+  "replicate/nano-banana-pro",
+]);
+
+/**
+ * Smart Image and Pro Image, behind `ENABLE_SMART_IMAGE`.
+ *
+ * ## Why these two and not the obvious third
+ *
+ * `black-forest-labs/flux-2-pro` was audited alongside them and is deliberately
+ * absent. Its price is `$0.015/run + $0.015 per input megapixel + $0.015 per
+ * output megapixel`, and the input term is chosen by the customer — four 4MP
+ * references add $0.24 to a job quoted from the output size alone. A flat
+ * credit price for that is a guess, and an unknown cost cannot be sold. See
+ * `services/ai/image-capabilities.ts`, which keeps the audited figures next to
+ * the decision not to use them.
+ *
+ * ## Both prices come from the provider's published table
+ *
+ *   nano-banana-2    1K $0.067   2K $0.101   4K $0.151   per output image
+ *   nano-banana-pro  1K $0.150   2K $0.150   4K $0.300   per output image
+ *
+ * The `creditCost` below is the 2K figure, because 2K is what Atheos asks for.
+ * Per-resolution pricing lives in `image-capabilities.ts`; this field is the
+ * catalogue's single-number estimate and must not be the one that bills.
+ */
+const SMART_IMAGE_MODELS: (ProviderModel & { version: string })[] =
+  env.ENABLE_SMART_IMAGE === "1"
+    ? [
+        {
+          id: "replicate/nano-banana-2",
+          providerId: "replicate",
+          displayName: "Smart Image",
+          modality: "IMAGE",
+          // 2K: $0.101 x 2.72 margin at $0.005/credit.
+          creditCost: 55,
+          version:
+            "d1be8b5fc0931a253d417e12a484ac01ee9ccbc6daffd4792151377d5e5ff55f",
+          capabilities: {
+            // Schema inputs are exactly: prompt, image_input, aspect_ratio,
+            // resolution, output_format, google_search, image_search.
+            supportsNegativePrompt: false,
+            supportsImageInput: true,
+            supportsSeed: false,
+            aspectRatios: ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3"],
+            maxOutputs: 1,
+            operations: ["text-to-image", "image-to-image"],
+          },
+        },
+        {
+          id: "replicate/nano-banana-pro",
+          providerId: "replicate",
+          displayName: "Pro Image",
+          modality: "IMAGE",
+          creditCost: 80,
+          version:
+            "93f55bfdbdfd4a62e16bf861729bcfa9e8fd9b0325fb218cbc4dd138ecc87cc7",
+          capabilities: {
+            supportsNegativePrompt: false,
+            supportsImageInput: true,
+            supportsSeed: false,
+            aspectRatios: ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3"],
+            maxOutputs: 1,
+            operations: ["text-to-image", "image-to-image"],
+          },
+        },
+      ]
+    : [];
+
 const MODELS: (ProviderModel & { version: string })[] = [
+  ...SMART_IMAGE_MODELS,
   {
     id: "replicate/flux-schnell",
     providerId: "replicate",
@@ -240,6 +400,10 @@ const MODELS: (ProviderModel & { version: string })[] = [
   },
 ];
 
+// Appended rather than inlined so the flagged tier is one obvious block that
+// can be read, benchmarked and removed as a unit.
+MODELS.push(...VEO_MODELS);
+
 type ReplicatePrediction = {
   id: string;
   status: "starting" | "processing" | "succeeded" | "failed" | "canceled";
@@ -301,7 +465,20 @@ function buildInput(
         ...(model.capabilities.supportsNegativePrompt && request.negativePrompt
           ? { negative_prompt: request.negativePrompt }
           : {}),
-        ...(source ? { image: source } : {}),
+        /**
+         * The capability check is the condition, not the presence of a URL.
+         *
+         * This used to be `source ? { image: source } : {}`. Motion 1 is
+         * `wan-2.2-t2v-fast` and its schema has no `image` field at all, so a
+         * reference attached to a Motion 1 job produced a provider rejection
+         * *after* 90 credits had been reserved. The routing layer should refuse
+         * that request long before here — but the adapter is the last place
+         * that knows what the schema actually has, and it should not be able to
+         * send a field the model cannot parse even if something upstream slips.
+         */
+        ...(source && model.capabilities.supportsImageInput
+          ? { image: source }
+          : {}),
         ...(model.id === "replicate/video-pro"
           ? {
               // Seedance: seconds, 4-12, and its own resolution ladder.
@@ -368,6 +545,30 @@ function buildInput(
 
     case "text-to-image":
     default:
+      /**
+       * The Google image models take a different set of fields entirely.
+       *
+       * `nano-banana-2` and `nano-banana-pro` accept prompt, aspect_ratio,
+       * resolution, image_input and output_format — and *not* seed, not
+       * num_outputs, not negative_prompt. Falling through to the FLUX shape
+       * below would send three fields the schema has never heard of, which is
+       * the same class of failure as `image` on Motion 1.
+       */
+      if (NANO_BANANA_MODELS.has(model.id)) {
+        return {
+          prompt: request.prompt,
+          ...(request.aspectRatio ? { aspect_ratio: request.aspectRatio } : {}),
+          // The provider default is 1K on nano-banana-2. Atheos asks for the
+          // brief's resolution, and the compiler has already reconciled it
+          // against what this model offers.
+          resolution: request.imageResolution ?? "2K",
+          ...(request.inputImageUrls && request.inputImageUrls.length > 0
+            ? { image_input: request.inputImageUrls }
+            : {}),
+          output_format: "png",
+        };
+      }
+
       return {
         prompt: request.prompt,
         ...(model.capabilities.supportsNegativePrompt && request.negativePrompt

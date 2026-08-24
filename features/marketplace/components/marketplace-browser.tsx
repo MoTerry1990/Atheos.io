@@ -1,10 +1,9 @@
 "use client";
 
-import { PackageOpen, Search, Star, Store, X } from "lucide-react";
+import { PackageOpen, Star, Store } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { Button } from "@/components/ui/button";
-import { InputField } from "@/components/ui/field";
+import { SearchInput } from "@/components/ui/field";
 import { SkeletonGrid } from "@/components/ui/skeleton";
 import { EmptyState, ErrorState } from "@/components/ui/state";
 import { ItemCard } from "@/features/marketplace/components/item-card";
@@ -255,28 +254,17 @@ export function MarketplaceBrowser() {
           </h1>
 
           <div className="relative min-w-0 flex-1 sm:max-w-xs">
-            <Search
-              className="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground"
-              aria-hidden
-            />
-            <InputField
+            {/* The magnifier, the padding it needs and the clear button all
+                come from the primitive now. Three screens had three
+                hand-placed versions of this, and two of them left the icon
+                6px from the first character. */}
+            <SearchInput
               value={search}
               onChange={(event) => setSearch(event.target.value)}
+              onClear={() => setSearch("")}
               placeholder="Search the marketplace"
               aria-label="Search the marketplace"
-              className="pl-8"
             />
-            {search ? (
-              <Button
-                size="icon-xs"
-                variant="ghost"
-                onClick={() => setSearch("")}
-                aria-label="Clear search"
-                className="absolute top-1/2 right-1 -translate-y-1/2"
-              >
-                <X />
-              </Button>
-            ) : null}
           </div>
         </div>
 

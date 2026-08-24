@@ -74,6 +74,26 @@ const submitSchema = z.object({
   cameraMotion: z.string().max(60).optional(),
   parentId: z.string().min(1).optional(),
   collectionId: z.string().min(1).optional(),
+  /**
+   * Creative Director. Optional in the schema because the flag may be off; the
+   * *service* requires them when it is on, which is where the decision belongs
+   * — a route schema cannot read a feature flag's runtime state safely.
+   */
+  /**
+   * The image to animate, as an owned asset id.
+   *
+   * Never a URL. The service resolves it against `Asset.userId` and mints a
+   * signed link itself — a URL here would be an instruction to fetch whatever
+   * the caller likes on our credentials.
+   */
+  sourceAssetId: z.string().max(120).optional(),
+  planToken: z.string().max(4096).optional(),
+  // Shape-checked loosely here and hash-checked against the signed token in
+  // the service. Validating its structure twice would not add safety: the hash
+  // is what proves it is the brief that was confirmed.
+  confirmedBrief: z.unknown().optional(),
+  planConfirmed: z.boolean().optional(),
+  clientIdempotencyKey: z.string().max(200).optional(),
 });
 
 export async function POST(request: NextRequest) {
@@ -85,7 +105,14 @@ export async function POST(request: NextRequest) {
   if (gate instanceof NextResponse) return gate;
 
   try {
-    const result = await submitGeneration(gate.body);
+    const result = await submitGeneration({
+      ...gate.body,
+      // The brief is carried as `unknown` through the schema and proved by the
+      // token's hash in the service. Casting here rather than re-validating its
+      // shape: a structurally valid brief that is not *the confirmed one* would
+      // pass a schema and still be a forgery, and only the hash catches that.
+      confirmedBrief: gate.body.confirmedBrief as never,
+    });
     return withHeaders(NextResponse.json(result, { status: 202 }), gate);
   } catch (error) {
     if (error instanceof GenerationError) {

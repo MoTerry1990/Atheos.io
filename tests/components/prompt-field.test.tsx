@@ -55,7 +55,10 @@ describe("spacing keeps text off the border", () => {
      * rendered value is checked in the browser as well as here.
      */
     expect(field.className).toMatch(/pl-\[18px\]/);
-    expect(field.className).toMatch(/py-4/);
+    // pt/pb rather than py: the shared primitive names each side so a caller
+    // overriding one cannot silently clear the other.
+    expect(field.className).toMatch(/pt-4/);
+    expect(field.className).toMatch(/pb-4/);
     expect(field.className).not.toMatch(/px-\[18px\]/);
   });
 
@@ -66,7 +69,9 @@ describe("spacing keeps text off the border", () => {
      * words underneath it.
      */
     const { field } = setup();
-    expect(field.className).toMatch(/pr-12/);
+    // 56px, not the old 48px: that is the width the writing-assistant lane
+    // actually needs, and it now comes from the shared primitive.
+    expect(field.className).toMatch(/pr-16/);
   });
 
   it("uses a reading line-height rather than a form one", () => {
@@ -339,7 +344,9 @@ describe("browser-extension overlay tolerance", () => {
     container.querySelector(".rounded-xl")!.appendChild(overlay);
 
     // The gutter that keeps words clear of it.
-    expect(field.className).toMatch(/pr-12/);
+    // 56px, not the old 48px: that is the width the writing-assistant lane
+    // actually needs, and it now comes from the shared primitive.
+    expect(field.className).toMatch(/pr-16/);
     // And the text itself is untouched by the injection.
     expect(field.value).toBe("una toma aérea del carro");
     expect(container.querySelector("[data-extension]")).not.toBeNull();

@@ -1,5 +1,7 @@
 import { ApiError, request, upload } from "@/lib/http";
 import type { GenerationDTO } from "@/features/studio/lib/dto";
+import type { CreativeBrief } from "@/services/ai/creative-brief";
+import type { ImageBrief } from "@/services/ai/image-brief";
 import type { ProviderModel } from "@/services/ai/types";
 
 export { ApiError };
@@ -28,6 +30,22 @@ export interface SubmitPayload {
   cameraMotion?: string;
   parentId?: string;
   collectionId?: string;
+  /**
+   * Creative Director. When the feature is on, the server *requires* these and
+   * overrides `prompt` with its own recompilation — so the prompt above becomes
+   * a record of what the composer showed rather than what the provider gets.
+   *
+   * `confirmedBrief` is the planning response's brief, unmodified: the token
+   * carries its hash, and any edit here is a rejected submission rather than a
+   * silently different video.
+   */
+  /** Owned asset id for "animate this". Never a URL. */
+  sourceAssetId?: string;
+  planToken?: string;
+  confirmedBrief?: CreativeBrief | ImageBrief;
+  planConfirmed?: boolean;
+  /** Distinguishes a deliberate re-run from a double-click on the same plan. */
+  clientIdempotencyKey?: string;
 }
 
 export function submitGeneration(payload: SubmitPayload) {

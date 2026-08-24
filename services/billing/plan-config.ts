@@ -141,9 +141,10 @@ export const PLAN_CONFIGS: readonly PlanConfig[] = [
     // `services/billing/free-grant.ts` for why the renewal was a liability.
     creditsPerMonth: 100,
     provisionalCreditsPerMonth: 100,
-    // $0.50 of retail value, once, per account. Worst case is ~7 flux-dev
-    // images at $0.025 = $0.18 of real provider spend.
-    providerAllowanceUsd: 0.5,
+    // Worst-case provider spend, once, per account: 100 x $0.002 = $0.20.
+    // Observed worst case is ~7 flux-dev images at $0.025 = $0.18, which is the
+    // same number arrived at from the other direction.
+    providerAllowanceUsd: 0.2,
     // One at a time. The audit rates parallel free generation as Critical, and
     // a concurrency of 1 is what makes the 20-parallel-request attack a queue
     // rather than a bill.
@@ -159,9 +160,31 @@ export const PLAN_CONFIGS: readonly PlanConfig[] = [
     tier: "CREATOR",
     displayName: "Creator",
     monthlyPriceCents: 999,
-    creditsPerMonth: 500,
-    provisionalCreditsPerMonth: 500, // $2.50 / $0.005
-    providerAllowanceUsd: 2.5,
+    /**
+     * 1,900, not the 2,000 that was proposed.
+     *
+     * At 100% burn on the thinnest model in the catalogue (`gpt-image-1`, which
+     * sits exactly on the 2.5x floor at $0.002 per credit), 2,000 credits gives
+     * a 55.2% margin against net revenue — nine credits above the 55% floor.
+     * A single international card at 3.9% takes it to 54.7%, and a 6% refund
+     * rate does the same. The ceiling under an international card is 1,987,
+     * which is *below* the proposal.
+     *
+     * 1,900 gives 57.5%, and 55.4% under the same shock. Still 3.8x today's
+     * 500. `docs/UNIT_ECONOMICS.md` § 4 carries the full sensitivity table.
+     */
+    creditsPerMonth: 1_900,
+    provisionalCreditsPerMonth: 1_900,
+    /**
+     * Worst-case **provider spend**, not retail value: 1,900 x $0.002.
+     *
+     * The old figures set this to `credits x $0.005`, the retail rate — which
+     * made the budget 2.5x larger than any customer could actually cost us and
+     * turned the field into a second, looser copy of the allowance. It is the
+     * real cost basis now, which is what the name says and what
+     * `tests/unit/spending-controls.test.ts` compares against.
+     */
+    providerAllowanceUsd: 3.8,
     maxConcurrentJobs: 3,
     generationsPerHour: 60,
     generationsPerMinute: 12,
@@ -173,9 +196,12 @@ export const PLAN_CONFIGS: readonly PlanConfig[] = [
     tier: "PRO",
     displayName: "Pro",
     monthlyPriceCents: 3499,
-    creditsPerMonth: 1_800,
-    provisionalCreditsPerMonth: 1_800, // $9.00 / $0.005
-    providerAllowanceUsd: 9,
+    // 56.2% at full burn, 55.6% under an international card. Adopted as
+    // proposed — Pro has 198 credits of slack against the 55% floor.
+    creditsPerMonth: 7_000,
+    provisionalCreditsPerMonth: 7_000,
+    // 7,000 x $0.002 worst case.
+    providerAllowanceUsd: 14,
     maxConcurrentJobs: 5,
     generationsPerHour: 200,
     generationsPerMinute: 20,
@@ -187,9 +213,12 @@ export const PLAN_CONFIGS: readonly PlanConfig[] = [
     tier: "STUDIO",
     displayName: "Studio",
     monthlyPriceCents: 8999,
-    creditsPerMonth: 4_800,
-    provisionalCreditsPerMonth: 4_800, // $24.00 / $0.005
-    providerAllowanceUsd: 24,
+    // 56.5% at full burn, 55.8% under an international card. Adopted as
+    // proposed — 613 credits of slack.
+    creditsPerMonth: 18_000,
+    provisionalCreditsPerMonth: 18_000,
+    // 18,000 x $0.002 worst case.
+    providerAllowanceUsd: 36,
     // Eight, not unlimited. "No unlimited generation" is a founder constraint
     // and it applies to concurrency as much as to volume — an unbounded top
     // tier is a single customer able to reach the $500 ceiling alone.
@@ -253,5 +282,23 @@ export function planAllowsModel(
  * moment somebody edits one and not the other, and the drift is invisible.
  */
 export function creditsForAllowance(allowanceUsd: number): number {
-  return Math.round((allowanceUsd * MICRO_USD) / CREDIT_VALUE_MICRO_USD);
+  return Math.round(
+    (allowanceUsd * MICRO_USD) / WORST_CASE_COST_PER_CREDIT_MICRO_USD,
+  );
 }
+
+/**
+ * What one credit can cost Atheos, at worst: **$0.002**.
+ *
+ * Not the retail rate. A credit *retails* at $0.005, but every enabled model
+ * clears at least a 2.5x margin floor, so the most a credit can ever cost in
+ * provider spend is `$0.005 / 2.5`. `openai/gpt-image-1` sits exactly on that
+ * floor, so this is a real model's number rather than a theoretical bound.
+ *
+ * `creditsForAllowance` divided by the *retail* rate until the competitive
+ * pricing sprint, which made every plan's budget 2.5x smaller than the plan
+ * could actually spend — conservative, but it is why Atheos was shipping a
+ * quarter of the credits a competitor gives away at the same price.
+ */
+export const WORST_CASE_COST_PER_CREDIT_MICRO_USD =
+  CREDIT_VALUE_MICRO_USD / 2.5;

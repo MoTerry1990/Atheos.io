@@ -1,0 +1,328 @@
+import type { CreativeBrief } from "@/services/ai/creative-brief";
+import { assessModel, type ModelCapability } from "@/services/ai/brief-routing";
+
+/**
+ * One brief, one model, one compiled request — decided on the server.
+ *
+ * ## Why a dispatcher rather than one universal prompt
+ *
+ * Until now every model received the same expanded string. That is wrong in
+ * both directions: Motion 1 was handed shot lists and audio direction it has no
+ * way to act on, and Veo was handed nothing about the structure it *can*
+ * follow. A prompt written for a model that cannot read it is noise, and noise
+ * is what the model renders.
+ *
+ * So each model gets a compiler matched to its verified schema. The brief is
+ * the same; the translation is not.
+ *
+ * ## The version matters
+ *
+ * `COMPILER_VERSION` is recorded with every generation. When a compiler
+ * changes, old generations remain explicable — you can tell which rules
+ * produced a given output instead of guessing from the date.
+ */
+
+export const COMPILER_VERSION = 1;
+
+export interface CompiledRequest {
+  modelId: string;
+  compilerVersion: number;
+  prompt: string;
+  /** Only where the model declares the input. Empty string means omit. */
+  negativePrompt: string;
+  /** Provider-shaped extras: duration, resolution, audio flags, images. */
+  parameters: Record<string, unknown>;
+  /** What this compilation deliberately dropped, and why. */
+  omitted: string[];
+}
+
+/** Continuity, stated once, in the order a model reads best. */
+function continuityLine(brief: CreativeBrief): string {
+  const rules = brief.continuityRules.value;
+  if (rules.length > 0)
+    return `Identical across the whole video: ${rules.join("; ")}.`;
+  if (brief.subjectIdentity.value.length > 0) {
+    return `Identical across the whole video: ${brief.subjectIdentity.value.join("; ")}.`;
+  }
+  return "";
+}
+
+function sceneLine(brief: CreativeBrief): string {
+  return [
+    brief.visualStyle.value,
+    brief.primarySubject.value,
+    brief.environment.value,
+    brief.action.value,
+    brief.colorAndLighting.value,
+  ]
+    .filter(Boolean)
+    .join(". ");
+}
+
+/**
+ * Motion 1 — `wan-2.2-t2v-fast`.
+ *
+ * Its entire input surface is prompt, seed, num_frames, resolution,
+ * aspect_ratio and a few sampler knobs. No image, no negative prompt, no audio.
+ * So this compiler deliberately produces **less** than the others: one
+ * continuous shot, no audio sentence, no reference claim, and it says out loud
+ * what it dropped rather than sending text the model will render as objects.
+ */
+function compileMotion1(
+  brief: CreativeBrief,
+  model: ModelCapability,
+): CompiledRequest {
+  const omitted: string[] = [];
+
+  if (brief.shotCount.value > 1) {
+    omitted.push(
+      `${brief.shotCount.value}-shot structure — Motion 1 renders one continuous take`,
+    );
+  }
+  if (brief.audioStrategy.value !== "SILENT") {
+    omitted.push("audio direction — Motion 1 produces no audio");
+  }
+  if (brief.references.value.count > 0) {
+    omitted.push("reference image — Motion 1 accepts no image input");
+  }
+  if (brief.negativeConstraints.value.length > 0) {
+    // Appending them to the positive prompt is how "no duplicate cars" becomes
+    // two cars.
+    omitted.push(
+      "negative constraints — Motion 1 has no negative_prompt input",
+    );
+  }
+
+  const parts = [
+    sceneLine(brief),
+    `One continuous shot, no cuts.`,
+    continuityLine(brief),
+  ].filter(Boolean);
+
+  const seconds = nearestAllowed(brief.durationSeconds.value, model);
+
+  return {
+    modelId: model.id,
+    compilerVersion: COMPILER_VERSION,
+    prompt: parts.join(" "),
+    negativePrompt: "",
+    parameters: {
+      num_frames: seconds > 5 ? 121 : 81,
+      resolution: "720p",
+      aspect_ratio: brief.aspectRatio.value === "9:16" ? "9:16" : "16:9",
+    },
+    omitted,
+  };
+}
+
+/** Motion Pro — seedance-1-lite. Continuous, but takes images. */
+function compileMotionPro(
+  brief: CreativeBrief,
+  model: ModelCapability,
+): CompiledRequest {
+  const omitted: string[] = [];
+  if (brief.shotCount.value > 1) {
+    omitted.push(
+      `${brief.shotCount.value}-shot structure — Motion Pro renders one continuous take`,
+    );
+  }
+  if (brief.audioStrategy.value === "NATIVE") {
+    omitted.push(
+      "native audio — Motion Pro produces none; sound must be added afterwards",
+    );
+  }
+
+  return {
+    modelId: model.id,
+    compilerVersion: COMPILER_VERSION,
+    prompt: [sceneLine(brief), "One continuous shot.", continuityLine(brief)]
+      .filter(Boolean)
+      .join(" "),
+    negativePrompt: "",
+    parameters: {
+      duration: nearestAllowed(brief.durationSeconds.value, model),
+      resolution: brief.resolution.value,
+      aspect_ratio: brief.aspectRatio.value,
+      fps: 24,
+    },
+    omitted,
+  };
+}
+
+/** The shot list, as numbered blocks separated by the cut. */
+function shotBlocks(brief: CreativeBrief): string {
+  const blocks: string[] = [];
+  brief.shots.value.forEach((shot, index) => {
+    const described = [
+      shot.cameraAngle,
+      shot.cameraMovement,
+      shot.subjectAction,
+    ]
+      .filter(Boolean)
+      .join(". ");
+    blocks.push(
+      `SHOT ${shot.index} — ${shot.start.toFixed(1)}–${shot.end.toFixed(1)}s\n${described || "as described above"}.`,
+    );
+    if (index < brief.shots.value.length - 1) blocks.push("HARD CUT.");
+  });
+  return blocks.join("\n\n");
+}
+
+/** Veo 3.1 — reference mechanism, timed shots, negative prompt, native audio. */
+function compileVeo(
+  brief: CreativeBrief,
+  model: ModelCapability,
+): CompiledRequest {
+  const omitted: string[] = [];
+  const sections: string[] = [];
+
+  if (brief.shotCount.value > 1) {
+    sections.push(
+      `Create an edited sequence containing exactly ${brief.shotCount.value} separate shots ` +
+        `and exactly ${brief.shotCount.value - 1} unmistakable hard cuts. ` +
+        `Do not make one continuous orbit or uninterrupted drone movement.`,
+    );
+  }
+
+  sections.push(sceneLine(brief));
+  if (brief.shotCount.value > 1) sections.push(shotBlocks(brief));
+
+  const continuity = continuityLine(brief);
+  if (continuity) sections.push(continuity);
+
+  // Text is drawn by Atheos afterwards; a misspelt slogan cannot be fixed
+  // without paying for another generation.
+  sections.push("Render no text, captions, titles, logos or watermarks.");
+
+  if (brief.audioStrategy.value === "NATIVE") {
+    const sound = [brief.environmentalSound.value, brief.subjectSound.value]
+      .filter(Boolean)
+      .join(", ");
+    sections.push(
+      `Audio: ${sound || "the natural sound of the scene"}.` +
+        (brief.dialogue.value ? "" : " No speech, dialogue or narration.") +
+        (brief.music.value ? "" : " No music."),
+    );
+  }
+
+  if (brief.references.value.count > 0 && !model.acceptsReferenceImages) {
+    omitted.push(
+      "reference images — this Veo tier takes only a first frame, so identity can drift",
+    );
+  }
+
+  const parameters: Record<string, unknown> = {
+    duration: nearestAllowed(brief.durationSeconds.value, model),
+    resolution: brief.resolution.value,
+    aspect_ratio: brief.aspectRatio.value,
+    generate_audio: brief.audioStrategy.value === "NATIVE",
+  };
+
+  return {
+    modelId: model.id,
+    compilerVersion: COMPILER_VERSION,
+    prompt: sections.filter(Boolean).join("\n\n"),
+    negativePrompt: brief.negativeConstraints.value.join(", "),
+    parameters,
+    omitted,
+  };
+}
+
+/** Cinematic Long — seedance-2.5. Long form, native audio, many references. */
+function compileSeedance25(
+  brief: CreativeBrief,
+  model: ModelCapability,
+): CompiledRequest {
+  const sections: string[] = [];
+
+  if (brief.shotCount.value > 1) {
+    sections.push(
+      `An edited sequence of ${brief.shotCount.value} separate shots with ` +
+        `${brief.shotCount.value - 1} hard cuts between them.`,
+    );
+  }
+  sections.push(sceneLine(brief));
+  if (brief.shotCount.value > 1) sections.push(shotBlocks(brief));
+
+  const continuity = continuityLine(brief);
+  if (continuity) sections.push(continuity);
+  sections.push("Render no text, captions, titles, logos or watermarks.");
+
+  return {
+    modelId: model.id,
+    compilerVersion: COMPILER_VERSION,
+    prompt: sections.filter(Boolean).join("\n\n"),
+    // seedance-2.5 has no negative_prompt input.
+    negativePrompt: "",
+    parameters: {
+      duration: Math.min(brief.durationSeconds.value, model.maxDurationSeconds),
+      // 720p is this model's ceiling; the routing layer has already refused a
+      // 1080p brief, so reaching here with one would be a bug upstream.
+      resolution: "720p",
+      aspect_ratio: brief.aspectRatio.value,
+      generate_audio: brief.audioStrategy.value === "NATIVE",
+    },
+    omitted:
+      brief.resolution.value === "1080p"
+        ? ["1080p — Cinematic Long renders 720p only"]
+        : [],
+  };
+}
+
+/** Snap to a length the model will actually render. */
+function nearestAllowed(seconds: number, model: ModelCapability): number {
+  if (!model.allowedDurations?.length) {
+    return Math.min(seconds, model.maxDurationSeconds);
+  }
+  if (model.allowedDurations.includes(seconds)) return seconds;
+  const longer = model.allowedDurations.filter((d) => d >= seconds);
+  return longer.length > 0
+    ? Math.min(...longer)
+    : Math.max(...model.allowedDurations);
+}
+
+const COMPILERS: Record<
+  string,
+  (brief: CreativeBrief, model: ModelCapability) => CompiledRequest
+> = {
+  "replicate/video-gen": compileMotion1,
+  "replicate/video-pro": compileMotionPro,
+  "replicate/veo-3.1-fast": compileVeo,
+  "replicate/veo-3.1": compileVeo,
+  "replicate/seedance-2.5": compileSeedance25,
+};
+
+export class CapabilityConflictError extends Error {
+  constructor(public readonly conflicts: string[]) {
+    super(`the brief cannot be made by this model: ${conflicts.join("; ")}`);
+    this.name = "CapabilityConflictError";
+  }
+}
+
+/**
+ * Compile a confirmed brief for one model.
+ *
+ * Refuses an unresolved conflict rather than compiling something the model
+ * cannot make. That refusal is the whole point: the previous behaviour was a
+ * warning beside a Generate button that still worked, and it produced a
+ * 7.57-second silent single take against a request for an edited commercial
+ * with sound.
+ */
+export function compileForModel(
+  brief: CreativeBrief,
+  model: ModelCapability,
+): CompiledRequest {
+  const verdict = assessModel(brief, model);
+  if (verdict.compatibility === "incompatible") {
+    throw new CapabilityConflictError(verdict.conflicts);
+  }
+
+  const compiler = COMPILERS[model.id];
+  if (!compiler) {
+    throw new CapabilityConflictError([
+      `no compiler is registered for ${model.id}`,
+    ]);
+  }
+
+  return compiler(brief, model);
+}

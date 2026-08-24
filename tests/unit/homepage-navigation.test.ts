@@ -32,6 +32,9 @@ const DICTIONARIES = { en: EN, es: ES } as const;
 /** Routes the application serves outside the marketing tree. */
 const APP_ROUTES = new Set([
   "/studio",
+  // Public since the Luminous Editorial sprint. Every model on it is derived
+  // from the registry, so the page cannot list something unselectable.
+  "/models",
   "/explore",
   "/marketplace",
   "/sign-in",
@@ -122,12 +125,20 @@ describe("homepage destinations", () => {
   }
 
   it("keeps the header's four destinations pointing at the product", () => {
-    // Create, Explore, Tools, Pricing — the order and the destinations the
-    // sprint brief pins.
+    /**
+     * Create, Models, Explore, Pricing.
+     *
+     * This pinned Create / Explore / **Tools** / Pricing until the Luminous
+     * Editorial sprint, whose brief specifies the list above. `Tools` pointed
+     * at `/marketplace`, which sits behind authentication and has no public
+     * feature flag — a signed-out visitor clicking it met a sign-in wall for
+     * something that is not being launched. `Models` replaces it with a page
+     * built from the catalogue.
+     */
     expect(EN.nav.map((item) => item.href)).toEqual([
       "/studio",
+      "/models",
       "/explore",
-      "/marketplace",
       "/pricing",
     ]);
 

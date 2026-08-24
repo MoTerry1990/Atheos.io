@@ -1,48 +1,90 @@
 # Runs the background worker on a schedule Vercel's Hobby plan cannot.
 #
-# ## Why this exists
+# ## Status: schedule disabled, 2026-08-23
+#
+# Every run since the schedule was added has failed, in two seconds, at the
+# pre-flight guard below:
+#
+#   WORKER_TRIGGER_SECRET and PRODUCTION_URL must both be set as repository
+#   secrets.
+#
+# 346 runs, all red, each one an email. The worker was never reached: the job
+# exits before curl is called, so nothing was ever triggered and nothing was
+# ever double-processed. The queue is not corrupted — it is untouched.
+#
+# The schedule is commented out rather than the file deleted, because the
+# failure is a missing repository secret and not a fault in the workflow. To
+# re-enable, do these two things in order:
+#
+#   1. Settings → Secrets and variables → Actions → **Secrets**, add
+#      `WORKER_TRIGGER_SECRET` with the same value as the Vercel environment
+#      variable of that name.
+#   2. Uncomment the `schedule:` block below.
+#
+# Run it once with **Run workflow** first. A green manual run proves the secret
+# before the schedule starts mailing anybody.
+#
+# ## `PRODUCTION_URL` is no longer required
+#
+# It used to be a second required *secret*, which was half the fragility here: a
+# public deployment URL is not a secret, it is already in `vercel.json` and in
+# the README, and storing it as one meant a missing or relocated value took the
+# whole job down with a message that blamed both. It now defaults to the real
+# production URL and can be overridden by a repository **variable** for a
+# preview deployment. Only the secret is genuinely required.
+#
+# ## What was NOT wrong
+#
+# Worth recording, so the next person does not re-audit it:
+#
+#   - The request shape still matches the endpoint. `app/api/worker/tick`
+#     accepts POST with `Authorization: Bearer <secret>` (or `x-worker-secret`)
+#     and reads `env.WORKER_TRIGGER_SECRET`. Unchanged.
+#   - The endpoint is deployed and reachable. Unauthenticated it answers 404 by
+#     design — a 401 would confirm the endpoint exists and is worth attacking —
+#     so a 404 here is not evidence of a broken route.
+#   - Concurrency protection and a timeout were already present.
+#   - An empty queue already succeeds as a clean no-op: `runTick` returns its
+#     counters at zero with a 200.
+#
+# ## Why this exists at all
 #
 # `vercel.json` declares one cron, at 03:00 daily, because that is the Hobby
 # plan's limit. The worker's lease is five minutes. Those two numbers together
 # mean a generation whose lease expires — the user closed the tab, an instance
 # was recycled mid-job — sits untouched until three in the morning.
 #
-# For a video that takes ninety seconds, "your clip will be ready tomorrow" is
-# not a beta experience, it is a bug report. GitHub Actions runs this every five
-# minutes for free, which matches the lease exactly.
+# The studio polls its own generation while the tab is open, so the common case
+# never depends on this. What this recovers is the stranded case.
 #
 # ## Replace this, do not build on it
 #
-# Scheduled Actions are best-effort: GitHub delays them under load, sometimes by
-# ten or fifteen minutes, and skips them entirely on repositories with no recent
-# activity. That is acceptable for recovering stranded jobs and unacceptable as
-# the primary path — the client polls its own generation while the tab is open,
-# which is what makes the common case fast.
-#
-# The right fix is Vercel Pro, where `vercel.json` can declare `*/5 * * * *` and
-# this file is deleted.
-#
-# ## Setup
-#
-# Two repository secrets, under Settings → Secrets and variables → Actions:
-#
-#   WORKER_TRIGGER_SECRET   the same value as in the Vercel environment
-#   PRODUCTION_URL          https://atheos-io.vercel.app
-#
-# Without them every run fails loudly, which is the intent — a worker silently
-# not running is how six sprints passed with `markSucceeded` doing nothing.
+# Scheduled Actions are best-effort: GitHub delays them under load and skips
+# them on quiet repositories. The observed delivery on this repository was 20-30
+# minutes apart while the file asked for five, so `*/5` was a fiction. The right
+# fix is Vercel Pro, where `vercel.json` can declare the real interval and this
+# file is deleted.
 
 name: Worker tick
 
 on:
-  schedule:
-    - cron: "*/5 * * * *"
-  # So a stranded job can be cleared without waiting for the next slot.
+  # Disabled until WORKER_TRIGGER_SECRET exists. See the header.
+  #
+  # Fifteen minutes, not five, when it comes back: GitHub was delivering this
+  # every 20-30 minutes regardless, and a stranded job waiting a quarter of an
+  # hour is the failure mode this recovers, not the one it prevents.
+  #
+  # schedule:
+  #   - cron: "*/15 * * * *"
+
+  # Always available, so a stranded job can be cleared by hand and so the secret
+  # can be proven before the schedule is switched on.
   workflow_dispatch:
 
 # A tick that overruns must not have a second one started on top of it. The
-# claim query is safe under concurrency, but two overlapping runs double the
-# provider polling for no benefit.
+# claim query is safe under concurrency — `FOR UPDATE SKIP LOCKED` hands two
+# overlapping ticks disjoint jobs, so nothing is processed twice — but two runs
+# double the provider polling for no benefit.
 concurrency:
   group: worker-tick
   cancel-in-progress: false
@@ -50,33 +92,79 @@ concurrency:
 jobs:
   tick:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    # The route caps itself at 60s and curl at 120s. Three minutes is enough
+    # slack for a cold start without leaving a hung runner billing for five.
+    timeout-minutes: 3
 
     steps:
       - name: Trigger the worker
         env:
           SECRET: ${{ secrets.WORKER_TRIGGER_SECRET }}
-          URL: ${{ secrets.PRODUCTION_URL }}
+          # A variable, not a secret, and it has a working default.
+          URL: ${{ vars.PRODUCTION_URL || 'https://atheos-io.vercel.app' }}
         run: |
-          if [ -z "$SECRET" ] || [ -z "$URL" ]; then
-            echo "::error::WORKER_TRIGGER_SECRET and PRODUCTION_URL must both be set as repository secrets."
+          set -uo pipefail
+
+          if [ -z "$SECRET" ]; then
+            echo "::error::WORKER_TRIGGER_SECRET is not set as a repository secret. The worker was not triggered."
+            {
+              echo "### Worker tick did not run"
+              echo
+              echo "\`WORKER_TRIGGER_SECRET\` is missing from **Settings → Secrets and variables → Actions**."
+              echo "Add it with the same value as the Vercel environment variable of that name, then re-run."
+            } >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
 
-          # `-w` captures the status separately from the body, so a 401 is
+          # `-w` captures the status separately from the body, so a 404 is
           # distinguishable from a 200 whose body happens to mention an error.
+          # `--max-time` bounds the whole request; the route's own budget is 60s.
           status=$(curl -sS -o /tmp/tick.json -w '%{http_code}' \
             -X POST "$URL/api/worker/tick" \
             -H "Authorization: Bearer $SECRET" \
-            --max-time 120)
+            --max-time 120) || status="000"
 
           echo "HTTP $status"
-          cat /tmp/tick.json
 
-          # Any non-2xx is a real failure: the secret is wrong, the deployment
-          # is down, or the tick threw. All three want a red run rather than a
-          # green one that did nothing.
-          if [ "$status" -lt 200 ] || [ "$status" -ge 300 ]; then
-            echo "::error::Worker tick failed with HTTP $status"
-            exit 1
-          fi
+          # The body is queue counters, not user data or secrets — see
+          # `TickResult` in services/worker/runner.ts.
+          cat /tmp/tick.json 2>/dev/null || true
+          echo
+
+          {
+            echo "### Worker tick"
+            echo
+            echo "- endpoint: \`$URL/api/worker/tick\`"
+            echo "- status: \`$status\`"
+            echo
+            echo '```json'
+            cat /tmp/tick.json 2>/dev/null || echo '{}'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          case "$status" in
+            2*)
+              # A tick with an empty queue lands here with its counters at zero.
+              # That is success, not a no-op to be warned about.
+              exit 0
+              ;;
+            000)
+              echo "::error::Could not reach $URL — the request timed out or DNS failed."
+              exit 1
+              ;;
+            404)
+              # The endpoint answers 404 both when the secret is wrong and when
+              # the deployment has none set, deliberately. Naming both is more
+              # use than guessing one.
+              echo "::error::Worker tick returned 404. Either WORKER_TRIGGER_SECRET does not match the deployment, or the deployment has no WORKER_TRIGGER_SECRET set."
+              exit 1
+              ;;
+            *)
+              # A 5xx means the tick itself threw. The queue's own retry policy
+              # (services/ai/retry.ts) owns re-attempting the individual job;
+              # this workflow must not retry the tick, or a failing job gets a
+              # second attempt it has not earned.
+              echo "::error::Worker tick failed with HTTP $status"
+              exit 1
+              ;;
+          esac

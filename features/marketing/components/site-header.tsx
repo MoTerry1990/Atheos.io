@@ -47,11 +47,28 @@ export function SiteHeader() {
 
   return (
     <header
+      /**
+       * The header is always the dark band, whatever the reader's theme.
+       *
+       * `bg-background/70` resolves against the *theme*, not against whatever
+       * the header is floating over. With `enableSystem` on, a visitor whose OS
+       * is light got a white translucent bar sitting on top of the cinematic
+       * dark hero. Pinning the band makes the treatment a property of the
+       * design rather than of the operating system, and it is the same
+       * decision the hero makes directly beneath it.
+       *
+       * It stays readable over the light bands further down because the bar
+       * gains a solid-enough ground and a hairline the moment it is scrolled.
+       */
+      data-band="dark"
       className={cn(
         "fixed inset-x-0 top-0 z-50 transition-all duration-300 ease-out-quart",
         scrolled
-          ? "border-b border-border/60 bg-background/70 backdrop-blur-xl"
-          : "border-b border-transparent",
+          ? "border-b border-border/60 bg-background/80 backdrop-blur-xl"
+          : // Transparent at rest so the hero reads full-bleed. `bg-transparent`
+            // rather than nothing: the band paints a ground by default, and an
+            // opaque bar over its own hero is exactly what this avoids.
+            "border-b border-transparent bg-transparent",
       )}
     >
       <nav

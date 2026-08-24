@@ -15,6 +15,14 @@ import {
   CommandPalette,
   ShortcutSheet,
 } from "@/features/studio/components/command-palette";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { CreativePlanPanel } from "@/features/studio/components/creative-plan-panel";
 import { ModelPicker } from "@/features/studio/components/model-picker";
 import {
   ModalityRail,
@@ -41,6 +49,9 @@ import { ReferenceUpload } from "@/features/studio/components/reference-upload";
 import { StyleAndCamera } from "@/features/studio/components/style-and-camera";
 import { VideoSettings } from "@/features/studio/components/video-settings";
 import { findModelIn } from "@/features/studio/data/models";
+import { generateLabel, quoteSequence } from "@/services/ai/sequence";
+import { SEQUENCE_MODEL_FACTS } from "@/services/ai/sequence-models";
+import { buildDirectorPlan } from "@/services/ai/video-director";
 import {
   chooseModelForModality,
   modalityOf,
@@ -51,6 +62,7 @@ import {
   pollUntilSettled,
   submitGeneration,
 } from "@/features/studio/lib/api";
+import { useCreativeDirector } from "@/features/studio/lib/use-creative-director";
 import { toStudioModel } from "@/features/studio/lib/dto";
 import { mapInstalled } from "@/features/studio/lib/installed";
 import { loadInstalled } from "@/features/marketplace/lib/api";
@@ -70,6 +82,8 @@ import {
   useStudioStore,
 } from "@/store/studio-store";
 import type { StudioJob } from "@/features/studio/types";
+import type { CreativeBrief } from "@/services/ai/creative-brief";
+import type { ImageBrief } from "@/services/ai/image-brief";
 import { OPERATIONS_REQUIRING_INPUT } from "@/services/ai/types";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
@@ -253,81 +267,115 @@ function useGenerationRunner() {
     [updateJob, completeJob],
   );
 
-  const generate = useCallback(async () => {
-    if (submitting) return;
-    setSubmitting(true);
+  /**
+   * Submit.
+   *
+   * `director` is the confirmed plan, when there is one. With the Creative
+   * Director enabled the server refuses a submission without it, and overrides
+   * the prompt below with its own recompilation from `confirmedBrief` — so the
+   * assembled string stops being what reaches a provider and becomes only what
+   * the composer displayed. That swap is the point of the whole feature: this
+   * call site used to be where a four-shot plan quietly became a single take.
+   */
+  const generate = useCallback(
+    async (director?: {
+      planToken: string;
+      confirmedBrief: CreativeBrief | ImageBrief;
+      clientIdempotencyKey: string;
+      /** Owned asset id for "animate this". Never a URL. */
+      sourceAssetId?: string;
+    }) => {
+      if (submitting) return null;
+      setSubmitting(true);
 
-    try {
-      const model = findModelIn(models, params.modelId);
-      const operation = operationFor(model, params);
-      const video = model.modality === "VIDEO";
+      try {
+        const model = findModelIn(models, params.modelId);
+        const operation = operationFor(model, params);
+        const video = model.modality === "VIDEO";
 
-      // Only references that finished uploading. `remoteUrl` is what a provider
-      // can actually fetch; an object URL would 404 on their side.
-      const inputImageUrls = params.references
-        .map((reference) => reference.remoteUrl)
-        .filter((url): url is string => Boolean(url));
+        // Only references that finished uploading. `remoteUrl` is what a provider
+        // can actually fetch; an object URL would 404 on their side.
+        const inputImageUrls = params.references
+          .map((reference) => reference.remoteUrl)
+          .filter((url): url is string => Boolean(url));
 
-      const usesReference =
-        operation === "image-to-image" || operation === "image-to-video";
+        const usesReference =
+          operation === "image-to-image" || operation === "image-to-video";
 
-      const { generationId } = await submitGeneration({
-        operation,
-        modelId: params.modelId,
-        // The assembled prompt - what was typed plus the preset and camera
-        // fragments the composer already shows. Camera *motion* is not in
-        // here: the adapter appends it, and doing both would send it twice.
-        prompt: assemblePrompt(params, installedStyles),
-        negativePrompt: params.negativePrompt || undefined,
-        aspectRatio: params.aspectRatio,
-        seed: params.seed ?? undefined,
-        outputs: params.outputs,
-        ...(usesReference && inputImageUrls.length > 0
-          ? {
-              inputImageUrls,
-              inputStrength: params.references[0]?.strength,
-            }
-          : {}),
-        ...(video
-          ? {
-              durationSeconds: params.durationSeconds,
-              cameraMotion: params.cameraMotion ?? undefined,
-            }
-          : {}),
-      });
+        const { generationId } = await submitGeneration({
+          operation,
+          modelId: params.modelId,
+          // The assembled prompt - what was typed plus the preset and camera
+          // fragments the composer already shows. Camera *motion* is not in
+          // here: the adapter appends it, and doing both would send it twice.
+          prompt: assemblePrompt(params, installedStyles),
+          negativePrompt: params.negativePrompt || undefined,
+          aspectRatio: params.aspectRatio,
+          seed: params.seed ?? undefined,
+          outputs: params.outputs,
+          ...(usesReference && inputImageUrls.length > 0
+            ? {
+                inputImageUrls,
+                inputStrength: params.references[0]?.strength,
+              }
+            : {}),
+          ...(video
+            ? {
+                durationSeconds: params.durationSeconds,
+                cameraMotion: params.cameraMotion ?? undefined,
+              }
+            : {}),
+          // The brief goes back exactly as it came down. The token carries its
+          // hash, so editing it here would be a rejection, not a shortcut.
+          ...(director
+            ? {
+                planToken: director.planToken,
+                confirmedBrief: director.confirmedBrief,
+                planConfirmed: true,
+                clientIdempotencyKey: director.clientIdempotencyKey,
+              }
+            : {}),
+        });
 
-      const optimistic: StudioJob = {
-        id: generationId,
-        status: "queued",
-        params: structuredClone(params),
-        modelName: model.displayName,
-        creditCost: estimateCost(params, models),
-        progress: 0,
-        outputs: [],
-        error: null,
-        createdAt: Date.now(),
-        completedAt: null,
-      };
-      enqueue(optimistic);
+        const optimistic: StudioJob = {
+          id: generationId,
+          status: "queued",
+          params: structuredClone(params),
+          modelName: model.displayName,
+          creditCost: estimateCost(params, models),
+          progress: 0,
+          outputs: [],
+          error: null,
+          createdAt: Date.now(),
+          completedAt: null,
+        };
+        enqueue(optimistic);
 
-      // Roll an unlocked seed so the next run differs, and so the composer is
-      // honest about what it will send.
-      if (!params.seedLocked && params.seed !== null) {
-        setParam("seed", Math.floor(Math.random() * 2_147_483_647));
+        // Roll an unlocked seed so the next run differs, and so the composer is
+        // honest about what it will send.
+        if (!params.seedLocked && params.seed !== null) {
+          setParam("seed", Math.floor(Math.random() * 2_147_483_647));
+        }
+
+        track(generationId);
+        // Returned rather than thrown: the plan panel closes only on a submission
+        // that actually happened, and every existing caller is fire-and-forget —
+        // making this reject would turn a handled failure into an unhandled one.
+        return generationId;
+      } catch (cause) {
+        toast.error("Could not generate", {
+          description:
+            cause instanceof ApiError
+              ? cause.message
+              : "Could not start that generation.",
+        });
+        return null;
+      } finally {
+        setSubmitting(false);
       }
-
-      track(generationId);
-    } catch (cause) {
-      toast.error("Could not generate", {
-        description:
-          cause instanceof ApiError
-            ? cause.message
-            : "Could not start that generation.",
-      });
-    } finally {
-      setSubmitting(false);
-    }
-  }, [submitting, params, models, installedStyles, enqueue, setParam, track]);
+    },
+    [submitting, params, models, installedStyles, enqueue, setParam, track],
+  );
 
   return { generate, submitting, track };
 }
@@ -412,6 +460,41 @@ function GenerateBar({
 
   const cost = estimateCost(params, models);
 
+  /**
+   * The button's label, from the same quote the plan panel shows.
+   *
+   * "Generate · 90 credits" under a four-shot plan was the defect this replaces:
+   * 90 credits bought the establishing shot, and the button and the panel above
+   * it described two different products. One quote feeds both, so they cannot
+   * disagree again — and a model that cannot make the chosen mode gets a label
+   * saying so rather than a price.
+   */
+  const facts = SEQUENCE_MODEL_FACTS[model.id];
+  const label = useMemo(() => {
+    if (!facts || model.modality !== "VIDEO") {
+      return `Generate · ${cost} credits`;
+    }
+    return generateLabel(
+      quoteSequence({
+        plan: buildDirectorPlan({
+          prompt: params.prompt,
+          durationSeconds: params.durationSeconds,
+        }),
+        facts,
+        mode: params.sequenceMode,
+        hasReferenceImage: params.references.some((r) => r.status === "ready"),
+      }),
+    );
+  }, [
+    facts,
+    model.modality,
+    cost,
+    params.prompt,
+    params.durationSeconds,
+    params.sequenceMode,
+    params.references,
+  ]);
+
   // A reference still uploading has no URL to send, so submitting now would
   // silently drop it and produce a text-only result the user did not ask for.
   const uploading = params.references.some(
@@ -451,7 +534,7 @@ function GenerateBar({
         title={blocked ?? undefined}
       >
         <Sparkles />
-        Generate · {cost} credits
+        {label}
       </Button>
 
       <p className="text-center text-2xs text-muted-foreground">
@@ -475,6 +558,15 @@ export function StudioWorkspace() {
   // re-attach to jobs that were already running when this tab opened.
   const { generate, submitting, track } = useGenerationRunner();
   const { error } = useStudioBootstrap(track);
+
+  // Sits between the button and the submission. With the Director disabled its
+  // `start` is a direct `generate()`, which is what shipped before.
+  const director = useCreativeDirector(generate);
+  // Pulled out because the shortcut list memoises on it. Depending on
+  // `director` would rebuild that list every render, and `useShortcuts` rebinds
+  // a document listener whenever the array identity changes — a new listener on
+  // every keystroke.
+  const { start: startGeneration } = director;
 
   // Picks up ?prompt= and ?modality= from the landing composer. Without it the
   // homepage promises the prompt travels and the studio arrives empty.
@@ -609,8 +701,11 @@ export function StudioWorkspace() {
         // The one shortcut that must work *while typing* — a user finishes a
         // prompt and submits without leaving the field.
         allowInInput: true,
+        // Through the Director, not around it. A shortcut wired straight to
+        // `generate()` would be a second submission path with no confirmation
+        // — the keyboard equivalent of the bug this sprint closes.
         run: () => {
-          if (!submitting) void generate();
+          if (!submitting) void startGeneration();
         },
       },
       {
@@ -660,7 +755,7 @@ export function StudioWorkspace() {
         },
       },
     ],
-    [generate, submitting],
+    [startGeneration, submitting],
   );
 
   useShortcuts(shortcuts);
@@ -735,6 +830,87 @@ export function StudioWorkspace() {
         shortcuts={shortcuts}
       />
 
+      {/* The confirmation step, as a dialog rather than a panel in the
+          composer column.
+
+          A panel would leave the Generate button live beside it, and two ways
+          to start the same video is how the composer ended up showing one plan
+          and submitting another. Here there is exactly one way forward, and it
+          is the one carrying the token. */}
+      <Dialog
+        open={Boolean(director.plan)}
+        onOpenChange={(open) => {
+          if (!open) director.cancel();
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Confirm your video</DialogTitle>
+            <DialogDescription>
+              Nothing has been generated and no credits have been spent. Check
+              what Atheos understood before it does.
+            </DialogDescription>
+          </DialogHeader>
+          {director.plan ? (
+            <CreativePlanPanel
+              plan={director.plan}
+              onAnswer={director.answer}
+              onChooseModel={director.chooseModel}
+              onConfirm={director.confirm}
+              onCancel={director.cancel}
+              submitting={submitting}
+              className="border-0 bg-transparent p-0"
+            />
+          ) : null}
+        </DialogContent>
+      </Dialog>
+
+      {/* "Which image?"
+
+          Shown when more than one recent picture could plausibly be the one the
+          user means. Taking the newest silently would be right most of the
+          time, and the times it is wrong are a paid video of the wrong picture —
+          which is the same trade the composer used to make about shot counts. */}
+      <Dialog
+        open={director.sourceChoice?.status === "choose"}
+        onOpenChange={(open) => {
+          if (!open) director.clearSourceChoice();
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Which image should I animate?</DialogTitle>
+            <DialogDescription>
+              Nothing has been generated and no credits have been spent.
+            </DialogDescription>
+          </DialogHeader>
+          <ul className="space-y-1.5">
+            {director.sourceChoice?.status === "choose"
+              ? director.sourceChoice.candidates.map((candidate) => (
+                  <li key={candidate.assetId}>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void director.animateFrom(candidate.assetId)
+                      }
+                      className="flex w-full items-center justify-between gap-3 rounded-lg border border-border/60 p-2.5 text-left text-xs hover:border-border focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:outline-none"
+                    >
+                      <span className="min-w-0 truncate">
+                        {candidate.label}
+                      </span>
+                      <span className="shrink-0 text-muted-foreground tabular-nums">
+                        {candidate.width && candidate.height
+                          ? `${candidate.width}x${candidate.height}`
+                          : ""}
+                      </span>
+                    </button>
+                  </li>
+                ))
+              : null}
+          </ul>
+        </DialogContent>
+      </Dialog>
+
       <div className="flex min-h-0 flex-1">
         <ModalityRail
           value={modality}
@@ -785,7 +961,10 @@ export function StudioWorkspace() {
                 <Composer />
               </div>
             </ScrollArea>
-            <GenerateBar onGenerate={generate} submitting={submitting} />
+            <GenerateBar
+              onGenerate={director.start}
+              submitting={submitting || director.planning}
+            />
           </div>
 
           <ResizeHandle
@@ -802,7 +981,7 @@ export function StudioWorkspace() {
           <div
             className={cn(regionClass("preview"), "min-h-0 min-w-0 flex-1 p-4")}
           >
-            <PreviewPanel />
+            <PreviewPanel onAnimate={director.animateFrom} />
           </div>
 
           <ResizeHandle

@@ -91,6 +91,7 @@ const FIXTURE_HISTORY: StudioJob[] = [
     createdAt: 0,
     completedAt: 0,
     params: {
+      sequenceMode: "continuous",
       modelId: "fixture/motion",
       prompt: "a paper boat drifting down a rain-slicked street at night",
       negativePrompt: "",
