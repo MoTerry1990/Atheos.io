@@ -47,16 +47,54 @@ function continuityLine(brief: CreativeBrief): string {
   return "";
 }
 
+/**
+ * What the model is asked to render.
+ *
+ * ## Why the original prompt is the floor
+ *
+ * The structured fields come from `planFromPrompt`, and today it fills almost
+ * none of them: `primarySubject` comes back empty with the reason "not
+ * identified without a planner call", because the extraction step it names does
+ * not exist yet. Composing only from those fields therefore produced prompts
+ * with **no subject in them at all** — a request for a cup of coffee steaming on
+ * a windowsill compiled to `natural daylight One continuous shot, no cuts.` and
+ * would have rendered a grey clip at full price.
+ *
+ * So the subject decides the whole line. When the planner has identified one,
+ * the structured composition is better than raw text and is used. When it has
+ * not, the user's own words are the best description available and are sent as
+ * written — with the derived lighting appended only if it adds something the
+ * prompt did not already say.
+ *
+ * Falling back to `originalPrompt` rather than to silence is the point: a prompt
+ * missing its subject is not a degraded result, it is a different video.
+ */
 function sceneLine(brief: CreativeBrief): string {
-  return [
+  const structured = [
     brief.visualStyle.value,
     brief.primarySubject.value,
     brief.environment.value,
     brief.action.value,
     brief.colorAndLighting.value,
-  ]
-    .filter(Boolean)
-    .join(". ");
+  ].filter(Boolean);
+
+  if (brief.primarySubject.value) return structured.join(". ");
+
+  /**
+   * No subject was extracted. Lead with what the user wrote.
+   *
+   * `originalPrompt` is preserved byte-for-byte by the planner precisely so
+   * this is possible. It is trimmed of a trailing stop only so the join below
+   * does not produce `dawn.. natural daylight`.
+   */
+  const original = brief.originalPrompt.trim().replace(/\.\s*$/, "");
+  if (!original) return structured.join(". ");
+
+  const extras = structured.filter(
+    (part) => !original.toLowerCase().includes(part.toLowerCase()),
+  );
+
+  return [original, ...extras].join(". ");
 }
 
 /**
