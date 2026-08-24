@@ -163,12 +163,15 @@ export class GenerationError extends Error {
 /**
  * Thrown inside the reservation transaction purely to roll it back.
  *
- * Never leaves this module: the `.catch` on the transaction converts it into a
+ * Never thrown to a caller: `reservationFailure` converts it into a
  * `GenerationError` with the balance the caller needs to see. It exists because
  * a rollback has to be an exception, and a `GenerationError` thrown from inside
  * would be indistinguishable from a real one thrown by a nested call.
+ *
+ * Exported only so that conversion can be tested by constructing one. Nothing
+ * outside this module should throw it.
  */
-class InsufficientCredits extends Error {}
+export class InsufficientCredits extends Error {}
 
 export interface SubmitInput {
   operation: GenerationOperation;
@@ -209,6 +212,61 @@ export interface SubmitInput {
   confirmedBrief?: CreativeBrief | ImageBrief;
   planConfirmed?: boolean;
   clientIdempotencyKey?: string;
+}
+
+/**
+ * Turn a failed reservation into the answer the caller should get.
+ *
+ * Extracted from the `.catch` it used to live inside so it can be tested at
+ * all: reaching that block through `submitGeneration` means standing up the
+ * provider, the catalogue, the limiter and the ledger, and a translation this
+ * small should not need any of them.
+ *
+ * Anything unrecognised is returned unchanged, so a genuine fault still reaches
+ * the route's 500 and its log.
+ */
+export function reservationFailure(
+  error: unknown,
+  context: { cost: number; balance: number; director: boolean },
+): unknown {
+  if (error instanceof InsufficientCredits) {
+    return new GenerationError(
+      `This needs ${context.cost} credits and you have ${context.balance}.`,
+      402,
+      "insufficient_credits",
+    );
+  }
+
+  /**
+   * The deterministic id collided: this plan token has been submitted before.
+   *
+   * The refusal itself is the database's, and that is deliberate — a unique
+   * primary key cannot be raced past the way an application-level check can.
+   * But an unhandled `P2002` left the route to translate it, and the route's
+   * fallback is a 500 reading "Something went wrong starting that generation."
+   *
+   * Observed live during the Step 3 proof: a replayed token was correctly
+   * refused and correctly not charged, and the caller was told the server had
+   * broken. A replay is not a server fault.
+   *
+   * Gated on `director` because only the Director path sets a deterministic id.
+   * Everywhere else a `P2002` means something genuinely unexpected, and
+   * swallowing it as "already submitted" would hide it.
+   */
+  if (
+    context.director &&
+    typeof error === "object" &&
+    error !== null &&
+    (error as { code?: string }).code === "P2002"
+  ) {
+    return new GenerationError(
+      "That plan has already been submitted.",
+      409,
+      "plan_already_submitted",
+    );
+  }
+
+  return error;
 }
 
 /** Submit a generation. Returns the persisted job id. */
@@ -504,14 +562,11 @@ export async function submitGeneration(input: SubmitInput) {
       return created;
     })
     .catch((error: unknown) => {
-      if (error instanceof InsufficientCredits) {
-        throw new GenerationError(
-          `This needs ${cost} credits and you have ${insufficientBalance ?? 0}.`,
-          402,
-          "insufficient_credits",
-        );
-      }
-      throw error;
+      throw reservationFailure(error, {
+        cost,
+        balance: insufficientBalance ?? 0,
+        director: Boolean(director),
+      });
     });
 
   // Provider call happens *outside* the transaction. Holding a database
