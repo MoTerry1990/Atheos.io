@@ -167,7 +167,7 @@ export function assessModel(
   ) {
     // Not a caveat. Sound was asked for and this model has no audio at all.
     conflicts.push(
-      `${model.label} produces no audio; sound would have to be added afterwards as Atheos sound design`,
+      `${model.label} produces no audio, and Atheos sound mix is not currently available`,
     );
   }
 

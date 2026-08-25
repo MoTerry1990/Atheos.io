@@ -150,10 +150,10 @@ export const ES: MarketingCopy = {
     },
     {
       label: "Audio",
-      headline: "Voz, música y diseño sonoro",
+      headline: "Música y efectos de sonido",
       body: "El mismo flujo, la misma biblioteca, los mismos créditos. El audio no es un segundo producto pegado encima con reglas propias.",
       bullets: [
-        "Síntesis de voz y generación de música",
+        "Generación de música y efectos de sonido",
         "Una sola biblioteca para las tres modalidades",
         "Precio por modalidad, un solo saldo",
       ],

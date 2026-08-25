@@ -47,9 +47,17 @@ function audioLine(model: PublicModel): string | null {
     case "native":
       return "Sound generated with the clip";
     case "atheos":
-      // The distinction the audio audit exists to keep: the model is silent and
-      // Atheos adds sound afterwards. Calling this "native" would be a lie.
-      return "Silent model — Atheos adds sound afterwards";
+      /**
+       * The model is silent, and Atheos does **not** add sound to it.
+       *
+       * This said "Silent model — Atheos adds sound afterwards", which
+       * advertised a pipeline that has never been built: the mux step does not
+       * exist, and `routeAudio` refuses `ATHEOS_SOUND_MIX` with "not built
+       * yet". A page promising sound that cannot arrive is the same defect the
+       * audio work spent this whole programme removing, so it says what is
+       * true today and nothing more.
+       */
+      return "Silent — no native audio";
     case "silent":
       return "No sound";
     default:

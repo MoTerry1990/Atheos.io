@@ -57,10 +57,14 @@ export interface PublicModel {
   /**
    * How sound happens, if at all.
    *
-   * `native` only when the provider's own schema produces it. Motion 1 and
-   * Motion Pro are `atheos` — the video model is silent and Atheos generates
-   * and mixes sound afterwards. Saying "native" for either would be the exact
-   * claim the audio audit exists to prevent.
+   * `native` only when the provider's own schema produces it.
+   *
+   * Motion 1 and Motion Pro are `atheos`, which today means **silent**: the
+   * video model produces no sound and the mix step that would add some has
+   * never been built. The label is kept rather than renamed to `silent` so the
+   * distinction survives — these are models that *could* take a mix, unlike a
+   * model with no audio path at all — but nothing user-facing may promise that
+   * mix until it exists.
    */
   audio: "native" | "atheos" | "silent" | "n/a";
   /** One honest thing it cannot do. Never marketing softening. */
@@ -94,12 +98,13 @@ const EDITORIAL: Record<string, { bestFor: string; limitation: string }> = {
   "replicate/video-gen": {
     bestFor: "A short clip from a written description.",
     limitation:
-      "Text only — it cannot animate a picture you supply, and it produces no sound of its own.",
+      "Text only — it cannot animate a picture you supply. Silent: no native audio, and Atheos sound mix is not currently available.",
   },
   "replicate/video-pro": {
     bestFor:
       "Longer clips, higher resolution, and motion that starts from a picture.",
-    limitation: "Produces no sound of its own; audio is added afterwards.",
+    limitation:
+      "Produces no sound of its own. Atheos sound mix is not currently available.",
   },
   "replicate/music": {
     bestFor: "Background score for a clip.",

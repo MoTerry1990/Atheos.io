@@ -306,7 +306,7 @@ describe("audio is planned, and its origin is never misstated", () => {
     expect(audio.source).toBe("atheos_soundscape");
     expect(audio.notes.join(" ")).toMatch(/not provider audio/);
     expect(describeAudioSource(audio.source)).toMatch(
-      /Soundscape added by Atheos/,
+      /Atheos sound mix is not currently available/,
     );
     expect(describeAudioSource(audio.source)).not.toBe("Audio generated");
   });

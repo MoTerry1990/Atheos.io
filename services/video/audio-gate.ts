@@ -251,7 +251,7 @@ export function runAudioGate(input: {
     label: ok
       ? promised.strategy === "NATIVE"
         ? "Native synchronised audio"
-        : "Atheos sound design"
+        : "Silent — Atheos sound mix is not currently available"
       : "Audio stage failed — video preserved",
   };
 }

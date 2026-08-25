@@ -141,10 +141,10 @@ export const EN: MarketingCopy = {
     },
     {
       label: "Audio",
-      headline: "Voice, music and sound design",
+      headline: "Music and sound effects",
       body: "The same pipeline, the same library, the same credits. Audio is not a bolted-on second product with its own rules.",
       bullets: [
-        "Voice synthesis and music generation",
+        "Music and sound-effect generation",
         "One asset library across all three modalities",
         "Per-modality pricing, one balance",
       ],

@@ -60,8 +60,15 @@ function audioSentence(model: PublicModel): string {
     case "native":
       return "Sound is generated together with the picture, in the same pass.";
     case "atheos":
-      // The claim the audio audit exists to keep honest.
-      return "This model produces no sound. Atheos can generate and mix sound afterwards, priced separately, and it is labelled as Atheos sound design rather than as the model's own.";
+      /**
+       * Written in the present tense about what exists.
+       *
+       * This previously said Atheos "can generate and mix sound afterwards,
+       * priced separately" — a described product, not a built one. The mix step
+       * does not exist, so the sentence promised something no customer could
+       * ever receive.
+       */
+      return "This model produces no sound, and the finished video has no audio track. Atheos sound mix is not currently available.";
     case "silent":
       return "This model produces no sound.";
     default:
