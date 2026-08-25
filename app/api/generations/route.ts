@@ -8,6 +8,12 @@ import {
   submitGeneration,
 } from "@/services/generation";
 import { isUsingMockProvider, listModels } from "@/services/ai/registry";
+import {
+  catalogueModelId,
+  toPublicGenerationFrom,
+  toPublicModel,
+} from "@/features/studio/lib/public-model";
+import { toStudioModel } from "@/features/studio/lib/dto";
 import { toGenerationDTO } from "@/features/studio/lib/dto";
 
 /**
@@ -124,8 +130,25 @@ export async function POST(request: NextRequest) {
   if (gate instanceof NextResponse) return gate;
 
   try {
+    /**
+     * The client speaks public ids; the server speaks catalogue ids.
+     *
+     * Refused rather than passed through when it does not map. A client that
+     * sends `replicate/veo-3.1` is either an old build or someone probing, and
+     * accepting it would keep the internal path a working input forever —
+     * which is exactly what makes a provider swap a breaking change.
+     */
+    const catalogueId = catalogueModelId(gate.body.modelId);
+    if (!catalogueId) {
+      return NextResponse.json(
+        { error: "That model is not available.", code: "unknown_model" },
+        { status: 400 },
+      );
+    }
+
     const result = await submitGeneration({
       ...gate.body,
+      modelId: catalogueId,
       // The brief is carried as `unknown` through the schema and proved by the
       // token's hash in the service. Casting here rather than re-validating its
       // shape: a structurally valid brief that is not *the confirmed one* would
@@ -177,8 +200,20 @@ export async function GET(request: NextRequest) {
 
     return withHeaders(
       NextResponse.json({
-        generations: generations.map(toGenerationDTO),
-        models: listModels(),
+        /**
+         * Public shapes only, both of them.
+         *
+         * The list carried `providerId` and provider-prefixed ids, and each
+         * generation carried `modelId: "replicate/…"`. Measured on the live
+         * API before this change: 56 occurrences of the provider's name in a
+         * single response a browser receives.
+         */
+        generations: generations.map((row) =>
+          toPublicGenerationFrom(toGenerationDTO(row)),
+        ),
+        models: listModels().map((model) =>
+          toPublicModel(toStudioModel(model)),
+        ),
         usingMockProvider: isUsingMockProvider(),
       }),
       gate,

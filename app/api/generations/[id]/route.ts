@@ -8,6 +8,7 @@ import {
   pollGeneration,
 } from "@/services/generation";
 import { toGenerationDTO } from "@/features/studio/lib/dto";
+import { toPublicGenerationFrom } from "@/features/studio/lib/public-model";
 
 /**
  * A single generation.
@@ -45,7 +46,12 @@ export async function GET(
 
   try {
     const generation = await pollGeneration(id);
-    return NextResponse.json({ generation: toGenerationDTO(generation) });
+    // Public shape here too. The poll endpoint is hit far more often than the
+    // list, so leaving it un-migrated would have leaked the provider on every
+    // tick while the list looked clean.
+    return NextResponse.json({
+      generation: toPublicGenerationFrom(toGenerationDTO(generation)),
+    });
   } catch (error) {
     if (error instanceof GenerationError) {
       return NextResponse.json(

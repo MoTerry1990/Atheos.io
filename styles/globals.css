@@ -400,6 +400,16 @@
   --surface-raised: var(--color-neutral-50);
   --surface-sunken: var(--color-neutral-100);
 
+  /*
+   * The surface a generated image or video sits on.
+   *
+   * Its own role rather than reusing `--surface-sunken`, because the job is
+   * different: this is a *viewing* ground, and it has to stay neutral enough
+   * that a dark render reads as a picture rather than as a hole in the page,
+   * and light enough at the edges that exposure can be judged against it.
+   */
+  --canvas: var(--color-neutral-100);
+
   --card: var(--color-neutral-0);
   --card-foreground: var(--color-neutral-950);
   --popover: var(--color-neutral-0);
@@ -460,6 +470,19 @@
   --surface: var(--color-neutral-950);
   --surface-raised: var(--color-neutral-900);
   --surface-sunken: var(--color-neutral-1000);
+
+  /*
+   * Deliberately *lighter* than the page in dark mode.
+   *
+   * Pure black behind a dark render gives the eye no edge, so the picture
+   * bleeds into the interface and looks broken. A deep neutral grey frames it.
+   *
+   * 850 rather than 900. At these lightnesses the scale is perceptually
+   * compressed — L 0.176 against a L 0.09 page looked identical in a
+   * screenshot, so the canvas read as more black rather than as a surface.
+   * 850 is L 0.213, which separates.
+   */
+  --canvas: var(--color-neutral-850);
 
   --card: var(--color-neutral-900);
   --card-foreground: var(--color-neutral-50);
@@ -643,6 +666,7 @@
 
   --color-surface: var(--surface);
   --color-surface-raised: var(--surface-raised);
+  --color-canvas: var(--canvas);
   --color-surface-sunken: var(--surface-sunken);
 
   --color-card: var(--card);

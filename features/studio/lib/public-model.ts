@@ -56,6 +56,18 @@ export interface PublicStudioModel {
   audioNote: string;
   /** True when the model can start from a supplied image. */
   takesReference: boolean;
+
+  /** Coarse quality band, so a picker can group without naming a vendor. */
+  qualityTier: "draft" | "standard" | "premium";
+  /** Clip lengths in seconds. Empty for stills. */
+  durations: readonly number[];
+  aspectRatios: readonly string[];
+  /** Output sizes a customer may choose, in customer terms. */
+  resolutions: readonly string[];
+  /** A range, never a promise. Rendered as "usually 2-4 minutes". */
+  typicalWait: { minSeconds: number; maxSeconds: number };
+  /** `available` today, or why not. Never a silent absence. */
+  availability: "available" | "owner_beta";
 }
 
 /**
@@ -199,8 +211,42 @@ export function audioCapabilityOf(
  * that is merely renamed comes back the next time somebody needs "the real id"
  * for debugging; a field that does not exist cannot.
  */
+/**
+ * A quality band, from what the model costs us to run.
+ *
+ * Price is the only signal available that tracks quality across modalities
+ * without naming a vendor's tier. It is coarse on purpose — three bands a
+ * customer can reason about, rather than a number that invites comparison
+ * shopping against the provider's own pricing page.
+ */
+function qualityTierOf(model: StudioModel): PublicStudioModel["qualityTier"] {
+  if (model.creditCost <= 5) return "draft";
+  if (model.creditCost >= 150) return "premium";
+  return "standard";
+}
+
+/**
+ * A wait range rather than a single number.
+ *
+ * The old DTO carried one `typicalSeconds`, which reads as a promise and is
+ * wrong the moment a provider queues. A range is honest about variance and is
+ * what the interface should have been showing all along.
+ */
+function typicalWaitOf(model: StudioModel): PublicStudioModel["typicalWait"] {
+  const base = model.typicalSeconds;
+  return {
+    minSeconds: Math.max(1, Math.round(base * 0.6)),
+    maxSeconds: Math.round(base * 1.6),
+  };
+}
+
 export function toPublicModel(model: StudioModel): PublicStudioModel {
   const { audio, audioNote } = audioCapabilityOf(model.id, model.modality);
+  const capabilities = model.capabilities as StudioModel["capabilities"] & {
+    durations?: readonly number[];
+    aspectRatios?: readonly string[];
+    imageResolutions?: readonly string[];
+  };
 
   return {
     id: publicModelId(model.id),
@@ -214,5 +260,105 @@ export function toPublicModel(model: StudioModel): PublicStudioModel {
     audio,
     audioNote,
     takesReference: Boolean(model.capabilities.supportsImageInput),
+    qualityTier: qualityTierOf(model),
+    durations: capabilities.durations ?? [],
+    aspectRatios: capabilities.aspectRatios ?? [],
+    resolutions: capabilities.imageResolutions ?? [],
+    typicalWait: typicalWaitOf(model),
+    availability: "available",
   };
+}
+
+// ---------------------------------------------------------------------------
+// Generations
+// ---------------------------------------------------------------------------
+
+/**
+ * A finished generation, as a customer may see it.
+ *
+ * The stored row keeps the catalogue id — reconciliation, cost accounting and
+ * admin diagnostics all need to know which provider ran the job. What a
+ * browser receives is the public id and the friendly name, so a customer can
+ * read their history without learning who Atheos buys inference from.
+ *
+ * Historical rows resolve correctly because the mapping is by catalogue id,
+ * not by anything stored at generation time: a video made months ago still
+ * shows "Cinematic Fast".
+ */
+export interface PublicGeneration {
+  id: string;
+  status: string;
+  operation: string;
+  /** Opaque. Never a provider path. */
+  modelId: string;
+  /** The friendly name, so history need not resolve it against the catalogue. */
+  modelName: string;
+  prompt: string;
+  negativePrompt: string | null;
+  creditCost: number;
+  /** Already sanitised upstream; never a raw provider exception. */
+  error: string | null;
+  createdAt: number;
+  completedAt: number | null;
+  parameters: Record<string, unknown> | null;
+  outputs: {
+    id: string;
+    storageKey: string;
+    mimeType: string;
+    width: number | null;
+    height: number | null;
+    durationMs: number | null;
+  }[];
+}
+
+/** Strip a generation DTO down to the public contract. */
+export function toPublicGenerationFrom(dto: {
+  id: string;
+  status: string;
+  operation: string;
+  modelId: string;
+  prompt: string;
+  negativePrompt: string | null;
+  creditCost: number;
+  error: string | null;
+  createdAt: number;
+  completedAt: number | null;
+  parameters: Record<string, unknown> | null;
+  outputs: PublicGeneration["outputs"];
+}): PublicGeneration {
+  return {
+    ...dto,
+    modelId: publicModelId(dto.modelId),
+    modelName: publicModelName(dto.modelId, dto.modelId),
+    /**
+     * `parameters` is a stored blob and can carry anything an older version
+     * wrote, so it is filtered rather than trusted. `creativePlan` holds only
+     * hashes and counts and is safe; everything else is dropped unless it is a
+     * known display field.
+     */
+    parameters: dto.parameters ? publicParameters(dto.parameters) : null,
+  };
+}
+
+/** Known-safe parameter keys. Anything unrecognised is dropped, not renamed. */
+const PUBLIC_PARAMETER_KEYS = new Set([
+  "operation",
+  "aspectRatio",
+  "durationSeconds",
+  "outputs",
+  "seed",
+  "imageResolution",
+  "cameraMotion",
+  "promptSource",
+  "creativePlan",
+]);
+
+function publicParameters(
+  parameters: Record<string, unknown>,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(parameters)) {
+    if (PUBLIC_PARAMETER_KEYS.has(key)) out[key] = value;
+  }
+  return out;
 }

@@ -41,7 +41,15 @@ export function dtoToStudioJob(dto: GenerationDTO): Partial<StudioJob> & {
   return {
     id: dto.id,
     status: dto.status,
-    modelName: dto.modelId,
+    /**
+     * The friendly name the API now sends.
+     *
+     * This was `dto.modelId`, which used to render `replicate/veo-3.1-fast`
+     * straight into the history rail. The public contract carries `modelName`
+     * so history need not resolve anything, and the id falls back only for a
+     * client holding a response from before the migration.
+     */
+    modelName: (dto as { modelName?: string }).modelName ?? dto.modelId,
     creditCost: dto.creditCost,
     error: dto.error,
     createdAt: dto.createdAt,
@@ -170,7 +178,15 @@ export function dtoToHistoryJob(dto: GenerationDTO): StudioJob {
      * quietly compounding.
      */
     promptIsExpanded: source === null,
-    modelName: dto.modelId,
+    /**
+     * The friendly name the API now sends.
+     *
+     * This was `dto.modelId`, which used to render `replicate/veo-3.1-fast`
+     * straight into the history rail. The public contract carries `modelName`
+     * so history need not resolve anything, and the id falls back only for a
+     * client holding a response from before the migration.
+     */
+    modelName: (dto as { modelName?: string }).modelName ?? dto.modelId,
     creditCost: dto.creditCost,
     progress: patch.progress ?? null,
     outputs: patch.outputs ?? [],
