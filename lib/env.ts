@@ -129,6 +129,19 @@ export const env = createEnv({
      */
     ENABLE_CREATIVE_DIRECTOR: z.enum(["0", "1"]).optional(),
     /**
+     * Studio V2, for the owner only.
+     *
+     * Two conditions, both required: this flag **and** an admin caller. The
+     * flag alone would expose an unfinished interface to every signed-in user
+     * the moment it is set, and an admin check alone would ship V2 the instant
+     * the code merged. Neither is a decision to make by accident.
+     *
+     * Read at call time rather than from the validated snapshot — a flag is
+     * runtime state a deploy flips, and `createEnv` captures `process.env`
+     * once at module load.
+     */
+    ENABLE_STUDIO_V2_OWNER_BETA: z.enum(["0", "1"]).optional(),
+    /**
      * Signs creative plan tokens. Server-only, and its own secret.
      *
      * Deliberately not derived from `CLERK_SECRET_KEY` or `STRIPE_SECRET_KEY`,
@@ -262,6 +275,7 @@ export const env = createEnv({
     ENABLE_VEO_31: process.env.ENABLE_VEO_31,
     ENABLE_SMART_IMAGE: process.env.ENABLE_SMART_IMAGE,
     ENABLE_CREATIVE_DIRECTOR: process.env.ENABLE_CREATIVE_DIRECTOR,
+    ENABLE_STUDIO_V2_OWNER_BETA: process.env.ENABLE_STUDIO_V2_OWNER_BETA,
     CREATIVE_PLAN_SIGNING_SECRET: process.env.CREATIVE_PLAN_SIGNING_SECRET,
 
     ADMIN_USER_IDS: process.env.ADMIN_USER_IDS,

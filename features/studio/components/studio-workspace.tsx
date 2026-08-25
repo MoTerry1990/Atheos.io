@@ -791,11 +791,19 @@ export function StudioWorkspace() {
           <Info className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
           <p className="text-xs">
             <span className="font-medium">Mock provider active.</span>{" "}
+            {/*
+              Names no vendor and no environment variable.
+
+              This ended with "Set REPLICATE_API_TOKEN or OPENAI_API_KEY to
+              generate for real" — rendered to whoever was looking at the
+              Studio. It told a customer which vendors Atheos runs on and which
+              credentials it holds, and the instruction was addressed to an
+              operator who would never read it here.
+            */}
             <span className="text-muted-foreground">
-              No provider credentials are configured, so results are placeholder
-              images rather than model output. The pipeline itself is real —
-              credits are spent, refunded on failure, and results are stored.
-              Set REPLICATE_API_TOKEN or OPENAI_API_KEY to generate for real.
+              Generation is not configured in this environment, so results are
+              placeholders rather than model output. The pipeline itself is real
+              — credits are spent, refunded on failure, and results are stored.
             </span>
           </p>
         </div>
