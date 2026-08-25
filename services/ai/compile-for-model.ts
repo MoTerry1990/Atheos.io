@@ -50,135 +50,35 @@ function continuityLine(brief: CreativeBrief): string {
 /**
  * What the model is asked to render.
  *
- * ## Why this composes a sentence rather than joining fields
+ * ## Why the original prompt is the floor
  *
- * The first version joined the structured fields with ". ", which produced
- * `A red dragon. a castle. breathing fire. natural daylight` — grammatically
- * broken, and worse, it threw away the *relationship*. "On a castle" is the
- * whole request; "a castle" as a separate fragment is just another noun the
- * model may render anywhere, at any size.
+ * The structured fields come from `planFromPrompt`, and today it fills almost
+ * none of them: `primarySubject` comes back empty with the reason "not
+ * identified without a planner call", because the extraction step it names does
+ * not exist yet. Composing only from those fields therefore produced prompts
+ * with **no subject in them at all** — a request for a cup of coffee steaming on
+ * a windowsill compiled to `natural daylight One continuous shot, no cuts.` and
+ * would have rendered a grey clip at full price.
  *
- * So the line is written as direction: the shot scale first, then subject and
- * action, then where they are, then how much of the frame each should take.
- * That last part is the fix for the reported failure — a text-to-image model
- * with no framing instruction fills the frame with the subject and reduces the
- * location to a blur behind it.
+ * So the subject decides the whole line. When the planner has identified one,
+ * the structured composition is better than raw text and is used. When it has
+ * not, the user's own words are the best description available and are sent as
+ * written — with the derived lighting appended only if it adds something the
+ * prompt did not already say.
  *
- * ## The original prompt is still the floor
- *
- * When nothing was extracted, the user's own words are the best description
- * available and are sent as written. A prompt missing its subject is not a
- * degraded result, it is a different image.
+ * Falling back to `originalPrompt` rather than to silence is the point: a prompt
+ * missing its subject is not a degraded result, it is a different video.
  */
-const SCALE_PHRASE: Record<string, string> = {
-  extreme_close: "Extreme close-up",
-  close: "Close-up",
-  medium: "Medium shot",
-  wide: "Wide establishing shot",
-  extreme_wide: "Extreme wide aerial shot",
-};
-
-const HEIGHT_PHRASE: Record<string, string> = {
-  low: "from a low angle",
-  eye: "at eye level",
-  elevated: "from a slightly elevated position",
-  aerial: "from high above",
-};
-
-/** "a castle" -> "a castle"; "the ocean" -> "the ocean". Keeps the article. */
-function stripArticle(phrase: string): string {
-  return phrase.trim().replace(/\.$/, "");
-}
-
-function capitalise(text: string): string {
-  return text.charAt(0).toUpperCase() + text.slice(1);
-}
-
-/**
- * Lower-case a leading article so the sentence reads.
- *
- * "Wide establishing shot of A red dragon" is wrong; "of a red dragon" is
- * right. Only a leading article is touched, so a proper noun keeps its capital.
- */
-function lowerFirst(text: string): string {
-  return /^(a|an|the)\s/i.test(text)
-    ? text.charAt(0).toLowerCase() + text.slice(1)
-    : text;
-}
-
 function sceneLine(brief: CreativeBrief): string {
-  const subject = brief.primarySubject.value;
-
-  if (subject) {
-    const c = brief.composition.value;
-    const sentences: string[] = [];
-
-    // "Wide establishing shot of a red dragon breathing fire, on a castle."
-    const opening = [
-      SCALE_PHRASE[c.shotScale] ?? "Shot",
-      "of",
-      brief.action.value
-        ? `${lowerFirst(subject)} ${brief.action.value}`
-        : lowerFirst(subject),
-    ].join(" ");
-
-    sentences.push(
-      brief.environment.value
-        ? `${opening}, ${c.environmentPreposition} ${stripArticle(brief.environment.value)}.`
-        : `${opening}.`,
-    );
-
-    /**
-     * The framing instruction, stated as proportions.
-     *
-     * A percentage is something a model can act on in a way that "wide shot"
-     * alone is not — and it is the difference between a castle with a dragon on
-     * it and a dragon with a castle behind it.
-     */
-    /**
-     * Only insist on the whole location for a wide frame.
-     *
-     * A user who asked for a close-up in a forest wants the wolf, not an
-     * uncropped forest — demanding both is a contradiction the model resolves
-     * by ignoring one of them.
-     */
-    const wantsWholeLocation =
-      c.environmentIsEssential &&
-      (c.shotScale === "wide" || c.shotScale === "extreme_wide");
-
-    if (wantsWholeLocation && brief.environment.value) {
-      const subjectPercent = Math.round(c.subjectOccupancy * 100);
-      sentences.push(
-        `The subject occupies roughly ${subjectPercent}% of the frame; ` +
-          `${stripArticle(brief.environment.value)} fills the rest and is visible in full, not cropped.`,
-      );
-    }
-
-    if (c.foreground && wantsWholeLocation) {
-      sentences.push(
-        `Layered depth: ${c.foreground}, the subject in the midground, and the wider location behind.`,
-      );
-    }
-
-    // Camera, as a sentence rather than a tag list.
-    sentences.push(
-      `Shot on a ${c.lensMm}mm lens ${HEIGHT_PHRASE[c.cameraHeight] ?? "at eye level"}, natural perspective and realistic scale.`,
-    );
-
-    const finish = [brief.visualStyle.value, brief.colorAndLighting.value]
-      .filter(Boolean)
-      .join(", ");
-    if (finish) sentences.push(`${capitalise(finish)}.`);
-
-    return sentences.join(" ");
-  }
-
   const structured = [
     brief.visualStyle.value,
+    brief.primarySubject.value,
     brief.environment.value,
     brief.action.value,
     brief.colorAndLighting.value,
   ].filter(Boolean);
+
+  if (brief.primarySubject.value) return structured.join(". ");
 
   /**
    * No subject was extracted. Lead with what the user wrote.
