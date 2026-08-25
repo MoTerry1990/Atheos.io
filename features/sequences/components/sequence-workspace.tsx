@@ -82,24 +82,18 @@ const CLIP_OPTIONS = [
     seconds: 10,
     credits: 180,
   },
-  {
-    modelId: "replicate/video-pro",
-    label: "Motion Pro · 1080p",
-    seconds: 5,
-    credits: 180,
-  },
-  {
-    modelId: "replicate/video-pro",
-    label: "Motion Pro · 1080p",
-    seconds: 10,
-    credits: 360,
-  },
-  {
-    modelId: "replicate/video-pro",
-    label: "Motion Pro · 1080p",
-    seconds: 12,
-    credits: 432,
-  },
+  /**
+   * The three Motion Pro lengths were removed by the licence audit.
+   *
+   * Seedance publishes no terms for resale of its output, so
+   * `services/ai/model-policy.ts` refuses it and every one of these options
+   * would have been priced here and rejected at submission. A picker that
+   * quotes 432 credits for something the server will not run is worse than
+   * one with fewer choices.
+   *
+   * This is a hand-kept list because the component is a client one and the
+   * policy registry is server-only. Restore these together with the model.
+   */
 ] as const;
 /**
  * Same-origin, proxied to R2 by a rewrite.

@@ -172,6 +172,7 @@ export interface MarketingCopy {
       community: string;
       email: string;
       allSix: string;
+      twoRatios: string;
       /** Renders where a credit allowance has not been settled yet. */
       pending: string;
     };

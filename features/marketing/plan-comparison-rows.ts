@@ -16,7 +16,8 @@ import { visiblePlanDefinitions } from "@/services/billing/catalogue";
  * `comparison.values` at render time, so the matrix stays one table rather
  * than one per locale.
  */
-export type ValueKey = "$community" | "$email" | "$allSix" | "$pending";
+export type ValueKey =
+  "$community" | "$email" | "$allSix" | "$twoRatios" | "$pending";
 
 export interface Row {
   label: string;
@@ -50,24 +51,30 @@ export const COMPARISON_ROWS: readonly Row[] = [
   },
   { label: "Image generation", values: [true, true, true, true] },
   { label: "Video generation", values: [false, true, true, true] },
+  /**
+   * These describe Motion 1, because it is the only video model that runs.
+   *
+   * They used to describe Motion Pro — 1080p, 12 seconds, six aspect ratios,
+   * image-to-video — and the Motion Pro row, the image-to-video row and those
+   * numbers all went when the licence audit found no publishable terms for
+   * Seedance. The table's own description is "every row is something the
+   * product does today", so a row for a model that cannot run is the one
+   * thing it must not contain.
+   *
+   * They come back with Motion Pro if its terms are confirmed.
+   */
   {
     label: "Video resolution",
-    values: ["—", "1080p", "1080p", "1080p"],
+    values: ["—", "720p", "720p", "720p"],
   },
   {
     label: "Maximum clip length",
-    values: ["—", "12s", "12s", "12s"],
+    values: ["—", "7.5s", "7.5s", "7.5s"],
   },
-  {
-    label: "Motion Pro — higher-quality model",
-    values: [false, true, true, true],
-    note: "Slower to render, noticeably better output",
-  },
-  { label: "Image-to-video", values: [false, true, true, true] },
-  { label: "Reference images", values: [false, true, true, true] },
+  { label: "Reference images", values: [true, true, true, true] },
   {
     label: "Video aspect ratios",
-    values: ["—", "$allSix", "$allSix", "$allSix"],
+    values: ["—", "$twoRatios", "$twoRatios", "$twoRatios"],
   },
   { label: "Generations at once", values: ["1", "3", "5", "8"] },
   { label: "Upscale to 4K", values: [true, true, true, true] },

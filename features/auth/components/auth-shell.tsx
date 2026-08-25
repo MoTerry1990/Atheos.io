@@ -103,12 +103,7 @@ export function AuthShell({
               page — but every name here resolves to a model in
               services/ai/providers/replicate.ts, not to a roadmap. */}
           <div className="mt-8 flex flex-wrap gap-x-6 gap-y-2 border-t border-border/60 pt-5">
-            {[
-              "FLUX",
-              "Motion 1 · 720p",
-              "Motion Pro · 1080p",
-              "4K upscale",
-            ].map((name) => (
+            {["FLUX", "Motion 1 · 720p", "Foley", "4K upscale"].map((name) => (
               <span key={name} className="text-xs text-muted-foreground">
                 {name}
               </span>

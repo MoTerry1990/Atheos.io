@@ -241,10 +241,9 @@ export const EN: MarketingCopy = {
       name: "Creator",
       description: "For one person publishing on a schedule.",
       features: [
-        "Both video models, including Motion Pro",
-        "1080p video up to 12 seconds",
-        "Every aspect ratio — 16:9, 9:16, 1:1, 21:9",
-        "Image-to-video and reference images",
+        "Video generation with Motion 1",
+        "720p video up to 7.5 seconds, 16:9 or 9:16",
+        "Reference images for image generation",
         "Background removal and 4K upscaling",
         "3 generations at once",
       ],
@@ -300,7 +299,11 @@ export const EN: MarketingCopy = {
     values: {
       community: "Community",
       email: "Email",
+      // Unused while Motion Pro is withheld — it was the only model offering
+      // six ratios. Kept rather than deleted because it is exactly what the
+      // aspect-ratio row goes back to if Motion Pro's terms are confirmed.
       allSix: "All six",
+      twoRatios: "16:9 and 9:16",
       pending: "Confirmed at launch",
     },
     rows: [
@@ -312,11 +315,6 @@ export const EN: MarketingCopy = {
       { label: "Video generation" },
       { label: "Video resolution" },
       { label: "Maximum clip length" },
-      {
-        label: "Motion Pro — higher-quality model",
-        note: "Slower to render, noticeably better output",
-      },
-      { label: "Image-to-video" },
       { label: "Reference images" },
       { label: "Video aspect ratios" },
       { label: "Generations at once" },

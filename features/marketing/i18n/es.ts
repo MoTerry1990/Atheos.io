@@ -249,10 +249,9 @@ export const ES: MarketingCopy = {
       name: "Creator",
       description: "Para una persona que publica con frecuencia.",
       features: [
-        "Los dos modelos de video, incluido Motion Pro",
-        "Video en 1080p de hasta 12 segundos",
-        "Todos los formatos: 16:9, 9:16, 1:1, 21:9",
-        "Imagen a video e imágenes de referencia",
+        "Generación de video con Motion 1",
+        "Video en 720p de hasta 7,5 segundos, en 16:9 o 9:16",
+        "Imágenes de referencia para generar imágenes",
         "Eliminación de fondo y escalado a 4K",
         "3 generaciones a la vez",
       ],
@@ -309,6 +308,7 @@ export const ES: MarketingCopy = {
       community: "Comunidad",
       email: "Correo",
       allSix: "Las seis",
+      twoRatios: "16:9 y 9:16",
       pending: "Se confirma al lanzar",
     },
     rows: [
@@ -320,11 +320,6 @@ export const ES: MarketingCopy = {
       { label: "Generación de video" },
       { label: "Resolución de video" },
       { label: "Duración máxima del clip" },
-      {
-        label: "Motion Pro — modelo de mayor calidad",
-        note: "Tarda más en generar, con un resultado bastante mejor",
-      },
-      { label: "Imagen a video" },
       { label: "Imágenes de referencia" },
       { label: "Formatos de video" },
       { label: "Generaciones a la vez" },

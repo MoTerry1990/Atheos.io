@@ -393,7 +393,10 @@ export const COMPOSER_MODALITIES: readonly ComposerModality[] = [
     id: "video",
     models: [
       { id: "replicate/video-gen", label: "Motion 1 · 720p" },
-      { id: "replicate/video-pro", label: "Motion Pro · 1080p" },
+      /**
+       * Motion Pro is absent for the same reason Score is: no publishable
+       * licence. See `services/ai/model-policy.ts`, which refuses it.
+       */
     ],
     aspectRatios: ["16:9", "9:16"],
   },
