@@ -156,7 +156,16 @@ export default function ModelsPage() {
                 </h2>
                 <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
                   {group.map((model) => (
-                    <ModelCard key={model.id} model={model} />
+                    /**
+                     * Keyed by slug, not by `model.id`.
+                     *
+                     * A React key is serialised into the RSC payload, so
+                     * `replicate/flux-schnell` was readable in view-source on
+                     * a public marketing page — the exact disclosure the
+                     * public model contract exists to prevent, arriving
+                     * through a prop nobody thinks of as output.
+                     */
+                    <ModelCard key={model.slug} model={model} />
                   ))}
                 </div>
               </div>
