@@ -44,6 +44,16 @@ export interface DirectorOverrides {
   aspectRatio?: string;
   /** "1K" | "2K" | "4K" for models that size by class. Images only. */
   imageResolution?: string;
+  /**
+   * The video resolution the compiler chose, e.g. `1080p`.
+   *
+   * Carried explicitly because it was previously computed and then dropped:
+   * `compileVeo` set `parameters.resolution` from the confirmed brief, nothing
+   * forwarded it, and the adapter's `request.videoResolution === "1080p"` was
+   * therefore never true. Every Veo render came back 720p however it was
+   * requested — a capability the studio offered and silently did not deliver.
+   */
+  videoResolution?: string;
   /** Server-resolved reference URLs. Never anything the client named. */
   inputImageUrls?: string[];
   quotedCredits: number;
@@ -207,6 +217,10 @@ export function resolveDirectorSubmission(
         ? compiled.parameters.duration
         : input.brief.durationSeconds.value,
     aspectRatio: input.brief.aspectRatio.value,
+    videoResolution:
+      typeof compiled.parameters.resolution === "string"
+        ? compiled.parameters.resolution
+        : undefined,
     quotedCredits: verdict.credits,
     compilerVersion: compiled.compilerVersion,
     // Enough to explain a generation later; no URLs, no payloads, no secrets.

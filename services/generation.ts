@@ -191,6 +191,15 @@ export interface SubmitInput {
   scale?: number;
   /** "1K" | "2K" | "4K", for image models that size by class. */
   imageResolution?: string;
+  /**
+   * Video resolution, e.g. `720p` or `1080p`.
+   *
+   * Set by the Creative Director from the confirmed brief. Previously the
+   * compiler chose one and nothing carried it, so the Veo adapter's
+   * `request.videoResolution === "1080p"` was never true and every render came
+   * back 720p whatever was asked for.
+   */
+  videoResolution?: string;
   durationSeconds?: number;
   cameraMotion?: string;
   /**
@@ -367,6 +376,9 @@ export async function submitGeneration(input: SubmitInput) {
       durationSeconds: director.durationSeconds ?? input.durationSeconds,
       aspectRatio: director.aspectRatio ?? input.aspectRatio,
       imageResolution: director.imageResolution ?? input.imageResolution,
+      // The compiler's choice, not a default. Without this the Veo adapter
+      // never sees a resolution and always falls back to 720p.
+      videoResolution: director.videoResolution,
       /**
        * References are replaced, not merged.
        *
@@ -628,6 +640,7 @@ export async function submitGeneration(input: SubmitInput) {
       inputStrength: input.inputStrength,
       scale: input.scale,
       imageResolution: input.imageResolution,
+      videoResolution: input.videoResolution,
       durationSeconds,
       cameraMotion: input.cameraMotion,
     };

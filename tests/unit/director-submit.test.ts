@@ -291,3 +291,40 @@ describe("planning metadata is recorded and sanitised", () => {
     expect(json).not.toMatch(/r8_|sk_|whsec_/);
   });
 });
+
+describe("the compiled video resolution reaches the provider", () => {
+  /**
+   * Found by a real 1080p benchmark that came back 1280x720.
+   *
+   * `compileVeo` set `parameters.resolution` from the confirmed brief and
+   * nothing carried it forward, so the adapter's
+   * `request.videoResolution === "1080p"` was never true and every Veo render
+   * fell through to 720p. The studio offered a resolution it silently did not
+   * deliver — the same defect class as a capability nobody populates.
+   */
+  function resolvedWith(resolution: "720p" | "1080p") {
+    directorOn();
+    const brief = confirmField(
+      confirmedBrief(),
+      "resolution" as never,
+      resolution as never,
+    );
+
+    return resolveDirectorSubmission({
+      userId: "user_alice",
+      planToken: tokenFor(brief),
+      brief,
+      confirmed: true,
+      nowMs: NOW,
+    });
+  }
+
+  it("returns 1080p rather than dropping it", () => {
+    expect(resolvedWith("1080p")?.videoResolution).toBe("1080p");
+  });
+
+  it("carries 720p just as faithfully", () => {
+    // The fix forwards the compiler's choice; it does not force the higher one.
+    expect(resolvedWith("720p")?.videoResolution).toBe("720p");
+  });
+});
