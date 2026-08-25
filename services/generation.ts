@@ -43,7 +43,7 @@ import {
 } from "@/services/storage/assets";
 import { judgeDelivery } from "@/services/video/delivery-verdict";
 import {
-  isRunnable,
+  isRunnableFor,
   MODEL_UNAVAILABLE_CODE,
   MODEL_UNAVAILABLE_MESSAGE,
 } from "@/services/ai/model-policy";
@@ -318,14 +318,17 @@ export async function submitGeneration(input: SubmitInput) {
    * Placed at the very top on purpose. A refusal after the reservation would
    * charge a customer for a model we are not licensed to run and then rely on
    * a release to put it back; a refusal here means no ledger row exists to
-   * reverse. `isRunnable` fails closed on a missing policy, so a model added
-   * without an entry cannot run either.
+   * reverse. `isRunnableFor` fails closed on a missing policy, so a model
+   * added without an entry cannot run either.
    *
-   * Admin does not bypass this. A licence restriction is a commercial
-   * obligation to a third party, not an access-control rule, and an owner
-   * running a blocked model breaches it exactly as a customer would.
+   * The caller is resolved from the session, never from the request. It
+   * widens nothing on its own: it is only consulted for models explicitly
+   * marked owner-evaluation, and `BLOCKED_COMMERCIAL` ignores it entirely, so
+   * being an admin cannot make a non-commercial model runnable.
    */
-  if (!isRunnable(input.modelId)) {
+  const caller = (await isAdmin().catch(() => false)) ? "owner" : "public";
+
+  if (!isRunnableFor(input.modelId, caller)) {
     throw new GenerationError(
       MODEL_UNAVAILABLE_MESSAGE,
       400,

@@ -1,299 +1,413 @@
 import "server-only";
 
 /**
- * Whether Atheos may sell each model's output, and on what evidence.
+ * Which models Atheos may run, for whom, and on whose evidence.
  *
- * ## One registry, enforced on the server
+ * ## Why a status is not a licence label
  *
- * Every gate — quote, reservation, generation row, provider submission — reads
- * this. A second list in a route handler or a component would drift, and the
- * drift would be discovered by selling something we are not licensed to sell.
+ * The first version of this file had three verdicts and collapsed two
+ * different questions into each one: *may we run this at all* and *who may we
+ * run it for*. That produced a wrong answer in both directions.
  *
- * ## Availability is not permission
+ * It marked FLUX.1 [dev] allowed without recording that the permission comes
+ * from one hosted endpoint rather than from the model, so the approval would
+ * have travelled to a self-hosted copy where it is false. And it marked three
+ * proprietary video models `REVIEW_REQUIRED` — off, for everybody — on the
+ * reasoning that their endpoints publish no open-source licence.
  *
- * A provider hosting a model and charging for it proves that *they* will run
- * it. It says nothing about whether the person paying may sell the output. The
- * two are separate grants and this file keeps them separate: `hostedEndpoint`
- * records where the permission was verified, and an approval never travels to
- * a different endpoint or to self-hosted weights.
+ * That reasoning was wrong. A proprietary hosted API is not an open-weights
+ * release with the licence file missing. The absence of an SPDX badge on
+ * `google/veo-3.1` says nothing about whether Google permits commercial use
+ * through a paid API; it says the model was never distributed as weights in
+ * the first place. Treating silence as prohibition is as unfounded as treating
+ * availability as permission, and it took a working product offline.
  *
- * ## Why the verdicts are conservative
+ * So the vocabulary now separates the two questions:
  *
- * `REVIEW_REQUIRED` is the default for anything without published terms, not
- * `ALLOWED`. A missing licence page is an absence of evidence, and treating it
- * as permission is how a product ends up selling output it cannot defend.
+ *   `ALLOWED_PUBLIC`                        run it, sell it, list it
+ *   `ALLOWED_PROVIDER_ENDPOINT_ONLY`        same, but the grant is pinned to
+ *                                           one endpoint and does not travel
+ *   `OWNER_EVALUATION_ONLY_PENDING_TERMS`   the owner may evaluate it; no
+ *                                           customer may reach it and it is
+ *                                           not sold, until written terms
+ *                                           are recorded
+ *   `BLOCKED_COMMERCIAL`                    nobody runs it, owner included
+ *   `REVIEW_REQUIRED`                       unknown; fails closed
+ *
+ * ## What owner-evaluation is, and what it is not
+ *
+ * It is not a licence bypass, and must never be described as one. It is the
+ * narrower claim that evaluating a paid API before deciding whether to build
+ * on it is ordinary commercial diligence, whereas reselling access to it to
+ * third parties is a distribution right that needs to be granted in writing.
+ * The first is defensible on the evidence recorded below. The second is not
+ * yet, so it does not happen.
+ *
+ * The distinction is enforced by `permittedAudience`, not by trust:
+ * `BLOCKED_COMMERCIAL` ignores the caller entirely, so no amount of admin
+ * makes MusicGen runnable.
  */
 
-export type PolicyVerdict = "ALLOWED" | "BLOCKED" | "REVIEW_REQUIRED";
+export type PolicyStatus =
+  | "ALLOWED_PUBLIC"
+  | "ALLOWED_PROVIDER_ENDPOINT_ONLY"
+  | "OWNER_EVALUATION_ONLY_PENDING_TERMS"
+  | "BLOCKED_COMMERCIAL"
+  | "REVIEW_REQUIRED";
+
+/**
+ * Who may reach a model.
+ *
+ * `owner` means the server-verified admin, resolved by `isAdmin()` against the
+ * session — never a header, a flag or anything the client can assert.
+ */
+export type Audience = "public" | "owner" | "nobody";
+
+/** Who is asking. Callers resolve this from the session, not from input. */
+export type Caller = "public" | "owner";
 
 export interface ModelPolicy {
-  /** Internal catalogue id. */
+  /** Internal catalogue id — what `services/ai/registry.ts` calls it. */
   modelId: string;
-  /** The public id customers see. Kept here so the mapping is auditable. */
-  publicId: string;
-  publicName: string;
-  /**
-   * The exact hosted endpoint the verdict applies to.
-   *
-   * An approval is scoped to this string. FLUX.1 [dev] is commercially usable
-   * *through Replicate's hosted endpoint* and is **not** commercially licensed
-   * as downloadable weights — so a verdict that travelled with the model name
-   * rather than the endpoint would be wrong the moment anything self-hosted it.
-   */
+  /** The exact hosted endpoint the record applies to. */
   hostedEndpoint: string;
   /** Version pinned at audit time, so a silent model swap is visible. */
   auditedVersion: string;
+  /** The public id customers see. Kept here so the mapping is auditable. */
+  publicId: string;
+  publicName: string;
+
+  status: PolicyStatus;
+  /** The widest audience this status permits. */
+  permittedAudience: Audience;
+  /**
+   * The only provider this record grants anything for.
+   *
+   * Separate from `status` on purpose. FLUX.1 [dev] is publicly sellable *and*
+   * pinned to one endpoint; those are independent facts, and folding them into
+   * a single label is what made the first version of this file wrong.
+   */
+  permittedProvider: string;
+
+  /** May the customer use, sell or publish the output? */
+  commercialOutput: "permitted" | "permitted-for-owner-evaluation" | "denied";
   licence: string;
-  /** May Atheos run this as a paid SaaS? */
-  commercialSaasUse: boolean;
-  /** May the customer sell or commercially use the output? */
-  outputsSellable: boolean;
+  /**
+   * Attribution, watermarking and provenance obligations.
+   *
+   * Not decorative. Veo output carries SynthID and C2PA content credentials,
+   * and stripping them would breach the terms *and* remove a disclosure the
+   * viewer is entitled to. Atheos stores provider bytes verbatim, so this is
+   * a constraint on anything that ever re-encodes.
+   */
   attribution: string;
-  /** Restrictions on using the vendor's name or marks. */
   trademark: string;
   acceptableUse: string;
-  evidenceUrl: string;
+
+  /** Everything read to reach this status. Plural — one link is rarely enough. */
+  evidenceUrls: readonly string[];
   /** ISO date the evidence was read. */
   verifiedOn: string;
-  verdict: PolicyVerdict;
-  /** Why, in one line, for the audit trail. */
-  reason: string;
+  /** Why, for whoever revisits this. */
+  notes: string;
 }
 
 /**
- * Audited 2026-08-25 against Replicate's model API and the linked licences.
+ * Audited 2026-08-25 against each hosted endpoint and the terms it links to.
  *
  * Versions are the ones live on that date. A version change does not
- * automatically invalidate a verdict, but it is recorded so a swap can be seen.
+ * automatically invalidate a status, but it is recorded so a swap can be seen.
  */
 export const MODEL_POLICIES: readonly ModelPolicy[] = [
   {
     modelId: "replicate/flux-schnell",
-    publicId: "atheos-image-fast",
-    publicName: "Atheos Image Fast",
     hostedEndpoint: "replicate:black-forest-labs/flux-schnell",
     auditedVersion: "c846a699",
+    publicId: "atheos-image-fast",
+    publicName: "Atheos Image Fast",
+    status: "ALLOWED_PUBLIC",
+    permittedAudience: "public",
+    permittedProvider: "replicate",
+    commercialOutput: "permitted",
     licence: "Apache-2.0 (FLUX.1 [schnell])",
-    commercialSaasUse: true,
-    outputsSellable: true,
-    attribution: "None required by the licence.",
+    attribution: "None required.",
     trademark: "Do not imply endorsement by Black Forest Labs.",
     acceptableUse: "BFL acceptable-use policy applies to generated content.",
-    evidenceUrl:
-      "https://github.com/black-forest-labs/flux/blob/main/model_licenses/LICENSE-FLUX1-schnell",
+    evidenceUrls: [
+      "https://replicate.com/black-forest-labs/flux-schnell",
+      "https://huggingface.co/black-forest-labs/FLUX.1-schnell",
+    ],
     verifiedOn: "2026-08-25",
-    verdict: "ALLOWED",
-    reason: "Apache-2.0 permits commercial use of the model and its outputs.",
+    notes:
+      "Apache-2.0 on the weights themselves, so the permission does not depend on the host.",
   },
   {
     modelId: "replicate/flux-dev",
-    publicId: "atheos-image-realistic",
-    publicName: "Atheos Image Realistic",
     hostedEndpoint: "replicate:black-forest-labs/flux-dev",
     auditedVersion: "6e4a938f",
+    publicId: "atheos-image-realistic",
+    publicName: "Atheos Image Realistic",
+    status: "ALLOWED_PROVIDER_ENDPOINT_ONLY",
+    permittedAudience: "public",
+    permittedProvider: "replicate",
+    commercialOutput: "permitted",
     licence:
-      "FLUX.1 [dev] Non-Commercial for weights; commercial output use granted for this hosted endpoint",
-    commercialSaasUse: true,
-    outputsSellable: true,
+      "FLUX.1 [dev] Non-Commercial for the weights; commercial output use granted through this hosted endpoint",
     attribution: "None required for output use through this endpoint.",
     trademark: "Do not imply endorsement by Black Forest Labs.",
     acceptableUse: "BFL acceptable-use policy applies to generated content.",
-    evidenceUrl: "https://replicate.com/black-forest-labs/flux-dev",
+    evidenceUrls: [
+      "https://replicate.com/black-forest-labs/flux-dev",
+      "https://huggingface.co/black-forest-labs/FLUX.1-dev",
+    ],
     verifiedOn: "2026-08-25",
-    verdict: "ALLOWED",
     /**
-     * The correction. The earlier audit read only the weights licence — which
-     * is genuinely non-commercial — and concluded the model could not be sold.
-     * That missed the hosted grant: Replicate's page for this endpoint states
-     * images generated there may be used commercially.
+     * The status carries the scope because the scope is the whole point.
      *
-     * Scoped to `hostedEndpoint` deliberately. The downloadable weights remain
-     * non-commercial, and nothing here may be read as licensing those.
+     * The downloadable weights are non-commercial. What is commercially
+     * usable is output generated through this endpoint. Self-hosting the same
+     * model, or running it at another provider, is a different question with
+     * a different answer, and `permittedProvider` is what stops this record
+     * from being read as covering either.
      */
-    reason:
-      "Commercial output use permitted through this Replicate endpoint only; the downloadable weights remain non-commercial.",
+    notes:
+      "Approval is scoped to the Replicate endpoint. Do not extend it to self-hosting or another provider without a fresh review.",
   },
   {
     modelId: "replicate/real-esrgan",
-    publicId: "atheos-upscale",
-    publicName: "Atheos Upscale",
     hostedEndpoint: "replicate:nightmareai/real-esrgan",
     auditedVersion: "b3ef1941",
+    publicId: "atheos-upscale",
+    publicName: "Atheos Upscale",
+    status: "ALLOWED_PUBLIC",
+    permittedAudience: "public",
+    permittedProvider: "replicate",
+    commercialOutput: "permitted",
     licence: "BSD-3-Clause",
-    commercialSaasUse: true,
-    outputsSellable: true,
-    attribution: "Copyright notice retained in our third-party notices.",
-    trademark: "None asserted.",
-    acceptableUse: "No model-specific restriction.",
-    evidenceUrl:
-      "https://github.com/NightmareAI/Real-ESRGAN/blob/master/LICENSE",
+    attribution: "BSD notice retained upstream; none required on output.",
+    trademark: "None.",
+    acceptableUse: "No field-of-use restriction.",
+    evidenceUrls: [
+      "https://replicate.com/nightmareai/real-esrgan",
+      "https://github.com/xinntao/Real-ESRGAN/blob/master/LICENSE",
+    ],
     verifiedOn: "2026-08-25",
-    verdict: "ALLOWED",
-    reason: "BSD-3-Clause permits commercial use with attribution retained.",
+    notes: "Permissive open source; nothing endpoint-specific.",
   },
   {
     modelId: "replicate/remove-bg",
-    publicId: "atheos-cutout",
-    publicName: "Atheos Cutout",
     hostedEndpoint: "replicate:lucataco/remove-bg",
     auditedVersion: "95fcc2a2",
+    publicId: "atheos-cutout",
+    publicName: "Atheos Cutout",
+    status: "ALLOWED_PUBLIC",
+    permittedAudience: "public",
+    permittedProvider: "replicate",
+    commercialOutput: "permitted",
     licence: "Apache-2.0",
-    commercialSaasUse: true,
-    outputsSellable: true,
     attribution: "None required.",
-    trademark: "None asserted.",
-    acceptableUse: "No model-specific restriction.",
-    evidenceUrl:
-      "https://huggingface.co/datasets/choosealicense/licenses/blob/main/markdown/apache-2.0.md",
+    trademark: "None.",
+    acceptableUse: "No field-of-use restriction.",
+    evidenceUrls: ["https://replicate.com/lucataco/remove-bg"],
     verifiedOn: "2026-08-25",
-    verdict: "ALLOWED",
-    reason: "Apache-2.0 permits commercial use.",
+    notes: "Permissive open source; nothing endpoint-specific.",
   },
   {
     modelId: "replicate/video-gen",
-    publicId: "motion-1",
-    publicName: "Motion 1",
     hostedEndpoint: "replicate:wan-video/wan-2.2-t2v-fast",
     auditedVersion: "c483b1f7",
+    publicId: "motion-1",
+    publicName: "Motion 1",
+    status: "ALLOWED_PUBLIC",
+    permittedAudience: "public",
+    permittedProvider: "replicate",
+    commercialOutput: "permitted",
     licence: "Apache-2.0, inherited by the optimised build from Wan 2.2 A14B",
-    commercialSaasUse: true,
-    outputsSellable: true,
     attribution:
       "Apache-2.0 notice retained upstream; none required on output. Wan-AI state they claim no rights over generated content.",
     trademark: "Do not imply endorsement by Wan-AI or PrunaAI.",
     acceptableUse: "Apache-2.0 imposes no field-of-use restriction.",
-    evidenceUrl: "https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B",
+    evidenceUrls: [
+      "https://github.com/Wan-Video/Wan2.2",
+      "https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B",
+      "https://replicate.com/wan-video/wan-2.2-t2v-fast",
+    ],
     verifiedOn: "2026-08-25",
     /**
-     * The endpoint publishes no licence of its own, which is why the first
-     * pass recorded this as unverified. Following it upstream closes it:
+     * The endpoint publishes no licence of its own. Following it upstream
+     * closes the question rather than leaving it open:
      *
-     *   1. Wan-AI release Wan 2.2 A14B under Apache-2.0 and state they claim
-     *      no rights over generated content.
+     *   1. Wan-AI release Wan 2.2 under Apache-2.0 and state they claim no
+     *      rights over generated content.
      *   2. PrunaAI, whose optimised build this endpoint serves, state that
-     *      "the base model's limitations and licensing terms remain applicable
-     *      to this adaptation" — so the derivative carries Apache-2.0 too.
-     *   3. Replicate grant commercial output rights *subject to third-party
-     *      terms*, and those third-party terms are the Apache-2.0 in (1).
+     *      the base model's licensing terms remain applicable to the
+     *      adaptation — so the derivative carries Apache-2.0 too.
      *
-     * Step 3 is the one worth being careful about. Replicate hosting a model
-     * and billing for it proves only what they will charge; their terms
-     * explicitly put the licence check on us. The verdict rests on (1) and
-     * (2), which are the actual grant.
+     * This is the one video model where the grant comes from the model rather
+     * than from a hosting arrangement, which is why it is public and the
+     * other three are not.
      */
-    verdict: "ALLOWED",
-    reason:
-      "Apache-2.0 upstream, expressly inherited by the optimised build this endpoint serves; commercial use and output sale permitted.",
+    notes:
+      "Open-weights Apache-2.0 upstream, expressly inherited by the optimised build. The grant follows the model, not the host.",
   },
   {
     modelId: "replicate/video-pro",
-    publicId: "motion-pro",
-    publicName: "Motion Pro",
     hostedEndpoint: "replicate:bytedance/seedance-1-lite",
     auditedVersion: "6e47dd83",
-    licence: "Not published on the endpoint.",
-    commercialSaasUse: false,
-    outputsSellable: false,
-    attribution: "Unconfirmed.",
+    publicId: "motion-pro",
+    publicName: "Motion Pro",
+    status: "OWNER_EVALUATION_ONLY_PENDING_TERMS",
+    permittedAudience: "owner",
+    permittedProvider: "replicate",
+    commercialOutput: "permitted-for-owner-evaluation",
+    licence: "Proprietary (ByteDance), served through Replicate's terms.",
+    attribution:
+      "None stated. Preserve any provenance metadata the provider embeds.",
     trademark: "Do not imply endorsement by ByteDance.",
-    acceptableUse: "Unconfirmed.",
-    evidenceUrl: "https://replicate.com/bytedance/seedance-1-lite",
+    acceptableUse:
+      "Replicate's acceptable-use terms apply; no vendor policy published for this endpoint.",
+    evidenceUrls: [
+      "https://replicate.com/bytedance/seedance-1-lite",
+      "https://replicate.com/terms",
+    ],
     verifiedOn: "2026-08-25",
     /**
-     * The one that could not be closed from public sources.
+     * Replicate present this endpoint for commercial video production and
+     * grant output rights *subject to third-party terms* — and no third-party
+     * terms are published for it. That is genuinely ambiguous rather than
+     * prohibitive, and the two halves of the ambiguity have different answers:
      *
-     * Motion 1 resolved because its endpoint sits on top of a published
-     * open licence. Seedance has no equivalent: the model is ByteDance's,
-     * proprietary, and neither the endpoint nor any ByteDance page states
-     * terms for resale of its output. Replicate's own terms grant output
-     * rights only *subject to* third-party terms, so with no third-party
-     * terms to read there is nothing to rely on.
+     *   evaluating a paid API to decide whether to build on it — ordinary
+     *   diligence, and what the endpoint is plainly offered for;
      *
-     * Clearing this needs an answer from ByteDance or Replicate, not more
-     * searching. Until then it does not run.
+     *   reselling generation access to customers for credits — a
+     *   distribution right, which nothing on the record grants.
+     *
+     * So the owner may run it and no customer may. Written confirmation from
+     * ByteDance or Replicate is what moves it to public, and the question is
+     * drafted in `docs/LICENCE-EVIDENCE.md`.
      */
-    verdict: "REVIEW_REQUIRED",
-    reason:
-      "Proprietary ByteDance model with no terms published by the endpoint or the vendor; commercial resale rights cannot be established from public sources.",
+    notes:
+      "Owner evaluation only, pending written commercial-SaaS confirmation. Not sold, not listed, not reachable by any customer.",
   },
   {
     modelId: "replicate/veo-3.1-fast",
-    publicId: "cinematic-fast",
-    publicName: "Cinematic Fast",
     hostedEndpoint: "replicate:google/veo-3.1-fast",
     auditedVersion: "ba987ace",
-    licence: "Proprietary (Google), served via Replicate's terms.",
-    commercialSaasUse: false,
-    outputsSellable: false,
-    attribution: "Unconfirmed.",
-    trademark: "Do not use Google or Veo marks in customer-facing copy.",
-    acceptableUse: "Google's generative-AI prohibited-use policy applies.",
-    evidenceUrl: "https://replicate.com/google/veo-3.1-fast",
+    publicId: "cinematic-fast",
+    publicName: "Cinematic Fast",
+    status: "OWNER_EVALUATION_ONLY_PENDING_TERMS",
+    permittedAudience: "owner",
+    permittedProvider: "replicate",
+    commercialOutput: "permitted-for-owner-evaluation",
+    licence: "Proprietary (Google), served through Replicate's terms.",
+    attribution:
+      "Output carries SynthID watermarking and C2PA content credentials. These must survive storage and delivery intact.",
+    trademark: "Do not imply endorsement by Google.",
+    acceptableUse:
+      "Google's generative-AI prohibited-use policy applies to generated content.",
+    evidenceUrls: [
+      "https://replicate.com/google/veo-3.1-fast",
+      "https://ai.google.dev/gemini-api/terms",
+      "https://replicate.com/terms",
+    ],
     verifiedOn: "2026-08-25",
-    verdict: "REVIEW_REQUIRED",
-    reason:
-      "Proprietary model with no published licence on the endpoint. Not publicly enabled; used only for owner benchmarks.",
+    /**
+     * A proprietary hosted API, never released as weights — so there is no
+     * open-source licence to be missing, and its absence proves nothing. What
+     * the record does show is that Google do not claim ownership of generated
+     * output and offer the model for professional creation.
+     *
+     * What is not established is the reseller position: whether serving it to
+     * our customers for credits is permitted under Replicate's third-party
+     * terms. Until that is in writing, the owner may evaluate and nobody else
+     * may reach it.
+     *
+     * The watermark obligation is not conditional on any of that. SynthID and
+     * the C2PA manifest are how a viewer can tell the video is synthetic, and
+     * nothing in the pipeline may strip them.
+     */
+    notes:
+      "Owner evaluation only, pending written reseller terms. Preserve SynthID and content credentials on every stored and delivered file.",
   },
   {
     modelId: "replicate/veo-3.1",
-    publicId: "cinematic",
-    publicName: "Cinematic",
     hostedEndpoint: "replicate:google/veo-3.1",
     auditedVersion: "9c6ca0c2",
-    licence: "Proprietary (Google), served via Replicate's terms.",
-    commercialSaasUse: false,
-    outputsSellable: false,
-    attribution: "Unconfirmed.",
-    trademark: "Do not use Google or Veo marks in customer-facing copy.",
-    acceptableUse: "Google's generative-AI prohibited-use policy applies.",
-    evidenceUrl: "https://replicate.com/google/veo-3.1",
+    publicId: "cinematic",
+    publicName: "Cinematic",
+    status: "OWNER_EVALUATION_ONLY_PENDING_TERMS",
+    permittedAudience: "owner",
+    permittedProvider: "replicate",
+    commercialOutput: "permitted-for-owner-evaluation",
+    licence: "Proprietary (Google), served through Replicate's terms.",
+    attribution:
+      "Output carries SynthID watermarking and C2PA content credentials. These must survive storage and delivery intact.",
+    trademark: "Do not imply endorsement by Google.",
+    acceptableUse:
+      "Google's generative-AI prohibited-use policy applies to generated content.",
+    evidenceUrls: [
+      "https://replicate.com/google/veo-3.1",
+      "https://ai.google.dev/gemini-api/terms",
+      "https://replicate.com/terms",
+    ],
     verifiedOn: "2026-08-25",
-    verdict: "REVIEW_REQUIRED",
-    reason: "Same as Cinematic Fast. Not publicly enabled.",
+    notes:
+      "Same position as Cinematic Fast; the two differ in price and speed, not in terms.",
   },
   {
     modelId: "replicate/music",
-    publicId: "score",
-    publicName: "Score",
     hostedEndpoint: "replicate:meta/musicgen",
     auditedVersion: "671ac645",
+    publicId: "score",
+    publicName: "Score",
+    status: "BLOCKED_COMMERCIAL",
+    permittedAudience: "nobody",
+    permittedProvider: "none",
+    commercialOutput: "denied",
     licence: "CC-BY-NC-4.0 (MusicGen weights)",
-    commercialSaasUse: false,
-    outputsSellable: false,
-    attribution: "Would require attribution to Meta even if permitted.",
-    trademark: "Do not imply endorsement by Meta.",
-    acceptableUse: "Non-commercial only.",
-    evidenceUrl:
+    attribution: "Not applicable — the model does not run.",
+    trademark: "Not applicable.",
+    acceptableUse: "Not applicable.",
+    evidenceUrls: [
+      "https://replicate.com/meta/musicgen",
       "https://github.com/facebookresearch/audiocraft/blob/main/LICENSE_weights",
+    ],
     verifiedOn: "2026-08-25",
     /**
-     * Blocked, and it was live and sold at 20 credits when this was written.
+     * The one unambiguous finding, and the only one that could not wait for a
+     * review cycle. Score was live and sellable at 20 credits.
      *
-     * The weights are CC-BY-NC-4.0 and no separate commercial grant for the
-     * hosted endpoint has been established — unlike FLUX.1 [dev], where such a
-     * grant is published. Selling generations from a non-commercial model is
-     * the one finding here that could not wait for a review cycle.
+     * `NC` is not silence to be interpreted — it is an express prohibition on
+     * the exact thing Atheos was doing. There is no owner carve-out here:
+     * running a non-commercial model inside a commercial product is
+     * commercial use whoever presses the button, and a company testing its own
+     * paid feature is not a hobbyist. `permittedAudience: "nobody"` is what
+     * makes that structural rather than a matter of restraint.
      */
-    verdict: "BLOCKED",
-    reason:
-      "Weights are CC-BY-NC-4.0 and no commercial grant for the hosted endpoint has been established.",
+    notes:
+      "Non-commercial weights. Blocked for everyone including the owner; no audience, no provider, no exceptions. Existing history and assets are preserved untouched.",
   },
   {
     modelId: "replicate/sfx",
-    publicId: "foley",
-    publicName: "Foley",
     hostedEndpoint: "replicate:zsxkib/mmaudio",
     auditedVersion: "62871fb5",
+    publicId: "foley",
+    publicName: "Foley",
+    status: "ALLOWED_PUBLIC",
+    permittedAudience: "public",
+    permittedProvider: "replicate",
+    commercialOutput: "permitted",
     licence: "MIT (MMAudio)",
-    commercialSaasUse: true,
-    outputsSellable: true,
-    attribution: "MIT notice retained in our third-party notices.",
-    trademark: "None asserted.",
-    acceptableUse: "No model-specific restriction.",
-    evidenceUrl: "https://github.com/hkchengrex/MMAudio#MIT-1-ov-file",
+    attribution: "MIT notice retained upstream; none required on output.",
+    trademark: "None.",
+    acceptableUse: "No field-of-use restriction.",
+    evidenceUrls: [
+      "https://replicate.com/zsxkib/mmaudio",
+      "https://github.com/hkchengrex/MMAudio/blob/main/LICENSE",
+    ],
     verifiedOn: "2026-08-25",
-    verdict: "ALLOWED",
-    reason: "MIT permits commercial use with the notice retained.",
+    notes: "Permissive open source; nothing endpoint-specific.",
   },
 ];
 
@@ -307,26 +421,58 @@ export function policyFor(modelId: string): ModelPolicy | undefined {
 }
 
 /**
- * May this model run for a paying customer, right now?
+ * May this model run for this caller, right now?
  *
  * Fails closed on a missing policy. A model added without an entry is a model
- * nobody has checked, and the safe answer to "has anyone verified this" is no —
+ * nobody has checked, and the safe answer to "has anyone verified this" is no,
  * not "probably, it is in the catalogue".
+ *
+ * `caller` must be resolved from the session by the caller — `isAdmin()`, not
+ * a request field. Nothing here validates it, because nothing here can.
  */
-export function isRunnable(modelId: string): boolean {
+export function isRunnableFor(modelId: string, caller: Caller): boolean {
   const policy = policyFor(modelId);
   if (!policy) return false;
-  return policy.verdict === "ALLOWED";
+
+  switch (policy.status) {
+    case "ALLOWED_PUBLIC":
+    case "ALLOWED_PROVIDER_ENDPOINT_ONLY":
+      return true;
+
+    case "OWNER_EVALUATION_ONLY_PENDING_TERMS":
+      return caller === "owner";
+
+    /**
+     * Listed rather than folded into a default, so that adding a status forces
+     * a decision here instead of silently inheriting "no". The compiler is the
+     * thing enforcing that, via the exhaustiveness check below.
+     */
+    case "BLOCKED_COMMERCIAL":
+    case "REVIEW_REQUIRED":
+      return false;
+  }
 }
 
 /**
  * May this model appear in a customer-facing list?
  *
- * The same rule. A model that cannot run must not be advertised, or the
- * interface offers something every submission will refuse.
+ * Never true for an owner-evaluation model, whatever the caller. A model the
+ * owner is trialling must not appear in a catalogue, a price list or a picker,
+ * because appearing there is what turns evaluation into an offer.
  */
 export function isPubliclyOffered(modelId: string): boolean {
-  return isRunnable(modelId);
+  return policyFor(modelId)?.permittedAudience === "public";
+}
+
+/**
+ * May this model appear in the owner's own catalogue?
+ *
+ * Wider than `isPubliclyOffered` by exactly the owner-evaluation set, and no
+ * wider — a blocked model is absent from every list there is.
+ */
+export function isOfferedToOwner(modelId: string): boolean {
+  const audience = policyFor(modelId)?.permittedAudience;
+  return audience === "public" || audience === "owner";
 }
 
 /**

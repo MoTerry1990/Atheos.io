@@ -2,8 +2,9 @@ import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 
 import { guard, withHeaders } from "@/lib/api-guard";
+import { isAdmin } from "@/services/admin/auth";
 import {
-  isRunnable,
+  isRunnableFor,
   MODEL_UNAVAILABLE_CODE,
   MODEL_UNAVAILABLE_MESSAGE,
 } from "@/services/ai/model-policy";
@@ -182,6 +183,7 @@ export async function POST(request: NextRequest) {
 
   // 3. Capability reconciliation.
   const recommendation = recommendModels(brief);
+  const caller = (await isAdmin().catch(() => false)) ? "owner" : "public";
   /**
    * Licence policy, before a price is quoted.
    *
@@ -192,10 +194,12 @@ export async function POST(request: NextRequest) {
    * at the recommendation step keeps the two answers consistent.
    */
   const selected = body.modelId
-    ? MODEL_CAPABILITIES.find((m) => m.id === body.modelId && isRunnable(m.id))
+    ? MODEL_CAPABILITIES.find(
+        (m) => m.id === body.modelId && isRunnableFor(m.id, caller),
+      )
     : recommendation.recommended?.model;
 
-  if (selected && !isRunnable(selected.id)) {
+  if (selected && !isRunnableFor(selected.id, caller)) {
     return NextResponse.json(
       { error: MODEL_UNAVAILABLE_MESSAGE, code: MODEL_UNAVAILABLE_CODE },
       { status: 400 },
@@ -348,15 +352,16 @@ async function planImage(
   }
 
   const recommendation = recommendImageModels(brief);
+  const caller = (await isAdmin().catch(() => false)) ? "owner" : "public";
   // Same gate as the video branch above, for the same reason.
   const selected = body.modelId
     ? (() => {
         const found = findImageModel(body.modelId);
-        return found && isRunnable(found.id) ? found : undefined;
+        return found && isRunnableFor(found.id, caller) ? found : undefined;
       })()
     : recommendation.recommended?.model;
 
-  if (selected && !isRunnable(selected.id)) {
+  if (selected && !isRunnableFor(selected.id, caller)) {
     return NextResponse.json(
       { error: MODEL_UNAVAILABLE_MESSAGE, code: MODEL_UNAVAILABLE_CODE },
       { status: 400 },

@@ -8,7 +8,11 @@ import {
   submitGeneration,
 } from "@/services/generation";
 import { isUsingMockProvider, listModels } from "@/services/ai/registry";
-import { isPubliclyOffered } from "@/services/ai/model-policy";
+import { isAdmin } from "@/services/admin/auth";
+import {
+  isOfferedToOwner,
+  isPubliclyOffered,
+} from "@/services/ai/model-policy";
 import {
   catalogueModelId,
   toPublicGenerationFrom,
@@ -198,6 +202,7 @@ export async function GET(request: NextRequest) {
 
   try {
     const generations = await listGenerations();
+    const viewerIsOwner = await isAdmin().catch(() => false);
 
     return withHeaders(
       NextResponse.json({
@@ -213,14 +218,23 @@ export async function GET(request: NextRequest) {
           toPublicGenerationFrom(toGenerationDTO(row)),
         ),
         /**
-         * Only models we may actually run.
+         * Only models this caller may actually run.
          *
          * A model that cannot run must not be advertised, or the picker offers
          * something every submission refuses — and in Score's case it was
          * offered at 20 credits.
+         *
+         * The owner's list is wider by exactly the owner-evaluation set, and
+         * the widening happens here rather than in the client so that a
+         * customer's response never even mentions those models exist. It is
+         * resolved from the session; a blocked model is in neither list.
          */
         models: listModels()
-          .filter((model) => isPubliclyOffered(model.id))
+          .filter((model) =>
+            viewerIsOwner
+              ? isOfferedToOwner(model.id)
+              : isPubliclyOffered(model.id),
+          )
           .map((model) => toPublicModel(toStudioModel(model))),
         usingMockProvider: isUsingMockProvider(),
       }),

@@ -4,8 +4,9 @@ import {
   MODEL_POLICIES,
   MODEL_UNAVAILABLE_CODE,
   MODEL_UNAVAILABLE_MESSAGE,
+  isOfferedToOwner,
   isPubliclyOffered,
-  isRunnable,
+  isRunnableFor,
   policyFor,
   type ModelPolicy,
 } from "@/services/ai/model-policy";
@@ -17,74 +18,86 @@ import { catalogueModelId } from "@/features/studio/lib/public-model";
  *
  * ## Why this is a test and not a document
  *
- * The audit that produced these verdicts was a one-off reading of ten hosted
+ * The audit that produced these statuses was a one-off reading of ten hosted
  * endpoints. A document recording it goes stale the first time somebody adds a
  * model; a test fails the build instead. The rule that matters — **a catalogue
  * model with no policy cannot run** — is only worth anything if adding a model
- * without an entry is noisy, and that is exactly what `every catalogue model
- * has a policy` does.
+ * without an entry is noisy, and that is what `every catalogue model has a
+ * policy` does.
  *
- * ## The finding that prompted it
+ * ## The two mistakes this vocabulary exists to prevent
  *
- * Score was live and sellable at 20 credits. Its weights are MusicGen's, which
- * are CC-BY-NC-4.0 — non-commercial. Selling generated output from it is the
- * one thing that licence forbids. Everything here exists so that combination
- * cannot recur silently.
+ * Score was live and sellable at 20 credits on CC-BY-NC weights — selling its
+ * output is the one thing that licence forbids.
+ *
+ * And the first attempt to fix that overcorrected: it read "no open-source
+ * licence published" on three *proprietary hosted APIs* as prohibition and
+ * took them offline for everyone. Silence from a model that was never
+ * distributed as weights is not a restriction. Both failures are asserted
+ * against below, in opposite directions.
  */
 
 const VENDORS =
   /replicate|openai|google|black-forest|bytedance|wan-video|meta|musicgen|mmaudio|flux|veo|seedance/i;
 
-/** Every field that has to be recorded for a verdict to be auditable. */
+/** Every field that has to be recorded for a status to be auditable. */
 const REQUIRED_FIELDS: (keyof ModelPolicy)[] = [
   "modelId",
-  "publicId",
-  "publicName",
   "hostedEndpoint",
   "auditedVersion",
+  "publicId",
+  "publicName",
+  "status",
+  "permittedAudience",
+  "permittedProvider",
+  "commercialOutput",
   "licence",
   "attribution",
   "trademark",
   "acceptableUse",
-  "evidenceUrl",
   "verifiedOn",
-  "verdict",
-  "reason",
+  "notes",
 ];
 
-describe("the blocked model", () => {
+describe("Score is blocked for everyone", () => {
   const music = policyFor("replicate/music")!;
 
-  it("records MusicGen as non-commercial", () => {
-    expect(music.verdict).toBe("BLOCKED");
+  it("records MusicGen's weights as non-commercial", () => {
+    expect(music.status).toBe("BLOCKED_COMMERCIAL");
     expect(music.licence).toMatch(/CC-BY-NC/i);
-    expect(music.commercialSaasUse).toBe(false);
-    expect(music.outputsSellable).toBe(false);
+    expect(music.commercialOutput).toBe("denied");
   });
 
-  it("cannot run", () => {
-    expect(isRunnable("replicate/music")).toBe(false);
+  it("cannot run for a customer", () => {
+    expect(isRunnableFor("replicate/music", "public")).toBe(false);
   });
 
-  it("cannot be advertised", () => {
+  it("cannot run for the owner either", () => {
     /**
-     * The two are separate questions and were separate bugs: the model was
-     * refused by nothing *and* listed at a price. Blocking one without the
-     * other leaves either a broken picker or a live sale.
+     * The assertion that separates a licence restriction from an access
+     * rule. Owner evaluation is a real carve-out and it does not reach here:
+     * a company testing its own paid feature is commercial use, so `NC`
+     * forbids it whoever presses the button.
      */
+    expect(isRunnableFor("replicate/music", "owner")).toBe(false);
+    expect(music.permittedAudience).toBe("nobody");
+  });
+
+  it("appears in no catalogue at all", () => {
     expect(isPubliclyOffered("replicate/music")).toBe(false);
+    expect(isOfferedToOwner("replicate/music")).toBe(false);
   });
 
   it("is refused when a client sends its public id", () => {
-    // "score" is still resolvable — history has to keep rendering — but what it
-    // resolves to is not runnable, so the round trip is closed.
+    // "score" still resolves — history has to keep rendering — but what it
+    // resolves to runs for nobody, so the round trip is closed.
     expect(catalogueModelId("score")).toBe("replicate/music");
-    expect(isRunnable(catalogueModelId("score")!)).toBe(false);
+    expect(isRunnableFor(catalogueModelId("score")!, "owner")).toBe(false);
   });
 
   it("is refused when a client sends the internal provider id", () => {
     expect(catalogueModelId("replicate/music")).toBeNull();
-    expect(isRunnable("replicate/music")).toBe(false);
+    expect(isRunnableFor("replicate/music", "public")).toBe(false);
   });
 
   it("is absent from the catalogue a browser receives", () => {
@@ -96,72 +109,116 @@ describe("the blocked model", () => {
   });
 });
 
-describe("the corrected FLUX.1 [dev] finding", () => {
-  const flux = policyFor("replicate/flux-dev")!;
-
-  it("is allowed, which the first audit got wrong", () => {
-    expect(flux.verdict).toBe("ALLOWED");
-    expect(flux.outputsSellable).toBe(true);
-  });
-
-  it("scopes the approval to one exact endpoint", () => {
-    /**
-     * The correction that matters. FLUX.1 [dev] is commercially usable through
-     * the hosted endpoint and is *not* commercially licensed as downloadable
-     * weights. A verdict attached to the model's name would silently travel to
-     * a self-hosted copy and be wrong there.
-     */
-    expect(flux.hostedEndpoint).toBe("replicate:black-forest-labs/flux-dev");
-    expect(flux.licence).toMatch(/non-commercial|weights/i);
-  });
-
-  it("records the version it was audited against", () => {
-    // So a silent model swap under the same endpoint is visible in a diff.
-    expect(flux.auditedVersion).toMatch(/^[0-9a-f]{8}/);
-  });
-});
-
-describe("models awaiting verification", () => {
-  const pending = MODEL_POLICIES.filter(
-    (policy) => policy.verdict === "REVIEW_REQUIRED",
+describe("models the owner may evaluate but nobody may buy", () => {
+  const evaluation = MODEL_POLICIES.filter(
+    (policy) => policy.status === "OWNER_EVALUATION_ONLY_PENDING_TERMS",
   );
 
-  it("covers every model whose terms could not be established", () => {
-    /**
-     * Motion 1 is deliberately absent. Its endpoint publishes no licence
-     * either, but the build it serves inherits Apache-2.0 from Wan 2.2 and
-     * the vendors say so in writing — so it was resolved by reading the
-     * chain rather than left pending. What remains here is proprietary:
-     * ByteDance's and Google's, with no resale terms published anywhere.
-     */
-    expect(pending.map((p) => p.modelId).sort()).toEqual([
+  it("covers the three proprietary hosted video models", () => {
+    expect(evaluation.map((p) => p.modelId).sort()).toEqual([
       "replicate/veo-3.1",
       "replicate/veo-3.1-fast",
       "replicate/video-pro",
     ]);
   });
 
-  it("cannot run, because absent evidence is not evidence of permission", () => {
+  it("runs for the owner", () => {
     /**
-     * None of these is known to be restricted. That is the point: a provider
-     * listing a model and charging for it says what it will bill, not what it
-     * is licensed to let us resell. Unverified fails closed.
+     * The correction to the first pass, asserted directly. These were off for
+     * everybody on the reasoning that their endpoints publish no open-source
+     * licence — which they never would, being proprietary APIs that were
+     * never distributed as weights.
      */
-    for (const policy of pending) {
-      expect(isRunnable(policy.modelId), policy.modelId).toBe(false);
+    for (const policy of evaluation) {
+      expect(isRunnableFor(policy.modelId, "owner"), policy.modelId).toBe(true);
+    }
+  });
+
+  it("does not run for a customer", () => {
+    for (const policy of evaluation) {
+      expect(isRunnableFor(policy.modelId, "public"), policy.modelId).toBe(
+        false,
+      );
+    }
+  });
+
+  it("is never listed publicly, which is what would make it an offer", () => {
+    for (const policy of evaluation) {
       expect(isPubliclyOffered(policy.modelId), policy.modelId).toBe(false);
+      expect(isOfferedToOwner(policy.modelId), policy.modelId).toBe(true);
+    }
+  });
+
+  it("records that the output rights are evaluation-scoped, not sold", () => {
+    for (const policy of evaluation) {
+      expect(policy.commercialOutput, policy.modelId).toBe(
+        "permitted-for-owner-evaluation",
+      );
+    }
+  });
+
+  it("keeps the watermark obligation on both Veo models", () => {
+    /**
+     * SynthID and the C2PA manifest are how a viewer can tell a clip is
+     * synthetic. The obligation is not contingent on the reseller question
+     * being settled, so it is recorded now rather than when the terms land.
+     */
+    for (const id of ["replicate/veo-3.1", "replicate/veo-3.1-fast"]) {
+      expect(policyFor(id)!.attribution, id).toMatch(/SynthID/);
+      expect(policyFor(id)!.attribution, id).toMatch(/content credentials/i);
     }
   });
 });
 
+describe("Motion 1, which is public because the grant follows the model", () => {
+  const motion = policyFor("replicate/video-gen")!;
+
+  it("is available to ordinary customers", () => {
+    expect(motion.status).toBe("ALLOWED_PUBLIC");
+    expect(isRunnableFor("replicate/video-gen", "public")).toBe(true);
+    expect(isPubliclyOffered("replicate/video-gen")).toBe(true);
+  });
+
+  it("cites the upstream Apache-2.0 release rather than the endpoint", () => {
+    // The endpoint publishes nothing; the weights do, and that is what the
+    // permission rests on.
+    expect(motion.licence).toMatch(/Apache-2\.0/);
+    expect(motion.evidenceUrls).toContain(
+      "https://github.com/Wan-Video/Wan2.2",
+    );
+  });
+});
+
+describe("FLUX.1 [dev], allowed but pinned to one endpoint", () => {
+  const flux = policyFor("replicate/flux-dev")!;
+
+  it("is public, and scoped to the approved provider", () => {
+    expect(flux.status).toBe("ALLOWED_PROVIDER_ENDPOINT_ONLY");
+    expect(isPubliclyOffered("replicate/flux-dev")).toBe(true);
+    expect(flux.permittedProvider).toBe("replicate");
+    expect(flux.hostedEndpoint).toBe("replicate:black-forest-labs/flux-dev");
+  });
+
+  it("records that the weights themselves stay non-commercial", () => {
+    /**
+     * The distinction the status name carries. Commercial output use is
+     * granted through this endpoint; the downloadable weights are not
+     * licensed for it, so the approval must not travel to a self-hosted copy.
+     */
+    expect(flux.licence).toMatch(/non-commercial/i);
+    expect(flux.notes).toMatch(/self-hosting|another provider/i);
+  });
+});
+
 describe("the registry fails closed", () => {
-  it("refuses a catalogue model with no policy", () => {
-    expect(isRunnable("replicate/not-audited-yet")).toBe(false);
+  it("refuses a catalogue model with no policy, for either caller", () => {
+    expect(isRunnableFor("replicate/not-audited-yet", "public")).toBe(false);
+    expect(isRunnableFor("replicate/not-audited-yet", "owner")).toBe(false);
   });
 
   it("refuses an empty or malformed id rather than throwing", () => {
-    expect(isRunnable("")).toBe(false);
-    expect(isRunnable("../../etc/passwd")).toBe(false);
+    expect(isRunnableFor("", "owner")).toBe(false);
+    expect(isRunnableFor("../../etc/passwd", "owner")).toBe(false);
   });
 
   it("gives every catalogue model a policy", () => {
@@ -178,21 +235,30 @@ describe("the registry fails closed", () => {
     expect(unpoliced).toEqual([]);
   });
 
-  it("takes no caller, so admin cannot be a bypass", () => {
+  it("never lets owner-evaluation widen past its own status", () => {
     /**
-     * Structural rather than behavioural, deliberately. A licence restriction
-     * is an obligation to a third party, not an access-control rule — the
-     * owner running a blocked model breaches it exactly as a customer would.
-     * Making the functions unary means there is no argument to pass a
-     * privileged user through.
+     * The one way this design could rot: `caller === "owner"` leaking into a
+     * branch it does not belong in. Asserted as a property over the whole
+     * table rather than per model, so a new entry is covered automatically.
      */
-    expect(isRunnable.length).toBe(1);
-    expect(isPubliclyOffered.length).toBe(1);
+    for (const policy of MODEL_POLICIES) {
+      const ownerMayRun = isRunnableFor(policy.modelId, "owner");
+      const publicMayRun = isRunnableFor(policy.modelId, "public");
+
+      if (policy.status === "BLOCKED_COMMERCIAL") {
+        expect(ownerMayRun, policy.modelId).toBe(false);
+      }
+      if (policy.status === "REVIEW_REQUIRED") {
+        expect(ownerMayRun, policy.modelId).toBe(false);
+      }
+      // The owner is never *less* able than the public.
+      if (publicMayRun) expect(ownerMayRun, policy.modelId).toBe(true);
+    }
   });
 });
 
-describe("every recorded verdict is auditable", () => {
-  it("fills in all thirteen recorded fields", () => {
+describe("every recorded status is auditable", () => {
+  it("fills in every required field", () => {
     for (const policy of MODEL_POLICIES) {
       for (const field of REQUIRED_FIELDS) {
         expect(
@@ -203,18 +269,37 @@ describe("every recorded verdict is auditable", () => {
     }
   });
 
-  it("cites a source that can be re-read", () => {
+  it("cites at least one source that can be re-read", () => {
     for (const policy of MODEL_POLICIES) {
-      expect(policy.evidenceUrl, policy.modelId).toMatch(/^https:\/\//);
+      expect(policy.evidenceUrls.length, policy.modelId).toBeGreaterThan(0);
+      for (const url of policy.evidenceUrls) {
+        expect(url, policy.modelId).toMatch(/^https:\/\//);
+      }
       expect(policy.verifiedOn, policy.modelId).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     }
   });
 
-  it("never marks a model sellable while blocking it", () => {
-    // The contradiction that would make the table look like a rubber stamp.
+  it("keeps audience and status consistent", () => {
+    // The pair is what enforcement reads. A mismatch would be a silent hole.
+    const expected: Record<string, string> = {
+      ALLOWED_PUBLIC: "public",
+      ALLOWED_PROVIDER_ENDPOINT_ONLY: "public",
+      OWNER_EVALUATION_ONLY_PENDING_TERMS: "owner",
+      BLOCKED_COMMERCIAL: "nobody",
+      REVIEW_REQUIRED: "nobody",
+    };
+
     for (const policy of MODEL_POLICIES) {
-      if (policy.verdict === "ALLOWED") continue;
-      expect(policy.commercialSaasUse, policy.modelId).toBe(false);
+      expect(policy.permittedAudience, policy.modelId).toBe(
+        expected[policy.status],
+      );
+    }
+  });
+
+  it("names no provider for a model nobody may run", () => {
+    for (const policy of MODEL_POLICIES) {
+      if (policy.permittedAudience !== "nobody") continue;
+      expect(policy.permittedProvider, policy.modelId).toBe("none");
     }
   });
 
@@ -228,7 +313,9 @@ describe("the refusal a customer reads", () => {
   it("names no vendor, no model and no licence", () => {
     /**
      * "Blocked: MusicGen is CC-BY-NC" tells a customer who we buy from and
-     * what our contract with them says. Neither is theirs to know.
+     * what our contract with them says. Neither is theirs to know — and the
+     * same message covers an owner-evaluation model, so it cannot hint that
+     * one exists.
      */
     expect(MODEL_UNAVAILABLE_MESSAGE).not.toMatch(VENDORS);
     expect(MODEL_UNAVAILABLE_MESSAGE).not.toMatch(/licen[cs]e|commercial/i);
