@@ -328,3 +328,84 @@ describe("the compiled video resolution reaches the provider", () => {
     expect(resolvedWith("720p")?.videoResolution).toBe("720p");
   });
 });
+
+describe("a model and an audio promise that disagree are refused", () => {
+  // Verified rather than assumed: `assessModel` already carries this rule, so
+  // the sprint's requirement was met before this test existed.
+  /**
+   * The brief is signed, so it cannot be edited after confirmation — but the
+   * *pair* still has to be checked. A plan issued for a native-audio model and
+   * submitted naming a silent one would deliver the opposite of what was
+   * confirmed, and the composer is the one place an attacker controls
+   * completely.
+   */
+  /**
+   * A brief Motion 1 can otherwise make, so the audio conflict is the only one
+   * left. The general capability check runs first and correctly refuses an
+   * 8-second four-shot plan with a reference image — which would mask the
+   * thing under test.
+   */
+  function motionOneBrief(strategy: "NATIVE" | "SILENT") {
+    let brief = planFromPrompt({ prompt: "a wolf in a forest" });
+    brief = confirmField(brief, "durationSeconds" as never, 5 as never);
+    brief = confirmField(brief, "resolution" as never, "720p" as never);
+    brief = confirmField(brief, "shotCount" as never, 1 as never);
+    return confirmField(brief, "audioStrategy" as never, strategy as never);
+  }
+
+  it("refuses Motion 1 against a native-audio brief", () => {
+    directorOn();
+
+    const brief = motionOneBrief("NATIVE");
+
+    try {
+      resolveDirectorSubmission({
+        userId: "user_alice",
+        planToken: issuePlanToken({
+          userId: "user_alice",
+          brief,
+          modelId: "replicate/video-gen",
+          quotedCredits: MODEL["replicate/video-gen"].creditsPerGeneration,
+          nowMs: NOW,
+        }).token,
+        brief,
+        confirmed: true,
+        nowMs: NOW,
+      });
+      throw new Error("should have refused");
+    } catch (error) {
+      /**
+       * Refused by the capability check that already existed — not by a second
+       * audio-specific one. A redundant check that never fires is dead code
+       * pretending to be a safeguard, so the real protection is asserted here
+       * rather than a duplicate being added beside it.
+       */
+      expect(error).toBeInstanceOf(DirectorError);
+      expect((error as DirectorError).code).toBe("capability_conflict");
+      expect((error as DirectorError).message).toMatch(/produces no audio/);
+    }
+  });
+
+  it("allows a silent brief on Motion 1", () => {
+    // The honest pairing, which must keep working.
+    directorOn();
+
+    const brief = motionOneBrief("SILENT");
+
+    expect(
+      resolveDirectorSubmission({
+        userId: "user_alice",
+        planToken: issuePlanToken({
+          userId: "user_alice",
+          brief,
+          modelId: "replicate/video-gen",
+          quotedCredits: MODEL["replicate/video-gen"].creditsPerGeneration,
+          nowMs: NOW,
+        }).token,
+        brief,
+        confirmed: true,
+        nowMs: NOW,
+      }),
+    ).not.toBeNull();
+  });
+});
