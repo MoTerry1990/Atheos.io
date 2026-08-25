@@ -41,7 +41,7 @@ import {
   isStorageConfigured,
   storeGeneratedAsset,
 } from "@/services/storage/assets";
-import { checkDeliveredAudio } from "@/services/video/delivery-audio-check";
+import { judgeDelivery } from "@/services/video/delivery-verdict";
 import {
   FAILURE_CODES,
   settleFailedDelivery,
@@ -947,7 +947,7 @@ export async function settleSuccess(
     const wantsSound = plan?.audioStrategy !== "SILENT";
 
     for (const { asset } of stored) {
-      const verdict = checkDeliveredAudio({
+      const verdict = await judgeDelivery({
         modelId: row.model,
         mimeType: asset.mimeType,
         bytes: asset.bytes,
@@ -958,17 +958,36 @@ export async function settleSuccess(
             : undefined,
       });
 
-      // Safe by construction: `detail` has no field that can hold a URL, a
-      // prompt or a signed link. See `delivery-audio-check.ts`.
-      console.info("audio gate", { generationId, ...verdict.detail });
+      // Safe by construction: `detail` carries only scalars, and no field on it
+      // can hold a URL, a prompt or a signed link. See `delivery-verdict.ts`.
+      console.info("audio gate", {
+        generationId,
+        outcome: verdict.outcome,
+        ...verdict.detail,
+      });
 
-      if (!verdict.ok) return verdict;
+      /**
+       * `best_effort` is delivered.
+       *
+       * It means measured, not broken, and not obviously good — a render the
+       * customer may be perfectly happy with, flagged for a human rather than
+       * destroyed on a threshold nobody has calibrated.
+       */
+      if (verdict.warnings.length > 0) {
+        console.warn("audio gate warnings", {
+          generationId,
+          outcome: verdict.outcome,
+          warnings: verdict.warnings,
+        });
+      }
+
+      if (!verdict.deliver) return verdict;
     }
 
     return null;
   });
 
-  if (audioVerdict && !audioVerdict.ok) {
+  if (audioVerdict && !audioVerdict.deliver) {
     /**
      * Fail closed, and refund.
      *

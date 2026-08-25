@@ -392,7 +392,7 @@ describe("one delivery path, and it is idempotent", () => {
       service.indexOf("export async function settleSuccess"),
     );
 
-    const gate = settle.indexOf("checkDeliveredAudio");
+    const gate = settle.indexOf("judgeDelivery");
     const transaction = settle.indexOf('inStage("asset_transaction"');
 
     expect(gate).toBeGreaterThan(-1);

@@ -1,7 +1,58 @@
 # Delivery measurement — specification
 
-**Status: partially built.** The container half shipped on 2026-08-24. The
-loudness half remains a specification.
+**Status: built.** The container half shipped on 2026-08-24; decoded loudness
+and silence validation shipped the same day. What remains unbuilt is listed
+under "Still not measured" below.
+
+## Decoder decision, proved rather than assumed
+
+FFmpeg was rejected on evidence. There is no separate execution environment —
+the "worker" is a Vercel cron calling a serverless route, so everything runs in
+the same Node lambda. A native binary would mean an 80 MB download from a
+third-party release at every build plus an entry in this project's deliberate
+`allowScripts` allowlist.
+
+`audio-decode` is 400 KB of WASM. Measured **in the deployed Vercel lambda**
+before adoption, decoding the real 7.3 MB benchmark:
+
+|            |                          |
+| ---------- | ------------------------ |
+| Runtime    | linux x64, Node v24.18.1 |
+| R2 fetch   | 602 ms                   |
+| **Decode** | **187 ms**               |
+| Peak RSS   | 149 MB                   |
+
+Identical measurements locally and deployed.
+
+## Calibration
+
+`integratedLufs` is ITU-R BS.1770-4 — K-weighting, 400 ms blocks at 75%
+overlap, absolute gate at -70 LUFS, relative gate 10 LU below the ungated mean.
+Not RMS under a different name, which would compare real audio against
+published LUFS thresholds it does not measure.
+
+Validated against a reference signal:
+
+| Signal               | Measured        | Expected               |
+| -------------------- | --------------- | ---------------------- |
+| 1 kHz sine, -20 dBFS | **-19.99 LUFS** | ≈ -20                  |
+| its peak             | -20.00 dBFS     | -20.00                 |
+| its RMS              | -23.01 dBFS     | -23.01 (peak - 3.01)   |
+| digital silence      | undefined       | no measurable loudness |
+
+The owner-approved benchmark measures **-20.9 LUFS**, peak -5.70 dBFS, 0
+clipped samples, 0.2% silence — and now passes cleanly rather than carrying a
+warning that loudness could not be measured.
+
+## Still not measured
+
+- **True peak (dBTP).** Sample peak is measured; inter-sample peaks need
+  oversampling.
+- **Semantic content.** The gate validates _signal_, not meaning. It cannot
+  recognise a saxophone, detect dialogue, or judge whether the sound matches the
+  brief. No verdict may be described as confirming intended audio.
+- **Containers other than MP4 and MOV.** These return `best_effort` with an
+  explicit "not validated" warning, never a silent pass.
 
 Written 2026-08-24, after Step 4 of the Truth & Audio sprint was found to be
 unverifiable.
