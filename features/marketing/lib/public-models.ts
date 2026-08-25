@@ -6,6 +6,7 @@ import {
 } from "@/services/ai/audio-strategy";
 import { MODEL_CAPABILITIES } from "@/services/ai/brief-routing";
 import { listModels } from "@/services/ai/registry";
+import { isPubliclyOffered } from "@/services/ai/model-policy";
 import { isModelEnabled } from "@/services/billing/model-costs";
 import type { Modality } from "@/lib/generated/prisma/enums";
 
@@ -106,10 +107,6 @@ const EDITORIAL: Record<string, { bestFor: string; limitation: string }> = {
     limitation:
       "Produces no sound of its own. Atheos sound mix is not currently available.",
   },
-  "replicate/music": {
-    bestFor: "Background score for a clip.",
-    limitation: "Instrumental — it does not sing, and it does not speak.",
-  },
   "replicate/sfx": {
     bestFor: "Individual sound effects and short ambiences.",
     limitation: "Short cues rather than a continuous mix.",
@@ -147,6 +144,15 @@ export function publicModels(): PublicModel[] {
     listModels()
       .filter((model) => !model.id.startsWith("mock/"))
       .filter((model) => isModelEnabled(model.id))
+      /**
+       * Licence policy, not a feature flag.
+       *
+       * A model page is a sales page: it names a price and invites a signup.
+       * Listing one we are not licensed to run commercially is the same
+       * misrepresentation as selling it, so the registry filters here too
+       * rather than only at submission.
+       */
+      .filter((model) => isPubliclyOffered(model.id))
       // A model with no editorial copy is one nobody has decided how to
       // describe. Better absent than described by its slug.
       .filter((model) => EDITORIAL[model.id])

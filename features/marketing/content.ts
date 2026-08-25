@@ -400,7 +400,12 @@ export const COMPOSER_MODALITIES: readonly ComposerModality[] = [
   {
     id: "audio",
     models: [
-      { id: "replicate/music", label: "Score" },
+      /**
+       * Score is absent by licence, not by oversight. MusicGen's weights are
+       * CC-BY-NC-4.0, which forbids the commercial use selling it would be.
+       * See `services/ai/model-policy.ts` — that registry is the authority and
+       * refuses the model server-side; this list must agree with it.
+       */
       { id: "replicate/sfx", label: "Foley" },
     ],
     aspectRatios: [],

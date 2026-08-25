@@ -8,6 +8,7 @@ import {
   submitGeneration,
 } from "@/services/generation";
 import { isUsingMockProvider, listModels } from "@/services/ai/registry";
+import { isPubliclyOffered } from "@/services/ai/model-policy";
 import {
   catalogueModelId,
   toPublicGenerationFrom,
@@ -211,9 +212,16 @@ export async function GET(request: NextRequest) {
         generations: generations.map((row) =>
           toPublicGenerationFrom(toGenerationDTO(row)),
         ),
-        models: listModels().map((model) =>
-          toPublicModel(toStudioModel(model)),
-        ),
+        /**
+         * Only models we may actually run.
+         *
+         * A model that cannot run must not be advertised, or the picker offers
+         * something every submission refuses — and in Score's case it was
+         * offered at 20 credits.
+         */
+        models: listModels()
+          .filter((model) => isPubliclyOffered(model.id))
+          .map((model) => toPublicModel(toStudioModel(model))),
         usingMockProvider: isUsingMockProvider(),
       }),
       gate,

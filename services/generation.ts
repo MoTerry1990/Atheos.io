@@ -43,6 +43,11 @@ import {
 } from "@/services/storage/assets";
 import { judgeDelivery } from "@/services/video/delivery-verdict";
 import {
+  isRunnable,
+  MODEL_UNAVAILABLE_CODE,
+  MODEL_UNAVAILABLE_MESSAGE,
+} from "@/services/ai/model-policy";
+import {
   FAILURE_CODES,
   settleFailedDelivery,
 } from "@/services/billing/settlement";
@@ -306,6 +311,27 @@ export function reservationFailure(
 /** Submit a generation. Returns the persisted job id. */
 export async function submitGeneration(input: SubmitInput) {
   const user = await requireApiUser();
+
+  /**
+   * Licence policy, before anything is quoted, reserved or created.
+   *
+   * Placed at the very top on purpose. A refusal after the reservation would
+   * charge a customer for a model we are not licensed to run and then rely on
+   * a release to put it back; a refusal here means no ledger row exists to
+   * reverse. `isRunnable` fails closed on a missing policy, so a model added
+   * without an entry cannot run either.
+   *
+   * Admin does not bypass this. A licence restriction is a commercial
+   * obligation to a third party, not an access-control rule, and an owner
+   * running a blocked model breaches it exactly as a customer would.
+   */
+  if (!isRunnable(input.modelId)) {
+    throw new GenerationError(
+      MODEL_UNAVAILABLE_MESSAGE,
+      400,
+      MODEL_UNAVAILABLE_CODE,
+    );
+  }
 
   /**
    * The Creative Director gate.

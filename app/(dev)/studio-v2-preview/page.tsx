@@ -86,7 +86,7 @@ const MODELS: PublicStudioModel[] = [
   },
   {
     id: "score",
-    displayName: "Score",
+    displayName: "Foley",
     modality: "AUDIO",
     description: "Background score for a clip.",
     creditCost: 20,
@@ -142,7 +142,7 @@ const HISTORY = [
   },
   {
     id: "gen_3",
-    modelName: "Score",
+    modelName: "Foley",
     prompt: "Slow ambient pads",
     status: "failed",
     createdAt: Date.parse("2026-08-24T16:40:00Z"),

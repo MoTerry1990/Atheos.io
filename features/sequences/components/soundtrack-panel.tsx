@@ -19,11 +19,13 @@ import { cn } from "@/lib/utils";
  * because somebody wanted the score less tense. Here the video is already
  * assembled and only the audio is re-made, at 20 credits a go.
  *
- * ## Two models, because one would be wrong half the time
+ * ## One model, where there used to be two
  *
- * musicgen asked for "a door slamming" returns *music about* a door slamming.
- * Score and Foley are different models for genuinely different jobs, so the
- * choice is put to the user rather than guessed from the prompt.
+ * Music and effects were separate choices, because a music model asked for
+ * "a door slamming" returns *music about* a door slamming. The music side is
+ * gone on licence grounds, so the picker now has a single option — kept as a
+ * list rather than collapsed, because the choice returns if a licensed music
+ * model does.
  *
  * ## The mux is a video stream copy
  *
@@ -31,16 +33,17 @@ import { cn } from "@/lib/utils";
  * costs seconds rather than the re-encode of the whole video it looks like.
  */
 
+/**
+ * Only sound effects, for now.
+ *
+ * The music track was removed when the licence audit found MusicGen's weights
+ * are CC-BY-NC-4.0 — non-commercial, which selling a score for 20 credits is
+ * not. `services/ai/model-policy.ts` is the authority and refuses the model at
+ * submission; this list exists because a client component cannot import a
+ * server-only registry, so it has to be kept in agreement by hand. A test
+ * asserts it stays that way.
+ */
 const TRACKS = [
-  {
-    id: "replicate/music",
-    label: "Music",
-    icon: Music,
-    credits: 20,
-    placeholder: "slow cinematic strings, tense, building",
-    /** Longest musicgen step that still fits a two-minute sequence. */
-    seconds: 30,
-  },
   {
     id: "replicate/sfx",
     label: "Sound effects",

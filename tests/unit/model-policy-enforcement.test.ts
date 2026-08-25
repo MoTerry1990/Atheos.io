@@ -1,0 +1,154 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+/**
+ * A blocked model costs nothing.
+ *
+ * ## Why the assertion is "nothing was called" rather than "the balance is unchanged"
+ *
+ * A refusal *after* a reservation also leaves the balance unchanged — eventually,
+ * once the release lands. That is a worse design wearing the same result: it
+ * writes two ledger rows for a request that never ran, and it depends on the
+ * release path working to stay correct. Refusing before anything is quoted means
+ * there is no row to reverse.
+ *
+ * So these mock every module that can move money or reach a provider and assert
+ * none of them was reached at all. The check has to be the *first* thing
+ * `submitGeneration` does, and that is the only property worth pinning.
+ */
+
+const requireApiUser = vi.fn();
+const reserveWithin = vi.fn();
+const captureReservation = vi.fn();
+const estimateCost = vi.fn();
+const gateGeneration = vi.fn();
+const checkGenerationLimits = vi.fn();
+const findModel = vi.fn();
+const providerForModel = vi.fn();
+
+vi.mock("@/lib/auth", () => ({
+  requireApiUser: () => requireApiUser(),
+}));
+vi.mock("@/services/billing/ledger", () => ({
+  reserveWithin: (...a: unknown[]) => reserveWithin(...a),
+  captureReservation: (...a: unknown[]) => captureReservation(...a),
+  releaseReservation: vi.fn(),
+}));
+vi.mock("@/services/ai/cost", () => ({
+  estimateCost: (...a: unknown[]) => estimateCost(...a),
+}));
+vi.mock("@/services/billing/spending", () => ({
+  gateGeneration: (...a: unknown[]) => gateGeneration(...a),
+  blockMessage: () => "blocked",
+  recordSpend: vi.fn(),
+}));
+vi.mock("@/services/limits/generation-limits", () => ({
+  checkGenerationLimits: (...a: unknown[]) => checkGenerationLimits(...a),
+  limitMessage: () => "limited",
+}));
+vi.mock("@/services/ai/registry", async (original) => ({
+  ...(await original<Record<string, unknown>>()),
+  findModel: (...a: unknown[]) => findModel(...a),
+  providerForModel: (...a: unknown[]) => providerForModel(...a),
+}));
+
+const { submitGeneration, GenerationError } =
+  await import("@/services/generation");
+
+const request = (modelId: string) => ({
+  operation: "text-to-audio" as const,
+  modelId,
+  prompt: "slow cinematic strings",
+});
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  requireApiUser.mockResolvedValue({ id: "user_1", creditBalance: 10_000 });
+});
+
+describe("a model the licence registry refuses", () => {
+  it("is rejected with the generic message", async () => {
+    await expect(submitGeneration(request("replicate/music"))).rejects.toThrow(
+      GenerationError,
+    );
+
+    await expect(
+      submitGeneration(request("replicate/music")),
+    ).rejects.toMatchObject({
+      status: 400,
+      code: "model_unavailable",
+      message: "That model is not available.",
+    });
+  });
+
+  it("never reaches the quote", async () => {
+    await submitGeneration(request("replicate/music")).catch(() => {});
+    expect(estimateCost).not.toHaveBeenCalled();
+  });
+
+  it("never reserves credits", async () => {
+    // The claim that matters commercially. No ledger row, so nothing to refund.
+    await submitGeneration(request("replicate/music")).catch(() => {});
+    expect(reserveWithin).not.toHaveBeenCalled();
+    expect(captureReservation).not.toHaveBeenCalled();
+  });
+
+  it("never creates a generation row or calls a provider", async () => {
+    await submitGeneration(request("replicate/music")).catch(() => {});
+    expect(providerForModel).not.toHaveBeenCalled();
+  });
+
+  it("does not consult the spending breaker or rate limits first", async () => {
+    /**
+     * Ordering, stated as a fact rather than a hope. If the licence check sat
+     * after these, a blocked model would burn a customer's hourly generation
+     * allowance on a request that was never going to run.
+     */
+    await submitGeneration(request("replicate/music")).catch(() => {});
+    expect(gateGeneration).not.toHaveBeenCalled();
+    expect(checkGenerationLimits).not.toHaveBeenCalled();
+  });
+});
+
+describe("a model awaiting licence verification", () => {
+  for (const modelId of [
+    "replicate/video-gen",
+    "replicate/video-pro",
+    "replicate/veo-3.1-fast",
+    "replicate/veo-3.1",
+  ]) {
+    it(`refuses ${modelId} without spending`, async () => {
+      await expect(submitGeneration(request(modelId))).rejects.toMatchObject({
+        code: "model_unavailable",
+      });
+      expect(reserveWithin).not.toHaveBeenCalled();
+    });
+  }
+});
+
+describe("a model with no policy at all", () => {
+  it("fails closed rather than running", async () => {
+    /**
+     * The realistic way this gets bypassed: somebody adds a model to the
+     * registry and forgets the policy entry. Unknown must mean no.
+     */
+    await expect(
+      submitGeneration(request("replicate/something-new")),
+    ).rejects.toMatchObject({ code: "model_unavailable" });
+
+    expect(reserveWithin).not.toHaveBeenCalled();
+  });
+});
+
+describe("an allowed model is not affected", () => {
+  it("gets past the licence check and on to the usual validation", async () => {
+    /**
+     * Without this the suite would pass just as well if the gate refused
+     * everything, which is a safe product nobody can use.
+     */
+    findModel.mockReturnValue(undefined);
+
+    await expect(
+      submitGeneration(request("replicate/sfx")),
+    ).rejects.not.toMatchObject({ code: "model_unavailable" });
+  });
+});

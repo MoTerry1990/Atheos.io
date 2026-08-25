@@ -3,6 +3,11 @@ import { z } from "zod";
 
 import { guard, withHeaders } from "@/lib/api-guard";
 import {
+  isRunnable,
+  MODEL_UNAVAILABLE_CODE,
+  MODEL_UNAVAILABLE_MESSAGE,
+} from "@/services/ai/model-policy";
+import {
   MODEL_CAPABILITIES,
   recommendModels,
   type RoutingVerdict,
@@ -177,9 +182,25 @@ export async function POST(request: NextRequest) {
 
   // 3. Capability reconciliation.
   const recommendation = recommendModels(brief);
+  /**
+   * Licence policy, before a price is quoted.
+   *
+   * `submitGeneration` refuses an unrunnable model, so nothing here can spend.
+   * But a quote is a commitment in its own right — it names a credit price and
+   * mints a signed plan token — and issuing one for a model we may not run
+   * would mean the interface offers a deal the server always breaks. Refusing
+   * at the recommendation step keeps the two answers consistent.
+   */
   const selected = body.modelId
-    ? MODEL_CAPABILITIES.find((m) => m.id === body.modelId)
+    ? MODEL_CAPABILITIES.find((m) => m.id === body.modelId && isRunnable(m.id))
     : recommendation.recommended?.model;
+
+  if (selected && !isRunnable(selected.id)) {
+    return NextResponse.json(
+      { error: MODEL_UNAVAILABLE_MESSAGE, code: MODEL_UNAVAILABLE_CODE },
+      { status: 400 },
+    );
+  }
 
   const selectedVerdict = selected
     ? recommendation.verdicts.find((v) => v.model.id === selected.id)
@@ -327,9 +348,20 @@ async function planImage(
   }
 
   const recommendation = recommendImageModels(brief);
+  // Same gate as the video branch above, for the same reason.
   const selected = body.modelId
-    ? findImageModel(body.modelId)
+    ? (() => {
+        const found = findImageModel(body.modelId);
+        return found && isRunnable(found.id) ? found : undefined;
+      })()
     : recommendation.recommended?.model;
+
+  if (selected && !isRunnable(selected.id)) {
+    return NextResponse.json(
+      { error: MODEL_UNAVAILABLE_MESSAGE, code: MODEL_UNAVAILABLE_CODE },
+      { status: 400 },
+    );
+  }
 
   const selectedVerdict = selected
     ? recommendation.verdicts.find((v) => v.model.id === selected.id)
