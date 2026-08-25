@@ -155,34 +155,35 @@ export const MODEL_POLICIES: readonly ModelPolicy[] = [
     publicName: "Motion 1",
     hostedEndpoint: "replicate:wan-video/wan-2.2-t2v-fast",
     auditedVersion: "c483b1f7",
-    licence: "Not published on the endpoint. Wan 2.2 upstream is Apache-2.0.",
-    /**
-     * False because unverified, not because it is known to be forbidden.
-     *
-     * These two flags record what has been *confirmed*, and the upstream
-     * project being permissively licensed is not confirmation that the hosted
-     * endpoint passes that permission on. Marking them true on a guess would
-     * make the table read like a rubber stamp for every model nobody checked.
-     */
-    commercialSaasUse: false,
-    outputsSellable: false,
-    attribution: "Unconfirmed — see reason.",
-    trademark: "Do not imply endorsement.",
-    acceptableUse: "Unconfirmed.",
-    evidenceUrl: "https://replicate.com/wan-video/wan-2.2-t2v-fast",
+    licence: "Apache-2.0, inherited by the optimised build from Wan 2.2 A14B",
+    commercialSaasUse: true,
+    outputsSellable: true,
+    attribution:
+      "Apache-2.0 notice retained upstream; none required on output. Wan-AI state they claim no rights over generated content.",
+    trademark: "Do not imply endorsement by Wan-AI or PrunaAI.",
+    acceptableUse: "Apache-2.0 imposes no field-of-use restriction.",
+    evidenceUrl: "https://huggingface.co/Wan-AI/Wan2.2-T2V-A14B",
     verifiedOn: "2026-08-25",
     /**
-     * Live and already sold, with no licence published on the endpoint.
+     * The endpoint publishes no licence of its own, which is why the first
+     * pass recorded this as unverified. Following it upstream closes it:
      *
-     * `REVIEW_REQUIRED` rather than `BLOCKED`: nothing here is evidence of a
-     * restriction, only an absence of evidence of permission, and the upstream
-     * project is permissively licensed. The distinction is for whoever
-     * finishes the review — it changes nothing operationally, because a review
-     * verdict does not run either.
+     *   1. Wan-AI release Wan 2.2 A14B under Apache-2.0 and state they claim
+     *      no rights over generated content.
+     *   2. PrunaAI, whose optimised build this endpoint serves, state that
+     *      "the base model's limitations and licensing terms remain applicable
+     *      to this adaptation" — so the derivative carries Apache-2.0 too.
+     *   3. Replicate grant commercial output rights *subject to third-party
+     *      terms*, and those third-party terms are the Apache-2.0 in (1).
+     *
+     * Step 3 is the one worth being careful about. Replicate hosting a model
+     * and billing for it proves only what they will charge; their terms
+     * explicitly put the licence check on us. The verdict rests on (1) and
+     * (2), which are the actual grant.
      */
-    verdict: "REVIEW_REQUIRED",
+    verdict: "ALLOWED",
     reason:
-      "No licence published on the hosted endpoint. Upstream Wan 2.2 is Apache-2.0, but the hosted terms are unverified.",
+      "Apache-2.0 upstream, expressly inherited by the optimised build this endpoint serves; commercial use and output sale permitted.",
   },
   {
     modelId: "replicate/video-pro",
@@ -198,9 +199,22 @@ export const MODEL_POLICIES: readonly ModelPolicy[] = [
     acceptableUse: "Unconfirmed.",
     evidenceUrl: "https://replicate.com/bytedance/seedance-1-lite",
     verifiedOn: "2026-08-25",
+    /**
+     * The one that could not be closed from public sources.
+     *
+     * Motion 1 resolved because its endpoint sits on top of a published
+     * open licence. Seedance has no equivalent: the model is ByteDance's,
+     * proprietary, and neither the endpoint nor any ByteDance page states
+     * terms for resale of its output. Replicate's own terms grant output
+     * rights only *subject to* third-party terms, so with no third-party
+     * terms to read there is nothing to rely on.
+     *
+     * Clearing this needs an answer from ByteDance or Replicate, not more
+     * searching. Until then it does not run.
+     */
     verdict: "REVIEW_REQUIRED",
     reason:
-      "No licence published on the hosted endpoint and no upstream open licence identified.",
+      "Proprietary ByteDance model with no terms published by the endpoint or the vendor; commercial resale rights cannot be established from public sources.",
   },
   {
     modelId: "replicate/veo-3.1-fast",

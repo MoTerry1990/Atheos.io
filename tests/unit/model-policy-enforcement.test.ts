@@ -111,7 +111,6 @@ describe("a model the licence registry refuses", () => {
 
 describe("a model awaiting licence verification", () => {
   for (const modelId of [
-    "replicate/video-gen",
     "replicate/video-pro",
     "replicate/veo-3.1-fast",
     "replicate/veo-3.1",
@@ -150,5 +149,23 @@ describe("an allowed model is not affected", () => {
     await expect(
       submitGeneration(request("replicate/sfx")),
     ).rejects.not.toMatchObject({ code: "model_unavailable" });
+  });
+
+  it("lets Motion 1 through, now its licence chain is documented", async () => {
+    /**
+     * The verdict this sprint changed. Motion 1's endpoint publishes no
+     * licence, but the build it serves inherits Apache-2.0 from Wan 2.2 and
+     * both vendors say so — so it is allowed on evidence rather than left
+     * pending on an absence of it.
+     *
+     * It still fails here, because `findModel` is mocked away. The code is
+     * what matters: `unknown_model` means it got past the licence gate and
+     * died in ordinary validation.
+     */
+    findModel.mockReturnValue(undefined);
+
+    await expect(
+      submitGeneration(request("replicate/video-gen")),
+    ).rejects.toMatchObject({ code: "unknown_model" });
   });
 });

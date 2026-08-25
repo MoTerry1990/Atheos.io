@@ -126,11 +126,17 @@ describe("models awaiting verification", () => {
     (policy) => policy.verdict === "REVIEW_REQUIRED",
   );
 
-  it("covers every model whose endpoint publishes no licence", () => {
+  it("covers every model whose terms could not be established", () => {
+    /**
+     * Motion 1 is deliberately absent. Its endpoint publishes no licence
+     * either, but the build it serves inherits Apache-2.0 from Wan 2.2 and
+     * the vendors say so in writing — so it was resolved by reading the
+     * chain rather than left pending. What remains here is proprietary:
+     * ByteDance's and Google's, with no resale terms published anywhere.
+     */
     expect(pending.map((p) => p.modelId).sort()).toEqual([
       "replicate/veo-3.1",
       "replicate/veo-3.1-fast",
-      "replicate/video-gen",
       "replicate/video-pro",
     ]);
   });
