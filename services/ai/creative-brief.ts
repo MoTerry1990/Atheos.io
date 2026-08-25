@@ -26,7 +26,14 @@
  * the confirmation panel can show what was assumed and let it be changed.
  */
 
-export const CREATIVE_BRIEF_VERSION = 1;
+/**
+ * Version 2 adds `composition`.
+ *
+ * Bumped because the shape changed and the version is hashed into a signed
+ * plan token: a token issued against a version-1 brief must not verify against
+ * a version-2 one, or a confirmation could be replayed for a different frame.
+ */
+export const CREATIVE_BRIEF_VERSION = 2;
 
 /** Where a value came from. Shown to the user, never collapsed away. */
 export type Provenance =
@@ -86,6 +93,23 @@ export interface BriefShot {
   subjectAction: string;
 }
 
+/** How the frame is arranged. Every field is directable by the user. */
+export interface Composition {
+  shotScale: "extreme_close" | "close" | "medium" | "wide" | "extreme_wide";
+  /** Fraction of the frame the subject should occupy, 0-1. */
+  subjectOccupancy: number;
+  cameraHeight: "low" | "eye" | "elevated" | "aerial";
+  /** A lens family in millimetres, not a precise focal length. */
+  lensMm: number;
+  /** True when the named place is part of the request rather than a backdrop. */
+  environmentIsEssential: boolean;
+  /** The preposition the user wrote, so the compiled sentence reads correctly. */
+  environmentPreposition: string;
+  foreground: string;
+  midground: string;
+  background: string;
+}
+
 export interface CreativeBrief {
   version: number;
   /** Never modified. Not normalised, not trimmed, not re-cased. */
@@ -97,6 +121,16 @@ export interface CreativeBrief {
   subjectIdentity: Sourced<string[]>;
   environment: Sourced<string>;
   action: Sourced<string>;
+  /**
+   * How the shot is framed.
+   *
+   * Added in version 2. Before it, every composition decision was made against
+   * nothing: the compiler had a subject and a place and no instruction about
+   * how much of the frame each should occupy, so a text-to-image model did what
+   * it does by default — filled the frame with the subject and smeared the
+   * location behind it.
+   */
+  composition: Sourced<Composition>;
   visualStyle: Sourced<string>;
   realism: Sourced<"photorealistic" | "stylised" | "animated">;
   colorAndLighting: Sourced<string>;

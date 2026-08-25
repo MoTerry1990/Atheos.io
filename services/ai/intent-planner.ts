@@ -1,3 +1,4 @@
+import { readSceneIntent } from "@/services/ai/scene-intent";
 import {
   CREATIVE_BRIEF_VERSION,
   explicit,
@@ -224,12 +225,32 @@ export function planFromPrompt(input: PlannerInput): CreativeBrief {
           "no reference was supplied",
         );
 
+  /**
+   * The scene, read deterministically from the prompt.
+   *
+   * Deliberately before the brief is built: subject, environment, action and
+   * the composition that follows from them are the fields the rest of this
+   * function used to leave empty.
+   */
+  const scene = readSceneIntent(input.prompt);
+
   const brief: CreativeBrief = {
     version: CREATIVE_BRIEF_VERSION,
     // Preserved exactly. Not trimmed, not normalised.
     originalPrompt: input.prompt,
     objective: objectiveSourced,
-    primarySubject: fallback("", "not identified without a planner call"),
+    /**
+     * Read from the prompt by `readSceneIntent`.
+     *
+     * This was `fallback("", "not identified without a planner call")` — an
+     * admission that nothing parsed the scene, which left every composition
+     * decision downstream working from a blank brief. That is why "a red dragon
+     * on a castle" came back as a creature portrait with the castle smeared
+     * behind it.
+     */
+    primarySubject: scene.subjectExtracted
+      ? inferred(scene.subject, scene.confidence, "read from your prompt")
+      : fallback("", "no subject could be identified in this prompt"),
     subjectIdentity:
       refCount > 0
         ? inferred(
@@ -238,8 +259,56 @@ export function planFromPrompt(input: PlannerInput): CreativeBrief {
             "a reference usually means the subject should match",
           )
         : fallback([], "no reference to match"),
-    environment: fallback("", "taken from the prompt as written"),
-    action: fallback("", "taken from the prompt as written"),
+    /**
+     * A named place is a request to see it.
+     *
+     * Marked `inferred` rather than `confirmed` so it appears in the
+     * "Atheos understood" panel as something the user can correct — the
+     * environmental default is a strong opinion and it has to be visibly
+     * reversible.
+     */
+    environment: scene.environment
+      ? inferred(
+          scene.environment,
+          scene.confidence,
+          "your prompt names this place, so the shot should show it",
+        )
+      : fallback("", "no location was named"),
+    action: scene.action
+      ? inferred(scene.action, scene.confidence, "read from your prompt")
+      : fallback("", "no action was described"),
+    composition: scene.explicit.shotScale
+      ? explicit(
+          {
+            shotScale: scene.shotScale,
+            subjectOccupancy: scene.subjectOccupancy,
+            cameraHeight: scene.cameraHeight,
+            lensMm: scene.lensMm,
+            environmentIsEssential: scene.environmentIsEssential,
+            environmentPreposition: scene.environmentPreposition,
+            foreground: scene.foreground,
+            midground: scene.midground,
+            background: scene.background,
+          },
+          "you asked for this framing",
+        )
+      : inferred(
+          {
+            shotScale: scene.shotScale,
+            subjectOccupancy: scene.subjectOccupancy,
+            cameraHeight: scene.cameraHeight,
+            lensMm: scene.lensMm,
+            environmentIsEssential: scene.environmentIsEssential,
+            environmentPreposition: scene.environmentPreposition,
+            foreground: scene.foreground,
+            midground: scene.midground,
+            background: scene.background,
+          },
+          scene.confidence,
+          scene.environmentIsEssential
+            ? "your prompt names a place, so the frame should show it"
+            : "a neutral framing until you say otherwise",
+        ),
     visualStyle:
       objective === "commercial"
         ? inferred(

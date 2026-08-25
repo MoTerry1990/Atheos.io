@@ -420,7 +420,10 @@ describe("24. no provider call happens in planning", () => {
 
   it("plans entirely from pure functions", () => {
     const brief = planFromPrompt({ prompt: SHORT_PROMPT });
-    expect(brief.version).toBe(1);
+    // Version 2 added `composition`. The number is hashed into the signed plan
+    // token, so a bump is deliberate: a version-1 confirmation must not verify
+    // against a version-2 brief.
+    expect(brief.version).toBe(2);
     // Same input, same output — nothing non-deterministic, nothing remote.
     expect(JSON.stringify(planFromPrompt({ prompt: SHORT_PROMPT }))).toBe(
       JSON.stringify(brief),
