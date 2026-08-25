@@ -40,6 +40,15 @@ export interface DecodedAudio {
   decoded: boolean;
   /** Class name only — a decoder message can carry a path. */
   decodeError?: string;
+  /**
+   * Set when measurement was *declined* rather than attempted and failed.
+   *
+   * A file above the size or duration limit may be perfectly good; we simply
+   * did not open it. The gate treats this as missing evidence — `best_effort` —
+   * not as evidence of broken audio, and keeping it in its own field is what
+   * makes that distinction possible.
+   */
+  notMeasured?: string;
 
   channels?: number;
   sampleRate?: number;
@@ -81,7 +90,49 @@ const BLOCK_STEP = 0.1;
 /** Absolute gate, LUFS. Blocks quieter than this never count. */
 const ABSOLUTE_GATE_LUFS = -70;
 
+// --- limits ----------------------------------------------------------------
+//
+// A decoder turns a compressed file into PCM in memory, and PCM is far larger
+// than what it came from: one minute of 48 kHz stereo Float32 is 23 MB, so a
+// long file expands into hundreds of megabytes inside a lambda that also holds
+// the original buffer. Every limit below exists to keep an unusual input from
+// taking the delivery path down, and each one *reports* rather than throws —
+// a refusal to measure is not a failed measurement, and the gate distinguishes
+// them.
+
+/**
+ * Largest file this will attempt to decode.
+ *
+ * 120 MB is far above anything the catalogue produces — the 8-second benchmark
+ * is 7.3 MB — and well under the point where holding the compressed bytes plus
+ * the decoded PCM threatens the function's memory.
+ */
+const MAX_INPUT_BYTES = 120 * 1024 * 1024;
+
+/**
+ * Longest track this will measure, seconds.
+ *
+ * Ten minutes of 48 kHz stereo is ~230 MB of Float32. No model in the
+ * catalogue can produce a clip remotely this long; the cap exists so that a
+ * malformed header claiming an enormous duration cannot allocate its way
+ * through the heap.
+ */
+const MAX_DURATION_SECONDS = 600;
+
+/**
+ * How long decoding may take before it is abandoned.
+ *
+ * The route's own ceiling is 60 s and the observed decode of a real render is
+ * 187 ms. Fifteen seconds is two orders of magnitude of headroom and still
+ * leaves the request time to settle credits and answer — a decode that hangs
+ * must not be what turns a delivery into a timeout.
+ */
+const DECODE_TIMEOUT_MS = 15_000;
+
 const dB = (value: number) => 20 * Math.log10(Math.max(value, 1e-12));
+
+/** Distinguishes a decode that ran out of time from one that failed. */
+class DecodeTimeout extends Error {}
 
 /**
  * Decode and measure.
@@ -93,6 +144,24 @@ const dB = (value: number) => 20 * Math.log10(Math.max(value, 1e-12));
 export async function measureDecodedAudio(
   bytes: Buffer,
 ): Promise<DecodedAudio> {
+  /**
+   * Refuse before allocating, not after.
+   *
+   * `notMeasured` rather than `decodeError`: the file may be perfectly fine and
+   * we simply declined to open it. The gate must not read that as evidence of
+   * broken audio, which is why it is a separate field.
+   */
+  if (bytes.byteLength > MAX_INPUT_BYTES) {
+    return {
+      decoded: false,
+      notMeasured: `file is ${Math.round(bytes.byteLength / 1024 / 1024)} MB, above the ${MAX_INPUT_BYTES / 1024 / 1024} MB decode limit`,
+    };
+  }
+
+  if (bytes.byteLength === 0) {
+    return { decoded: false, decodeError: "empty file" };
+  }
+
   let channelData: Float32Array[];
   let sampleRate: number;
 
@@ -103,7 +172,22 @@ export async function measureDecodedAudio(
      * cold start would tax the common case for the rare one.
      */
     const decode = (await import("audio-decode")).default;
-    const audio = (await decode(bytes)) as {
+
+    /**
+     * Bounded. A decoder handed a hostile or pathological file can spin, and an
+     * unbounded await on the delivery path turns that into a request that never
+     * answers — the customer waits, the lambda burns its full duration, and the
+     * generation settles neither way.
+     */
+    const audio = (await Promise.race([
+      decode(bytes),
+      new Promise((_, reject) =>
+        setTimeout(
+          () => reject(new DecodeTimeout("decode exceeded its time limit")),
+          DECODE_TIMEOUT_MS,
+        ),
+      ),
+    ])) as {
       channelData: Float32Array[];
       sampleRate: number;
     };
@@ -123,6 +207,26 @@ export async function measureDecodedAudio(
   }
 
   const frames = channelData[0].length;
+
+  /**
+   * Refuse to analyse an implausibly long track.
+   *
+   * The samples are already decoded by this point, so the memory is spent — but
+   * the measurement passes below are O(samples) across several passes, and
+   * running them on a ten-minute buffer is what would exhaust the time budget
+   * rather than the heap.
+   */
+  const seconds = frames / sampleRate;
+  if (seconds > MAX_DURATION_SECONDS) {
+    return {
+      decoded: false,
+      channels: channelData.length,
+      sampleRate,
+      durationSeconds: seconds,
+      notMeasured: `track is ${Math.round(seconds)}s, above the ${MAX_DURATION_SECONDS}s measurement limit`,
+    };
+  }
+
   if (frames === 0) {
     return {
       decoded: true,

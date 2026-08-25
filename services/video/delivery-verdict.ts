@@ -69,6 +69,8 @@ export interface VerdictDetail {
   /** Decoded */
   decoded: boolean;
   decodeError?: string;
+  /** Set when a limit stopped the measurement before it was attempted. */
+  notMeasured?: string;
   peakDbfs?: number;
   rmsDbfs?: number;
   integratedLufs?: number;
@@ -217,6 +219,7 @@ export async function judgeDelivery(input: {
     containerError: probe.error,
     decoded: decoded.decoded,
     decodeError: decoded.decodeError,
+    notMeasured: decoded.notMeasured,
     peakDbfs: decoded.peakDbfs,
     rmsDbfs: decoded.rmsDbfs,
     integratedLufs: decoded.integratedLufs,
@@ -254,7 +257,17 @@ export async function judgeDelivery(input: {
 
   // --- promised: decoded --------------------------------------------------
   if (failures.length === 0) {
-    if (!decoded.decoded) {
+    if (decoded.notMeasured) {
+      /**
+       * Declined, not failed.
+       *
+       * The file exceeded a decode limit, so we have structural evidence and no
+       * decoded evidence. Failing would refuse a render for being large;
+       * passing would claim a measurement that never happened. `best_effort` is
+       * the only honest answer, and the warning says which limit stopped it.
+       */
+      warnings.push(`audio was not fully measured: ${decoded.notMeasured}`);
+    } else if (!decoded.decoded) {
       failures.push(
         `audio was promised and could not be decoded: ${decoded.decodeError ?? "unknown"}`,
       );

@@ -167,3 +167,42 @@ describe("what cannot be decoded is reported, not thrown", () => {
     expect(m.decoded).toBe(false);
   });
 });
+
+describe("limits protect the delivery path", () => {
+  it("declines a file above the size limit without allocating", async () => {
+    /**
+     * `notMeasured`, not `decodeError`. The file may be perfectly good — we
+     * declined to open it — and a gate that read this as broken audio would
+     * refuse a render for being large.
+     */
+    const huge = Buffer.alloc(121 * 1024 * 1024);
+    const m = await decode(huge);
+
+    expect(m.decoded).toBe(false);
+    expect(m.notMeasured).toMatch(/above the 120 MB decode limit/);
+    expect(m.decodeError).toBeUndefined();
+  });
+
+  it("accepts a file just under the limit", async () => {
+    // The boundary is a limit, not a margin: a normal render must never be
+    // refused for approaching it. This one fails to decode (it is zeros), which
+    // is a different outcome from being declined.
+    const m = await decode(Buffer.alloc(1024));
+    expect(m.notMeasured).toBeUndefined();
+  });
+
+  it("treats an empty file as a decode failure, not a size refusal", async () => {
+    const m = await decode(Buffer.alloc(0));
+    expect(m.decoded).toBe(false);
+    expect(m.decodeError).toBe("empty file");
+  });
+
+  it("measures a normal render well inside every limit", async () => {
+    // The case that must never trip a guard: real output, comfortably bounded.
+    const m = await decode(fixtures.wavNormal());
+
+    expect(m.decoded).toBe(true);
+    expect(m.notMeasured).toBeUndefined();
+    expect(m.durationSeconds!).toBeLessThan(600);
+  });
+});

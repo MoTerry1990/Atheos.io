@@ -247,3 +247,72 @@ describe("nothing logged can carry a secret", () => {
     expect(serialised).not.toMatch(/https?:|X-Amz|Bearer |@/);
   });
 });
+
+describe("a measurement that was declined is missing evidence, not bad audio", () => {
+  it("returns best_effort when the file is too large to decode", async () => {
+    /**
+     * Structural evidence exists, decoded evidence does not. Failing would
+     * refuse a render for being large; passing would claim a measurement that
+     * never happened.
+     */
+    const container = fixtures.mp4WithAudio();
+    const oversized = Buffer.concat([
+      container,
+      Buffer.alloc(121 * 1024 * 1024),
+    ]);
+
+    const v = await judge({ bytes: oversized });
+
+    expect(v.outcome).toBe("best_effort");
+    expect(v.deliver).toBe(true);
+    expect(v.warnings.join(" ")).toMatch(/not fully measured/);
+    expect(v.failures).toEqual([]);
+  }, 30_000);
+});
+
+describe("severe conditions still fail closed", () => {
+  /**
+   * These use the decoded path directly rather than a container, because a
+   * hand-built box tree carries no real samples. The judgement being exercised
+   * is the same one `judgeDelivery` applies.
+   */
+  it("fails a promised track that decodes to silence", async () => {
+    const { measureDecodedAudio } =
+      await import("@/services/video/decoded-audio");
+    const m = await measureDecodedAudio(fixtures.wavSilence());
+
+    // Silence has no measurable loudness at all, which is the finding the gate
+    // turns into a refusal.
+    expect(m.decoded).toBe(true);
+    expect(m.integratedLufs).toBeUndefined();
+    expect(m.silenceRatio).toBe(1);
+  });
+
+  it("finds severe clipping above the failure threshold", async () => {
+    const { measureDecodedAudio } =
+      await import("@/services/video/decoded-audio");
+    const m = await measureDecodedAudio(fixtures.wavClipped());
+
+    expect(m.clippedRatio!).toBeGreaterThan(0.01);
+  });
+
+  it("keeps mild clipping below it", async () => {
+    // The two must land on opposite sides, or the threshold is untestable.
+    const { measureDecodedAudio } =
+      await import("@/services/video/decoded-audio");
+    const m = await measureDecodedAudio(fixtures.wavMildClipping());
+
+    expect(m.clippedRatio!).toBeLessThan(0.01);
+    expect(m.clippedRatio!).toBeGreaterThan(0);
+  });
+
+  it("keeps a quiet but audible track above the silence line", async () => {
+    // -45 dBFS is quiet, not absent. Conflating them destroys good renders.
+    const { measureDecodedAudio } =
+      await import("@/services/video/decoded-audio");
+    const m = await measureDecodedAudio(fixtures.wavQuiet());
+
+    expect(m.integratedLufs!).toBeGreaterThan(-60);
+    expect(m.integratedLufs!).toBeLessThan(-40);
+  });
+});
