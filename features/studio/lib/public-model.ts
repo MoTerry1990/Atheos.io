@@ -1,4 +1,5 @@
 import { AUDIO_CAPABILITIES } from "@/services/ai/audio-strategy";
+import { policyFor } from "@/services/ai/model-policy";
 import {
   catalogueModelId,
   publicModelId,
@@ -181,7 +182,19 @@ export function toPublicModel(model: StudioModel): PublicStudioModel {
     aspectRatios: capabilities.aspectRatios ?? [],
     resolutions: capabilities.imageResolutions ?? [],
     typicalWait: typicalWaitOf(model),
-    availability: "available",
+    /**
+     * Read from the licence registry, not hardcoded.
+     *
+     * `owner_beta` is what makes the "Owner evaluation" badge honest: it marks
+     * a model the owner may run and no customer may buy. A customer never sees
+     * the value because the catalogue filters those models out before this
+     * runs — but if the filter ever regressed, the badge would say so rather
+     * than presenting an unsellable model as ordinary stock.
+     */
+    availability:
+      policyFor(model.id)?.status === "OWNER_EVALUATION_ONLY_PENDING_TERMS"
+        ? "owner_beta"
+        : "available",
   };
 }
 

@@ -480,27 +480,6 @@ export const MODEL_COSTS: readonly ModelCostEntry[] = [
     checked: "2026-08-24 (Replicate published pricing panel)",
   },
   {
-    modelId: "replicate/veo-3.1-lite",
-    provider: "replicate",
-    modality: "VIDEO",
-    perOutputMicroUsd: 0,
-    // 1080p, the dearer of the two rungs the customer can select.
-    perSecondMicroUsd: 80_000,
-    billingUnit: "per_second",
-    assumptions: {
-      maxDurationSeconds: 8,
-      resolution: "1080p worst case; 720p is $0.05/s",
-      note: "Audio cannot be disabled on this model.",
-    },
-    // 4s x $0.08 x 3.0 / $0.005 = 192, scaling to 384 at 8s.
-    creditCost: 192,
-    enabled: true,
-    freeTierEligible: false,
-    minimumMarginMultiple: 3,
-    verification: "estimated",
-    checked: "2026-08-24 (Replicate published pricing panel)",
-  },
-  {
     modelId: "replicate/music",
     provider: "replicate",
     modality: "AUDIO",

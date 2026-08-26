@@ -240,3 +240,164 @@ test.describe("keyboard and labels", () => {
     expect(visible).toBe(true);
   });
 });
+
+test.describe("the video model selector", () => {
+  /**
+   * The defect this sprint exists for.
+   *
+   * The owner's catalogue genuinely contained Motion Pro and both Cinematic
+   * tiers, and the Studio showed none of them — it pinned `available[0]` and
+   * offered no way to change it. It read as a missing catalogue and was a
+   * missing control, which is why these assert the *cards*, not the response.
+   */
+  const openVideo = async (page: import("@playwright/test").Page) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(PREVIEW);
+    await page.getByRole("button", { name: "Video" }).click();
+  };
+
+  test("offers all four video models", async ({ page }) => {
+    await openVideo(page);
+
+    for (const name of [
+      "Motion 1",
+      "Motion Pro",
+      "Cinematic Fast",
+      "Cinematic",
+    ]) {
+      await expect(
+        page.getByRole("radio", { name: new RegExp(name) }).first(),
+      ).toBeVisible();
+    }
+
+    await page.screenshot({ path: `${SHOTS}/09-model-selector.png` });
+  });
+
+  test("states silence or sound on every card", async ({ page }) => {
+    // The honesty requirement, read off the rendered cards.
+    await openVideo(page);
+    const group = page.getByRole("radiogroup", { name: "Model" });
+
+    await expect(group.getByText("Silent").first()).toBeVisible();
+    await expect(group.getByText("Native audio").first()).toBeVisible();
+  });
+
+  test("selecting Motion Pro actually selects it", async ({ page }) => {
+    await openVideo(page);
+
+    const card = page.getByRole("radio", { name: /Motion Pro/ });
+    await card.click();
+
+    await expect(card).toHaveAttribute("aria-checked", "true");
+    // And the audio line follows the selection rather than the first model.
+    await expect(page.getByText(/This clip will be silent/)).toBeVisible();
+
+    await page.screenshot({ path: `${SHOTS}/10-motion-pro-selected.png` });
+  });
+
+  test("Cinematic Fast reports synchronised sound", async ({ page }) => {
+    await openVideo(page);
+    await page.getByRole("radio", { name: /Cinematic Fast/ }).click();
+
+    await expect(
+      page.getByText(/will include synchronised sound/),
+    ).toBeVisible();
+
+    await page.screenshot({ path: `${SHOTS}/11-cinematic-fast-audio.png` });
+  });
+
+  test("owner-evaluation models are badged", async ({ page }) => {
+    await openVideo(page);
+    await expect(page.getByText("Owner evaluation").first()).toBeVisible();
+  });
+
+  test("native audio on a Motion model is a conflict, not a warning", async ({
+    page,
+  }) => {
+    /**
+     * Submitting anyway would deliver the opposite of what was asked for, so
+     * the interface offers the switch rather than letting it through.
+     */
+    await openVideo(page);
+    await page.getByRole("radio", { name: /Motion Pro/ }).click();
+    await page
+      .getByRole("radiogroup", { name: "Audio" })
+      .getByRole("radio", { name: "Native audio" })
+      .click();
+
+    /**
+     * Scoped to the composer. Next.js mounts its own `role="alert"` route
+     * announcer on every page, so an unscoped query matches two elements and
+     * fails on strict mode rather than on the thing under test.
+     */
+    const alert = page.getByLabel("Composer").getByRole("alert");
+    await expect(alert).toBeVisible();
+    await expect(alert).toContainText("produces no audio track");
+    await expect(
+      alert.getByRole("button", { name: /Switch to Cinematic Fast/ }),
+    ).toBeVisible();
+
+    await page.screenshot({ path: `${SHOTS}/12-audio-conflict.png` });
+  });
+
+  test("the switch names its price before it is taken", async ({ page }) => {
+    // Never silently increase the customer's cost.
+    await openVideo(page);
+    await page.getByRole("radio", { name: /Motion Pro/ }).click();
+    await page
+      .getByRole("radiogroup", { name: "Audio" })
+      .getByRole("radio", { name: "Native audio" })
+      .click();
+
+    await expect(
+      page.getByRole("button", {
+        name: /Switch to Cinematic Fast · \d+ credits/,
+      }),
+    ).toBeVisible();
+  });
+
+  test("taking the switch resolves the conflict", async ({ page }) => {
+    await openVideo(page);
+    await page.getByRole("radio", { name: /Motion Pro/ }).click();
+    await page
+      .getByRole("radiogroup", { name: "Audio" })
+      .getByRole("radio", { name: "Native audio" })
+      .click();
+    await page
+      .getByRole("button", { name: /Switch to Cinematic Fast/ })
+      .click();
+
+    await expect(page.getByLabel("Composer").getByRole("alert")).toHaveCount(0);
+    await expect(
+      page.getByText(/will include synchronised sound/),
+    ).toBeVisible();
+  });
+
+  test("no vendor is named in the selector", async ({ page }) => {
+    await openVideo(page);
+    const content = await page.content();
+
+    expect(content).not.toMatch(
+      /replicate|google\/veo|bytedance|seedance|wan-video|musicgen/i,
+    );
+  });
+
+  test("the selector is usable on a phone", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto(PREVIEW);
+    await page.getByRole("button", { name: "Video" }).click();
+
+    await expect(
+      page.getByRole("radio", { name: /Cinematic Fast/ }),
+    ).toBeVisible();
+
+    const overflow = await page.evaluate(
+      () =>
+        document.documentElement.scrollWidth -
+        document.documentElement.clientWidth,
+    );
+    expect(overflow).toBeLessThanOrEqual(0);
+
+    await page.screenshot({ path: `${SHOTS}/13-mobile-selector.png` });
+  });
+});

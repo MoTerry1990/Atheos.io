@@ -188,7 +188,20 @@ export const CINEMATIC: SequenceModelFacts = {
     "Google published price, 2026-08-22. Replicate margin unverified — confirm on first invoice.",
 };
 
-/** Cinematic Lite — google/veo-3.1-lite. */
+/**
+ * Cinematic Lite — `google/veo-3.1-lite`. **Not offered.**
+ *
+ * Kept as a facts constant because `veo-adapter.ts` still carries its
+ * behaviour — always-on audio, no negative prompt, no reference images — and
+ * that code is covered by tests. Deleting the constant would mean deleting
+ * tests for live code.
+ *
+ * What it is *not* in: the provider catalogue, the policy registry,
+ * `SEQUENCE_MODEL_FACTS` and `VIDEO_TIERS`. So nothing can select it, price it
+ * or run it. It is a separate endpoint on a separate pinned version from the
+ * two Cinematic tiers, which makes it a separate licence question that has not
+ * been answered.
+ */
 export const CINEMATIC_LITE: SequenceModelFacts = {
   id: "replicate/veo-3.1-lite",
   label: "Cinematic Lite",
@@ -221,6 +234,17 @@ export const CINEMATIC_LITE: SequenceModelFacts = {
   costBasis:
     "Google published price, 2026-08-22. Replicate margin unverified — confirm on first invoice.",
 };
+
+/**
+ * Cinematic Lite is absent throughout.
+ *
+ * `google/veo-3.1-lite` is a separate endpoint on a separate pinned version
+ * from the two Cinematic tiers, so it is a separate licence question — and one
+ * nobody has answered. It was removed from the provider catalogue rather than
+ * given a policy entry, and these tables follow, because a capability, price
+ * or tier row for a model no adapter serves is a row that will eventually be
+ * offered by mistake.
+ */
 
 /**
  * Gemini Omni Flash — Google's own recommended default, and not reachable here.
@@ -349,7 +373,6 @@ export const SEQUENCE_CANDIDATES = [
 export const SEQUENCE_MODEL_FACTS: Record<string, SequenceModelFacts> = {
   "motion-1": MOTION_1,
   "motion-pro": MOTION_PRO,
-  "cinematic-lite": CINEMATIC_LITE,
   "cinematic-fast": CINEMATIC_FAST,
   cinematic: CINEMATIC,
 };
@@ -367,10 +390,6 @@ export const VIDEO_TIERS = [
     facts: MOTION_PRO,
     summary:
       "Higher-quality continuous clip or chained sequence, no native audio",
-  },
-  {
-    facts: CINEMATIC_LITE,
-    summary: "1080p with native audio, always on — no silent export",
   },
   {
     facts: CINEMATIC_FAST,

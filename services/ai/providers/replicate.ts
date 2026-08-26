@@ -68,11 +68,7 @@ const API = "https://api.replicate.com/v1";
  * request whether or not the flag is on — the adapter's job is to know what a
  * model's schema takes, and that does not change with a feature flag.
  */
-const VEO_MODEL_IDS = new Set([
-  "replicate/veo-3.1",
-  "replicate/veo-3.1-fast",
-  "replicate/veo-3.1-lite",
-]);
+const VEO_MODEL_IDS = new Set(["replicate/veo-3.1", "replicate/veo-3.1-fast"]);
 
 const VEO_MODELS: (ProviderModel & { version: string })[] =
   env.ENABLE_VEO_31 === "1"
@@ -131,29 +127,23 @@ const VEO_MODELS: (ProviderModel & { version: string })[] =
             operations: ["text-to-video", "image-to-video"],
           },
         },
-        {
-          id: "replicate/veo-3.1-lite",
-          providerId: "replicate",
-          displayName: "Cinematic Lite",
-          modality: "VIDEO",
-          // 4s at 1080p ($0.08/s, the dearer rung) = $0.32. x3.0 / $0.005 = 192.
-          creditCost: 192,
-          version:
-            "fe0ac882f170a9ee79aa4940abe83fa09f68b1e074cde15c7693a1e2728a9558",
-          capabilities: {
-            // Its schema is seed, image, prompt, duration, last_frame,
-            // resolution, aspect_ratio — and nothing else. No negative prompt.
-            supportsNegativePrompt: false,
-            supportsImageInput: true,
-            supportsSeed: true,
-            aspectRatios: ["16:9", "9:16"],
-            maxOutputs: 1,
-            durations: [4, 6, 8],
-            maxDurationSeconds: 8,
-            cameraMotions: CAMERA_MOTIONS,
-            operations: ["text-to-video", "image-to-video"],
-          },
-        },
+        /**
+         * Cinematic Lite is deliberately absent.
+         *
+         * It looked like a third tier of a model already reviewed, and it is
+         * not: `google/veo-3.1-lite` is its own endpoint, and the version
+         * pinned here — `fe0ac882…` — returns 404 against `veo-3.1-fast`.
+         * A separate endpoint on a separate version is a separate licence
+         * question, and nobody has answered it.
+         *
+         * It was briefly given a policy entry so that the "every catalogue
+         * model has a policy" test would pass. That is the wrong direction:
+         * approving a model to satisfy a test is how an unreviewed endpoint
+         * reaches production. Removed from the catalogue instead, so it fails
+         * closed and Atheos offers exactly four video models.
+         *
+         * Restore it together with a reviewed policy entry, not before.
+         */
       ]
     : [];
 

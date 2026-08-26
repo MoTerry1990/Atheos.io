@@ -26,6 +26,7 @@ import { fixtures } from "@/tests/helpers/audio-fixtures";
  */
 
 const VEO = "replicate/veo-3.1-fast";
+/** Withdrawn from the catalogue on 2026-08-26. See the assertion below. */
 const VEO_LITE = "replicate/veo-3.1-lite";
 const MOTION_1 = "replicate/video-gen";
 
@@ -58,8 +59,23 @@ describe("who promises sound", () => {
     expect(promisesAudio(VEO, false)).toBe(false);
   });
 
-  it("holds Cinematic Lite regardless, because it cannot be silenced", () => {
-    expect(promisesAudio(VEO_LITE, false)).toBe(true);
+  it("promises nothing for a withdrawn model", () => {
+    /**
+     * This asserted the opposite while Cinematic Lite was offered: its schema
+     * has no `generate_audio` field, so it always returned sound and the gate
+     * held it to that whatever the request said.
+     *
+     * It was withdrawn — a separate endpoint on a separate pinned version from
+     * the two Cinematic tiers, so a separate licence question nobody has
+     * answered — and an unknown model must promise nothing. Promising audio
+     * for a model that cannot run would fail a delivery that never happened.
+     *
+     * The `audioAlwaysOn` branch itself is still live and still covered, by a
+     * fixture in `video-audio.test.ts`, because this helper resolves a model
+     * by id and a withdrawn id has nothing to resolve to.
+     */
+    expect(promisesAudio(VEO_LITE, false)).toBe(false);
+    expect(promisesAudio(VEO_LITE, true)).toBe(false);
   });
 
   it("holds Motion 1 to nothing, however the request was phrased", () => {

@@ -173,9 +173,22 @@ export function routeAudio(input: {
   const notes: string[] = [];
   const selectedHasNative = producesNativeAudio(input.selectedModelId);
 
+  /**
+   * Producing sound and being unable to *stop* producing it are different.
+   *
+   * This branch used to refuse silence for any model with native audio, which
+   * told anyone choosing Cinematic Fast + Silent that "a silent export is not
+   * available" — false. Both Cinematic tiers take `generate_audio: false`.
+   * The only models that genuinely cannot be silenced are the ones whose
+   * schema has no audio field at all, and `audioAlwaysOn` is what records that.
+   */
+  const selectedCannotBeSilenced = Boolean(
+    AUDIO_CAPABILITIES[input.selectedModelId]?.audioAlwaysOn,
+  );
+
   // --- SILENT: the cheap models are exactly right ------------------------
   if (intent === "SILENT") {
-    if (selectedHasNative) {
+    if (selectedCannotBeSilenced) {
       notes.push(
         "This model always generates sound, so a silent export is not available on it.",
       );

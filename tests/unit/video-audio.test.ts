@@ -28,7 +28,27 @@ import { runAudioGate, settleGeneration } from "@/services/video/audio-gate";
 const MOTION_1 = AUDIO_CAPABILITIES["replicate/video-gen"];
 const MOTION_PRO = AUDIO_CAPABILITIES["replicate/video-pro"];
 const CINEMATIC_FAST = AUDIO_CAPABILITIES["replicate/veo-3.1-fast"];
-const CINEMATIC_LITE = AUDIO_CAPABILITIES["replicate/veo-3.1-lite"];
+/**
+ * An always-on fixture, not a catalogue entry.
+ *
+ * This used to read `AUDIO_CAPABILITIES["replicate/veo-3.1-lite"]`. Cinematic
+ * Lite was withdrawn on 2026-08-26 — a separate endpoint on a separate pinned
+ * version from the two Cinematic tiers, so a separate licence question nobody
+ * has answered — and `catalogue-integrity` requires every audio-strategy entry
+ * to be backed by a servable model, which it no longer is.
+ *
+ * The `audioAlwaysOn` branch in `resolveAudioStrategy` is still live code, so
+ * the coverage stays and the fixture supplies the shape the catalogue no
+ * longer does. If Lite returns with a reviewed policy, this can point back at
+ * the real entry.
+ */
+const ALWAYS_ON_FIXTURE = {
+  id: "fixture/always-on",
+  label: "Always-on fixture",
+  strategies: ["NATIVE"] as const,
+  audioAlwaysOn: true,
+  note: "This model always generates sound and offers no way to turn it off.",
+};
 /**
  * "Cinematic Long" (`seedance-2.5`) was removed with the rest of that phantom:
  * it had an audio strategy, a routing row and a compiler, and no registry entry
@@ -55,10 +75,18 @@ const PROMISED = {
 };
 
 describe("1. every video model declares an audio strategy", () => {
-  it("declares at least one, for all five tiers", () => {
-    // Five, not six: the sixth was `seedance-2.5`, which no adapter served.
+  it("declares at least one, for every offered tier", () => {
+    /**
+     * Four, not five. `seedance-2.5` went first — routable and quoted but
+     * served by no adapter. Cinematic Lite went on 2026-08-26, for the
+     * opposite reason: a real endpoint, but a separate one on a separate
+     * pinned version, so a separate licence question that is unanswered.
+     *
+     * Counted rather than listed so a model added without an audio entry
+     * fails here, which is the point of the assertion.
+     */
     const ids = Object.keys(AUDIO_CAPABILITIES);
-    expect(ids.length).toBeGreaterThanOrEqual(5);
+    expect(ids.length).toBeGreaterThanOrEqual(4);
     for (const id of ids) {
       const model = AUDIO_CAPABILITIES[id];
       expect(model.strategies.length, id).toBeGreaterThan(0);
@@ -78,7 +106,19 @@ describe("2. Motion 1 never claims native audio", () => {
   it("declares no native strategy", () => {
     // wan-2.2-t2v-fast has no audio field of any kind in its schema.
     expect(MOTION_1.strategies).not.toContain("NATIVE");
-    expect(MOTION_1.note).toMatch(/produces no audio/);
+
+    /**
+     * Asserted as substance rather than as one phrase.
+     *
+     * The note used to end "...; Atheos sound mix is not currently available",
+     * which named a feature that does not exist in order to say it does not
+     * exist. It was reworded to stop naming it at all, and this assertion was
+     * matching the old wording rather than the claim — so it broke on a change
+     * that made the product more honest, not less.
+     */
+    expect(MOTION_1.note).toMatch(/no audio/i);
+    expect(MOTION_1.note).toMatch(/silent/i);
+    expect(MOTION_1.note).not.toMatch(/sound mix|sound design/i);
   });
 
   it("resolves to a label that promises nothing unbuilt", () => {
@@ -167,7 +207,7 @@ describe("18. silent stays available, except where the model cannot", () => {
      * instead of pretending the request was honoured.
      */
     const r = resolveAudioStrategy({
-      model: CINEMATIC_LITE,
+      model: ALWAYS_ON_FIXTURE,
       wantsSound: false,
     });
     expect(r.strategy).toBe("NATIVE");

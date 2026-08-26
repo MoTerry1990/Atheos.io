@@ -243,11 +243,19 @@ describe("nothing references a model no adapter can serve", () => {
  * comparison and why it is a separate sprint.
  */
 describe("every offered duration clears the margin floor", () => {
-  /** Replicate's published per-second rates, re-verified 2026-08-24. */
+  /**
+   * Replicate's published per-second rates, re-verified 2026-08-24.
+   *
+   * `veo-3.1-lite` was here and is not any more. It was withdrawn from the
+   * catalogue on 2026-08-26: it is a separate endpoint on a separate pinned
+   * version from the two Cinematic tiers, so it is a separate licence question
+   * and nobody has answered it. A margin floor for a model that cannot be
+   * selected asserts nothing, and leaving the row would have quietly implied
+   * the model was still on offer.
+   */
   const REPLICATE_PER_SECOND_MICRO_USD: Record<string, number> = {
     "replicate/veo-3.1": 400_000, // with audio
     "replicate/veo-3.1-fast": 150_000, // with audio, flat across resolutions
-    "replicate/veo-3.1-lite": 80_000, // 1080p worst case; 720p is $0.05/s
   };
 
   it("holds at 4, 6 and 8 seconds on every Veo tier", async () => {

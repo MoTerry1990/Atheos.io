@@ -1,5 +1,6 @@
 import type { CreativeBrief } from "@/services/ai/creative-brief";
 import { assessModel, type ModelCapability } from "@/services/ai/brief-routing";
+import { inferSceneAudio } from "@/services/ai/audio-inference";
 
 /**
  * One brief, one model, one compiled request — decided on the server.
@@ -233,13 +234,53 @@ function compileVeo(
   sections.push("Render no text, captions, titles, logos or watermarks.");
 
   if (brief.audioStrategy.value === "NATIVE") {
-    const sound = [brief.environmentalSound.value, brief.subjectSound.value]
+    const described = [brief.environmentalSound.value, brief.subjectSound.value]
       .filter(Boolean)
       .join(", ");
+
+    /**
+     * What the user said, or what the scene implies — never nothing.
+     *
+     * The fallback used to be "the natural sound of the scene", which is not
+     * direction, it is a shrug. A native-audio model handed a shrug invents
+     * its own audio, and what it invents is usually speech: an unasked-for
+     * narrator over somebody's car advert.
+     *
+     * `inferSceneAudio` reads the scene instead, so a coastal drive gets
+     * engine, tyres, wind and surf. Anything the user actually described wins
+     * outright; this only fills a vacuum.
+     */
+    const inferred = described ? null : inferSceneAudio(brief.originalPrompt);
+    const sound = described || inferred!.sound;
+
+    /**
+     * Music is opt-in, with one exception — and the user always outranks it.
+     *
+     * Scoring somebody's documentary shot uninvited is presumptuous in a way
+     * that adding wind is not, so inference only ever adds music for the
+     * commercial archetype, where a product film with no music reads as
+     * unfinished rather than as restrained.
+     *
+     * But inference must never contradict a person. Someone who wrote "no
+     * music" in a prompt for a product advert had the archetype fire *and*
+     * said no, and the first draft of this let the archetype win — which is
+     * the whole failure mode this module was supposed to avoid. Provenance
+     * settles it: if the user spoke about music at all, that is the answer.
+     */
+    const userSpokeAboutMusic =
+      brief.music.from === "explicit" ||
+      brief.music.from === "confirmed" ||
+      brief.music.from === "edited";
+
+    const allowMusic = userSpokeAboutMusic
+      ? brief.music.value
+      : brief.music.value || (inferred?.music ?? false);
+
     sections.push(
-      `Audio: ${sound || "the natural sound of the scene"}.` +
+      `Audio: ${sound}.` +
+        // Speech is never inferred. It puts words in the customer's mouth.
         (brief.dialogue.value ? "" : " No speech, dialogue or narration.") +
-        (brief.music.value ? "" : " No music."),
+        (allowMusic ? "" : " No music."),
     );
   }
 

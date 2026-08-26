@@ -144,12 +144,36 @@ describe("SILENT keeps the cheap model", () => {
     );
   });
 
-  it("says so when the chosen model cannot be silenced", () => {
-    const result = route({
-      prompt: "no audio please",
-      selectedModelId: "replicate/veo-3.1-lite",
-    });
-    expect(result.notes.join(" ")).toMatch(/silent export is not available/);
+  it("silences every model that is currently offered", () => {
+    /**
+     * This asserted the always-on note, using Cinematic Lite — the one tier
+     * whose schema has no `generate_audio` field, so a Silent switch on it
+     * would have been wired to nothing.
+     *
+     * Lite was withdrawn on 2026-08-26: a separate endpoint on a separate
+     * pinned version from the two Cinematic tiers, so a separate licence
+     * question that has not been answered. With it gone, **every** offered
+     * video model can genuinely be silenced, and that is the more useful thing
+     * to pin — a Silent request must never be quietly ignored.
+     *
+     * The always-on branch is still live code and still covered by a fixture
+     * in `video-audio.test.ts`; `routeAudio` resolves a model by id, and a
+     * withdrawn id has nothing to resolve to.
+     */
+    for (const selectedModelId of [
+      "replicate/video-gen",
+      "replicate/video-pro",
+      "replicate/veo-3.1-fast",
+      "replicate/veo-3.1",
+    ]) {
+      const result = route({ prompt: "no audio please", selectedModelId });
+
+      expect(result.intent, selectedModelId).toBe("SILENT");
+      expect(result.nativeAudio, selectedModelId).toBe(false);
+      expect(result.notes.join(" "), selectedModelId).not.toMatch(
+        /silent export is not available/,
+      );
+    }
   });
 });
 

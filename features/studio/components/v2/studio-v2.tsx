@@ -53,6 +53,21 @@ import type { PublicStudioModel } from "@/features/studio/lib/public-model";
 
 type Modality = "image" | "video" | "audio";
 
+/**
+ * The three audio settings, and no fourth.
+ *
+ * There is deliberately no "Atheos Sound Mix". Adding sound to a silent clip
+ * after generation has never been built, and an option that names an unbuilt
+ * feature is a promise the product cannot keep.
+ */
+type AudioChoice = "auto" | "native" | "silent";
+
+const AUDIO_CHOICES: { id: AudioChoice; label: string; hint: string }[] = [
+  { id: "auto", label: "Auto", hint: "Sound when the model makes it" },
+  { id: "native", label: "Native audio", hint: "Requires a Cinematic model" },
+  { id: "silent", label: "Silent", hint: "No audio track" },
+];
+
 const MODALITIES: { id: Modality; label: string; icon: typeof ImageIcon }[] = [
   { id: "image", label: "Image", icon: ImageIcon },
   { id: "video", label: "Video", icon: Video },
@@ -86,11 +101,44 @@ export function StudioV2({
   const [historyOpen, setHistoryOpen] = useState(false);
   const [queueOpen, setQueueOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [modelId, setModelId] = useState<string | null>(null);
+  const [audioIntent, setAudioIntent] = useState<AudioChoice>("auto");
 
   const available = models.filter(
     (model) => model.modality.toLowerCase() === modality,
   );
-  const model = available[0];
+
+  /**
+   * The chosen model, as real state.
+   *
+   * This was `available[0]` — the first model of the modality, pinned, with no
+   * way to change it. The owner's catalogue genuinely contained Motion Pro and
+   * both Cinematic tiers and the interface showed none of them, because there
+   * was nothing to show them with. It read as a missing catalogue and was a
+   * missing control.
+   *
+   * `modelId` falls back to the first available rather than being seeded in an
+   * effect, so switching modality picks a sensible model without a render
+   * where nothing is selected.
+   */
+  const model = available.find((entry) => entry.id === modelId) ?? available[0];
+
+  /**
+   * What sound this combination will actually produce.
+   *
+   * Mirrors the server's routing for the interface's benefit only —
+   * `submitGeneration` re-decides it, and the server is what counts. Reading
+   * `model.audio` keeps the mirror honest without shipping the policy
+   * registry to a browser.
+   */
+  const nativeCapable = model?.audio === "native";
+  const audioConflict = audioIntent === "native" && model && !nativeCapable;
+  const nativeAlternative = available.find((entry) => entry.audio === "native");
+  const willHaveAudio =
+    audioIntent === "native"
+      ? Boolean(nativeCapable)
+      : audioIntent === "auto" && Boolean(nativeCapable);
+
   const selected = history.find((entry) => entry.id === selectedId) ?? null;
 
   return (
@@ -128,6 +176,13 @@ export function StudioV2({
               prompt={prompt}
               onPrompt={setPrompt}
               model={model}
+              available={available}
+              onModel={setModelId}
+              audioIntent={audioIntent}
+              onAudioIntent={setAudioIntent}
+              audioConflict={Boolean(audioConflict)}
+              nativeAlternative={nativeAlternative}
+              willHaveAudio={willHaveAudio}
             />
           </div>
 
@@ -402,12 +457,26 @@ function Composer({
   prompt,
   onPrompt,
   model,
+  available,
+  onModel,
+  audioIntent,
+  onAudioIntent,
+  audioConflict,
+  nativeAlternative,
+  willHaveAudio,
 }: {
   modality: Modality;
   onModality: (next: Modality) => void;
   prompt: string;
   onPrompt: (next: string) => void;
   model?: PublicStudioModel;
+  available: PublicStudioModel[];
+  onModel: (id: string) => void;
+  audioIntent: AudioChoice;
+  onAudioIntent: (next: AudioChoice) => void;
+  audioConflict: boolean;
+  nativeAlternative?: PublicStudioModel;
+  willHaveAudio: boolean;
 }) {
   return (
     <section
@@ -415,6 +484,26 @@ function Composer({
       className="shrink-0 border-t border-border/60 bg-surface p-4"
     >
       <div className="mx-auto w-full max-w-4xl">
+        {available.length > 1 ? (
+          <ModelPicker
+            models={available}
+            selectedId={model?.id}
+            onSelect={onModel}
+          />
+        ) : null}
+
+        {modality === "video" ? (
+          <AudioControl
+            value={audioIntent}
+            onChange={onAudioIntent}
+            conflict={audioConflict}
+            alternative={nativeAlternative}
+            onSwitch={onModel}
+            willHaveAudio={willHaveAudio}
+            modelName={model?.displayName}
+          />
+        ) : null}
+
         {/* The Textarea primitive carries the project's spacing standard —
             pt-4 pr-[18px] pb-4 pl-[18px] — so prompt text never touches its
             border, which is the defect this composer replaces. */}
@@ -624,6 +713,181 @@ function Row({ label, value }: { label: string; value: string }) {
     <div className="flex items-baseline justify-between gap-3">
       <dt className="text-muted-foreground">{label}</dt>
       <dd className="text-right break-words">{value}</dd>
+    </div>
+  );
+}
+
+/**
+ * The model picker, as cards rather than a dropdown.
+ *
+ * A dropdown hides the thing that actually decides the choice. Resolution,
+ * length and — the one this Studio could never say before — whether the clip
+ * will have sound are the differences between these models, and a customer
+ * choosing blind picks on price and is surprised twice.
+ *
+ * Every card is honest about silence. "Silent" is not a setting on Motion 1
+ * and Motion Pro; it is what the file will be, and saying so on the card is
+ * cheaper than saying it in a support reply.
+ */
+function ModelPicker({
+  models,
+  selectedId,
+  onSelect,
+}: {
+  models: PublicStudioModel[];
+  selectedId?: string;
+  onSelect: (id: string) => void;
+}) {
+  return (
+    <div
+      role="radiogroup"
+      aria-label="Model"
+      className="mb-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4"
+    >
+      {models.map((model) => {
+        const active = model.id === selectedId;
+        const native = model.audio === "native";
+
+        return (
+          <button
+            key={model.id}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            onClick={() => onSelect(model.id)}
+            className={cn(
+              "rounded-xl border p-3 text-left transition-colors",
+              "focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+              active
+                ? "border-brand bg-brand/10"
+                : "hover:border-border-strong border-border bg-surface-raised",
+            )}
+          >
+            <span className="flex items-center justify-between gap-2">
+              <span className="text-sm font-medium">{model.displayName}</span>
+              {/* Only the owner ever receives an owner-evaluation model, so
+                  this badge is not a permission check — it is a reminder that
+                  the model is being trialled and is not on sale. */}
+              {model.availability === "owner_beta" ? (
+                <span className="rounded-md bg-surface-sunken px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                  Owner evaluation
+                </span>
+              ) : null}
+            </span>
+
+            <span className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-muted-foreground">
+              {model.resolutions[0] ? (
+                <span>{model.resolutions[0]}</span>
+              ) : null}
+              {model.durations.length > 0 ? (
+                <span>{Math.max(...model.durations)}s</span>
+              ) : null}
+              {model.takesReference ? <span>Image reference</span> : null}
+              <span className={cn(native ? "text-brand" : undefined)}>
+                {native ? "Native audio" : "Silent"}
+              </span>
+            </span>
+
+            <span className="mt-1.5 block text-[11px] text-muted-foreground">
+              {model.creditCost} credits
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+/**
+ * Auto, Native audio, Silent.
+ *
+ * Auto is the default and resolves to whatever the chosen model can actually
+ * do — sound on a Cinematic tier, silence on a Motion one. It never switches
+ * the model by itself: a silent model quietly becoming a paid one is the
+ * failure this whole control exists to prevent, so a switch is always the
+ * customer's click.
+ *
+ * Native audio on a Motion model is a conflict rather than a warning, because
+ * submitting anyway would deliver the opposite of what was asked for.
+ */
+function AudioControl({
+  value,
+  onChange,
+  conflict,
+  alternative,
+  onSwitch,
+  willHaveAudio,
+  modelName,
+}: {
+  value: AudioChoice;
+  onChange: (next: AudioChoice) => void;
+  conflict: boolean;
+  alternative?: PublicStudioModel;
+  onSwitch: (id: string) => void;
+  willHaveAudio: boolean;
+  modelName?: string;
+}) {
+  return (
+    <div className="mb-3">
+      <div
+        role="radiogroup"
+        aria-label="Audio"
+        className="flex flex-wrap items-center gap-1"
+      >
+        <span className="mr-1 text-[11px] text-muted-foreground">Audio</span>
+
+        {AUDIO_CHOICES.map((choice) => (
+          <button
+            key={choice.id}
+            type="button"
+            role="radio"
+            aria-checked={value === choice.id}
+            title={choice.hint}
+            onClick={() => onChange(choice.id)}
+            className={cn(
+              "rounded-lg px-2.5 py-1 text-xs transition-colors",
+              "focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none",
+              value === choice.id
+                ? "bg-surface-raised text-foreground"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {choice.label}
+          </button>
+        ))}
+      </div>
+
+      {conflict ? (
+        <p
+          role="alert"
+          className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs"
+        >
+          <span>
+            {modelName} produces no audio track, so it cannot deliver native
+            sound.
+          </span>
+          {alternative ? (
+            <button
+              type="button"
+              onClick={() => onSwitch(alternative.id)}
+              className="rounded-md bg-surface-raised px-2 py-1 font-medium focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            >
+              Switch to {alternative.displayName} · {alternative.creditCost}{" "}
+              credits
+            </button>
+          ) : null}
+        </p>
+      ) : (
+        <p className="mt-1.5 text-[11px] text-muted-foreground">
+          {willHaveAudio
+            ? "This clip will include synchronised sound."
+            : `This clip will be silent.${
+                alternative
+                  ? ` ${alternative.displayName} generates sound in the same pass.`
+                  : ""
+              }`}
+        </p>
+      )}
     </div>
   );
 }

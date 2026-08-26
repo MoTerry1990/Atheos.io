@@ -195,7 +195,21 @@ describe("22. audio capability is enforced at compile time", () => {
     const veo = compileForModel(brief, MODEL["replicate/veo-3.1"]);
     expect(veo.parameters.generate_audio).toBe(true);
     expect(veo.prompt).toMatch(/No speech, dialogue or narration/);
-    expect(veo.prompt).toMatch(/No music/);
+
+    /**
+     * No longer "No music", and deliberately so.
+     *
+     * This fixture's prompt is "Create an 8 second cinematic **commercial** of
+     * this red convertible beside the ocean". A product film scored with
+     * nothing reads as unfinished, so the commercial archetype supplies
+     * restrained music — while narration, which is never inferred, stays
+     * forbidden by the line above.
+     *
+     * `compile-audio-clause.test.ts` covers the boundary: an ordinary ocean
+     * scene gets no music, and an explicit refusal beats the archetype.
+     */
+    expect(veo.prompt).toMatch(/sound design/i);
+    expect(veo.prompt).not.toMatch(/No music/);
   });
 
   it("drops audio entirely for a silent brief", () => {

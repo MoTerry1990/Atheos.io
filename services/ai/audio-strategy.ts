@@ -54,7 +54,7 @@ export const AUDIO_CAPABILITIES: Record<string, AudioCapableModel> = {
     id: "replicate/video-gen",
     label: "Motion 1",
     strategies: ["ATHEOS_SOUND_DESIGN", "SILENT"],
-    note: "The video model produces no audio. The finished video is silent; Atheos sound mix is not currently available.",
+    note: "This model generates no audio. The finished video is silent.",
   },
   "replicate/video-pro": {
     id: "replicate/video-pro",
@@ -62,7 +62,7 @@ export const AUDIO_CAPABILITIES: Record<string, AudioCapableModel> = {
     // Audited: seedance-1-lite's schema has no audio input or output. Same
     // pathway as Motion 1 rather than a native claim it cannot support.
     strategies: ["ATHEOS_SOUND_DESIGN", "SILENT"],
-    note: "The video model produces no audio. The finished video is silent; Atheos sound mix is not currently available.",
+    note: "This model generates no audio. The finished video is silent.",
   },
   "replicate/veo-3.1-fast": {
     id: "replicate/veo-3.1-fast",
@@ -75,13 +75,6 @@ export const AUDIO_CAPABILITIES: Record<string, AudioCapableModel> = {
     label: "Cinematic",
     strategies: ["NATIVE", "SILENT"],
     note: "The video model generates synchronised sound in the same pass.",
-  },
-  "replicate/veo-3.1-lite": {
-    id: "replicate/veo-3.1-lite",
-    label: "Cinematic Lite",
-    strategies: ["NATIVE"],
-    audioAlwaysOn: true,
-    note: "This model always generates sound and offers no way to turn it off.",
   },
 };
 
