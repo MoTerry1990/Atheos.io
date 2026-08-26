@@ -25,9 +25,13 @@ import { describe, expect, it } from "vitest";
  * A scanner that failed on those would force the guard to be deleted to satisfy
  * the scan.
  *
- * So they are exempt — by exact path, never by pattern, and each one is a file
- * whose entire purpose is detecting the thing being searched for. Everything
- * else in the tree, tracked or not, has to be clean. Note that
+ * They are exempt **per identifier**, at an exact path — never whole files,
+ * and never by pattern. Exempting a file outright would mean that pasting the
+ * Wasipe Supabase reference into `package.json` passed forever, because that
+ * file had once needed to say "wasipe" for an unrelated reason. Each guard file
+ * may say "wasipe" and nothing else.
+ *
+ * Everything else in the tree, tracked or not, has to be clean. Note that
  * `.claude/settings.local.json` is deliberately *not* exempt: it is local tool
  * state that had accumulated paths into the Wasipe checkout, and it should stay
  * clean too.
@@ -47,16 +51,28 @@ const FORBIDDEN = [
 ];
 
 /**
- * Files permitted to name Wasipe, because detecting Wasipe is what they do.
+ * Which identifier each guard file may contain — not "this file is exempt".
  *
- * Exact repo-relative paths. Adding to this list should feel like a decision.
+ * The distinction matters. Exempting whole files would mean that pasting the
+ * Wasipe Supabase reference into `package.json` — a real config file that
+ * changes often — sailed past the scan forever, because the file had once
+ * needed to say "wasipe" for an unrelated reason.
+ *
+ * So the exemption is per identifier, per exact path. `package.json` may say
+ * "wasipe", because `conflictsWith` configures the guard. It may **not** carry
+ * the Supabase reference, a Netlify host or port 3001, and it will fail if it
+ * ever does.
+ *
+ * `project-isolation.test.ts` is the one file allowed everything, because it
+ * is this file: it has to spell out each identifier in `FORBIDDEN` to search
+ * for it.
  */
-const ALLOWED = new Set([
-  "package.json",
-  "scripts/verify-project.mjs",
-  "tests/unit/project-identity.test.ts",
-  "tests/unit/project-isolation.test.ts",
-]);
+const ALLOWED: Record<string, readonly string[]> = {
+  "package.json": ["wasipe"],
+  "scripts/verify-project.mjs": ["wasipe"],
+  "tests/unit/project-identity.test.ts": ["wasipe"],
+  "tests/unit/project-isolation.test.ts": FORBIDDEN,
+};
 
 /**
  * Not scanned: version control internals, dependencies, and build output.
@@ -122,7 +138,7 @@ function scan(): string[] {
   const hits: string[] = [];
 
   for (const rel of walk(ROOT)) {
-    if (ALLOWED.has(rel)) continue;
+    const permitted = ALLOWED[rel] ?? [];
 
     let contents: string;
     try {
@@ -134,6 +150,8 @@ function scan(): string[] {
     const lower = contents.toLowerCase();
     for (const needle of FORBIDDEN) {
       if (!lower.includes(needle)) continue;
+      // Exempt this identifier in this file only — never the file wholesale.
+      if (permitted.includes(needle)) continue;
 
       const line = lower.slice(0, lower.indexOf(needle)).split("\n").length;
       hits.push(`${rel}:${line} contains "${needle}"`);
@@ -169,6 +187,23 @@ describe("no Wasipe content anywhere in Atheos", () => {
     ).toLowerCase();
 
     expect(FORBIDDEN.some((needle) => guard.includes(needle))).toBe(true);
+  });
+
+  it("exempts identifiers, not whole files", () => {
+    /**
+     * The property that keeps the allowlist from becoming a blind spot. Every
+     * guard file may say "wasipe"; none of them may carry the Supabase
+     * reference, the Netlify host or the port — so contamination arriving in
+     * `package.json` tomorrow still fails the scan.
+     *
+     * `project-isolation.test.ts` is excluded from the assertion because it is
+     * this file, and it must name every identifier to search for them.
+     */
+    for (const [file, permitted] of Object.entries(ALLOWED)) {
+      if (file === "tests/unit/project-isolation.test.ts") continue;
+
+      expect(permitted, file).toEqual(["wasipe"]);
+    }
   });
 });
 
