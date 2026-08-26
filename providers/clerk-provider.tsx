@@ -4,7 +4,7 @@ import { ClerkProvider as BaseClerkProvider } from "@clerk/nextjs";
 import { useTheme } from "next-themes";
 import type { ReactNode } from "react";
 
-import { env } from "@/lib/env";
+import { CLERK_PUBLISHABLE_KEY } from "@/lib/public-env";
 
 /**
  * Clerk, themed to the design system.
@@ -27,7 +27,7 @@ export function ClerkProvider({ children }: { children: ReactNode }) {
 
   return (
     <BaseClerkProvider
-      publishableKey={env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
+      publishableKey={CLERK_PUBLISHABLE_KEY}
       // Where Clerk sends people when it handles a redirect itself. These must
       // agree with the middleware's public-route list or users bounce between
       // the two.

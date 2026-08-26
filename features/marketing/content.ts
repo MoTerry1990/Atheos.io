@@ -373,6 +373,19 @@ export const MADE_WITH_ATHEOS: readonly MadeItem[] = [
  * chooses between two video models, and the homepage is where they decide
  * whether to bother.
  */
+/**
+ * Public ids, not catalogue ids.
+ *
+ * These reach a browser twice over: as `<option value>` in the rendered HTML
+ * and inside the `redirect_url` the sign-up link carries. `replicate/…` in
+ * either is the same disclosure the public model contract exists to prevent.
+ *
+ * It was also simply broken. The studio validates the seeded `model` against
+ * the list it loads from `/api/generations`, and that list has carried public
+ * ids since the contract landed — so a catalogue id never matched, and every
+ * composer link silently fell back to picking any model of the right
+ * modality. Using the public id fixes the leak and the seed together.
+ */
 export interface ComposerModality {
   id: "image" | "video" | "audio";
   models: readonly { id: string; label: string }[];
@@ -384,15 +397,15 @@ export const COMPOSER_MODALITIES: readonly ComposerModality[] = [
   {
     id: "image",
     models: [
-      { id: "replicate/flux-schnell", label: "Flux Fast" },
-      { id: "replicate/flux-dev", label: "Flux Quality" },
+      { id: "atheos-image-fast", label: "Atheos Image Fast" },
+      { id: "atheos-image-realistic", label: "Atheos Image Realistic" },
     ],
     aspectRatios: ["1:1", "16:9", "9:16", "4:3"],
   },
   {
     id: "video",
     models: [
-      { id: "replicate/video-gen", label: "Motion 1 · 720p" },
+      { id: "motion-1", label: "Motion 1 · 720p" },
       /**
        * Motion Pro is absent for the same reason Score is: no publishable
        * licence. See `services/ai/model-policy.ts`, which refuses it.
@@ -409,7 +422,7 @@ export const COMPOSER_MODALITIES: readonly ComposerModality[] = [
        * See `services/ai/model-policy.ts` — that registry is the authority and
        * refuses the model server-side; this list must agree with it.
        */
-      { id: "replicate/sfx", label: "Foley" },
+      { id: "foley", label: "Foley" },
     ],
     aspectRatios: [],
   },

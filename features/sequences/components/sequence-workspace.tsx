@@ -71,13 +71,13 @@ interface SequenceState {
  */
 const CLIP_OPTIONS = [
   {
-    modelId: "replicate/video-gen",
+    modelId: "motion-1",
     label: "Motion 1 · 720p",
     seconds: 5,
     credits: 90,
   },
   {
-    modelId: "replicate/video-gen",
+    modelId: "motion-1",
     label: "Motion 1 · 720p",
     seconds: 10,
     credits: 180,

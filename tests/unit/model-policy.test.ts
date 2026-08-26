@@ -322,3 +322,23 @@ describe("the refusal a customer reads", () => {
     expect(MODEL_UNAVAILABLE_CODE).not.toMatch(VENDORS);
   });
 });
+
+describe("the hand-copied public ids stay in step", () => {
+  it("matches every key in the studio's sequence facts map", async () => {
+    /**
+     * `services/ai/sequence-models.ts` keys its facts by public id written as
+     * string literals, because it is imported by client components and the
+     * mapping helper is server-only. A duplicated constant is a constant that
+     * drifts — and the last time these two disagreed, every sequence quote in
+     * the studio silently fell back to a flat credit label.
+     *
+     * So the duplication is allowed and pinned here.
+     */
+    const { SEQUENCE_MODEL_FACTS } =
+      await import("@/services/ai/sequence-models");
+
+    for (const [publicId, facts] of Object.entries(SEQUENCE_MODEL_FACTS)) {
+      expect(catalogueModelId(publicId), publicId).toBe(facts.id);
+    }
+  });
+});

@@ -45,7 +45,12 @@ import { cn } from "@/lib/utils";
  */
 const TRACKS = [
   {
-    id: "replicate/sfx",
+    /**
+     * The public id. `/api/generations` refuses a catalogue path outright, so
+     * a catalogue path was not merely a leak in the client bundle — it was
+     * rejected as `unknown_model` on every submission.
+     */
+    id: "foley",
     label: "Sound effects",
     icon: AudioLines,
     credits: 10,

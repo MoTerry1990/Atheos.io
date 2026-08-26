@@ -330,12 +330,28 @@ export const SEQUENCE_CANDIDATES = [
  * what the studio holds. A model absent from this map has no verified schema
  * read, so the plan panel renders nothing rather than quoting from assumptions.
  */
+/**
+ * Keyed by **public** id, because the studio looks it up with one.
+ *
+ * These keys were `MOTION_1.id` and friends — catalogue paths. The studio
+ * reads `SEQUENCE_MODEL_FACTS[model.id]` where `model` comes from
+ * `/api/generations`, and that endpoint has returned public ids since the
+ * public model contract landed. So every lookup missed, and the video
+ * composer silently fell back to a flat credit label instead of a real
+ * sequence quote.
+ *
+ * Written as literals rather than derived through `publicModelId`, because
+ * that helper is `server-only` and this module is imported by client
+ * components. `tests/unit/model-policy.test.ts` asserts the mapping these
+ * literals duplicate, so a divergence fails the build rather than going quiet
+ * the way the last one did.
+ */
 export const SEQUENCE_MODEL_FACTS: Record<string, SequenceModelFacts> = {
-  [MOTION_1.id]: MOTION_1,
-  [MOTION_PRO.id]: MOTION_PRO,
-  [CINEMATIC_LITE.id]: CINEMATIC_LITE,
-  [CINEMATIC_FAST.id]: CINEMATIC_FAST,
-  [CINEMATIC.id]: CINEMATIC,
+  "motion-1": MOTION_1,
+  "motion-pro": MOTION_PRO,
+  "cinematic-lite": CINEMATIC_LITE,
+  "cinematic-fast": CINEMATIC_FAST,
+  cinematic: CINEMATIC,
 };
 
 /**

@@ -5,7 +5,6 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { toAuthErrorMessage } from "@/features/auth/lib/errors";
-import { env } from "@/lib/env";
 
 /**
  * Social sign-in.
@@ -109,10 +108,27 @@ export function OAuthButtons({
     setError("");
 
     try {
+      /**
+       * `window.location.origin`, not `env.NEXT_PUBLIC_APP_URL`.
+       *
+       * Importing `@/lib/env` from a client component pulled the entire Zod
+       * schema into the browser bundle — and with it the *names* of every
+       * credential Atheos holds, `REPLICATE_API_TOKEN` and `OPENAI_API_KEY`
+       * among them. No values: server vars are undefined on the client. But
+       * the names alone tell a reader which vendors run the product, which is
+       * exactly what the public model contract exists to withhold.
+       *
+       * The origin is also the more correct answer. This runs in a browser
+       * that is already on the site, so it is right on every preview
+       * deployment and every custom domain, where a single configured URL
+       * would send the user somewhere else to finish signing in.
+       */
+      const origin = window.location.origin;
+
       const { error: ssoError } = await signIn.sso({
         strategy,
-        redirectUrl: `${env.NEXT_PUBLIC_APP_URL}/profile`,
-        redirectCallbackUrl: `${env.NEXT_PUBLIC_APP_URL}/sso-callback`,
+        redirectUrl: `${origin}/profile`,
+        redirectCallbackUrl: `${origin}/sso-callback`,
       });
 
       if (ssoError) {

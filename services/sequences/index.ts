@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { env } from "@/lib/env";
 import { requireApiUser } from "@/lib/auth";
 import { findModel } from "@/services/ai/registry";
+import { catalogueModelId } from "@/services/ai/public-ids";
 import { creditsFor } from "@/services/ai/pricing";
 import { pollGeneration, submitGeneration } from "@/services/generation";
 
@@ -85,7 +86,16 @@ export interface CreateSequenceInput {
 export async function createSequence(input: CreateSequenceInput) {
   const user = await requireApiUser();
 
-  const model = findModel(input.modelId);
+  /**
+   * The client sends a public id, and only a public id.
+   *
+   * `catalogueModelId` refuses a `provider/model` path outright, which is the
+   * point: accepting one here would have kept the internal path a working
+   * input on a route the studio's own contract had already closed, and a
+   * provider swap would then break sequences alone.
+   */
+  const catalogueId = catalogueModelId(input.modelId);
+  const model = catalogueId ? findModel(catalogueId) : undefined;
   if (!model || model.modality !== "VIDEO") {
     throw new SequenceError("That model does not generate video.", 400);
   }
@@ -224,7 +234,9 @@ export async function submitScene(
   // charge twice for one shot.
   if (scene.generationId) return getSequence(sequenceId);
 
-  const model = findModel(options.modelId);
+  // Same public-id resolution as `createSequence`.
+  const catalogueId = catalogueModelId(options.modelId);
+  const model = catalogueId ? findModel(catalogueId) : undefined;
   if (!model || model.modality !== "VIDEO") {
     throw new SequenceError("That model does not generate video.", 400);
   }

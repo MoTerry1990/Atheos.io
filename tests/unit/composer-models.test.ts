@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { COMPOSER_MODALITIES } from "@/features/marketing/content";
 import { listModels } from "@/services/ai/registry";
+import { catalogueModelId } from "@/services/ai/public-ids";
 
 /**
  * The homepage composer's model list is a hand-written mirror of the registry.
@@ -17,6 +18,18 @@ import { listModels } from "@/services/ai/registry";
  * the *shape* — every advertised modality has at least one model, and no id is
  * empty — and, where the real Replicate models are present, that each
  * advertised id actually exists.
+ *
+ * ## Public ids, since the leak fix
+ *
+ * These used to be catalogue paths, which put `replicate/flux-schnell` into
+ * the rendered HTML twice — as an `<option value>` and inside the sign-up
+ * `redirect_url`. They are public ids now, so the assertions below resolve
+ * through `catalogueModelId` before comparing against the registry.
+ *
+ * That also fixed a silent bug: the studio validates the seeded model against
+ * the list it loads from `/api/generations`, which has carried public ids
+ * since the contract landed. A catalogue id never matched, so every composer
+ * link fell back to "any model of this modality".
  */
 describe("composer model list", () => {
   const known = new Set(listModels().map((model) => model.id));
@@ -30,11 +43,39 @@ describe("composer model list", () => {
     }
   });
 
-  it("uses non-empty, namespaced model ids", () => {
+  it("uses public ids, never a catalogue path", () => {
     for (const modality of COMPOSER_MODALITIES) {
       for (const model of modality.models) {
-        expect(model.id).toMatch(/^[a-z]+\/[a-z0-9-]+$/);
+        // A slug, not `provider/model`. The slash is the leak.
+        expect(model.id).toMatch(/^[a-z0-9-]+$/);
+        expect(model.id).not.toContain("/");
         expect(model.label.trim()).not.toBe("");
+      }
+    }
+  });
+
+  it("names no vendor in a label either", () => {
+    /**
+     * The ids were only half of it. "Flux Fast" identifies Black Forest Labs'
+     * model family as precisely as the path did, to anyone who would think to
+     * look it up.
+     */
+    for (const modality of COMPOSER_MODALITIES) {
+      for (const model of modality.models) {
+        expect(model.label).not.toMatch(
+          /flux|veo|wan|seedance|musicgen|replicate|bytedance/i,
+        );
+      }
+    }
+  });
+
+  it("resolves every advertised id back to a real model", () => {
+    for (const modality of COMPOSER_MODALITIES) {
+      for (const model of modality.models) {
+        expect(
+          catalogueModelId(model.id),
+          `${model.id} maps to no catalogue model`,
+        ).not.toBeNull();
       }
     }
   });
@@ -47,7 +88,10 @@ describe("composer model list", () => {
 
     for (const modality of COMPOSER_MODALITIES) {
       for (const model of modality.models) {
-        expect(known, `${model.id} is not in the registry`).toContain(model.id);
+        const catalogueId = catalogueModelId(model.id);
+        expect(known, `${model.id} is not in the registry`).toContain(
+          catalogueId,
+        );
       }
     }
   });

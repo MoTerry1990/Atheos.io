@@ -1,7 +1,7 @@
 import { PRICING, SITE } from "@/features/marketing/content";
 import { getCopy } from "@/features/marketing/i18n/dictionaries";
 import { HTML_LANG, type Locale } from "@/features/marketing/i18n/locales";
-import { env } from "@/lib/env";
+import { APP_URL } from "@/lib/public-env";
 
 /**
  * JSON-LD structured data.
@@ -24,7 +24,7 @@ import { env } from "@/lib/env";
  * first — the string is injected into a `<script>` element verbatim.
  */
 export function StructuredData({ locale }: { locale: Locale }) {
-  const baseUrl = env.NEXT_PUBLIC_APP_URL;
+  const baseUrl = APP_URL;
   const copy = getCopy(locale);
 
   const paidTiers = PRICING.filter((tier) => tier.monthly > 0);

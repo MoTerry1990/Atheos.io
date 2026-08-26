@@ -190,7 +190,9 @@ describe("composer destinations", () => {
       expect(modality.models.length).toBeGreaterThan(0);
 
       for (const model of modality.models) {
-        expect(model.id).toMatch(/^[a-z]+\/[a-z0-9-]+$/);
+        // A public id. A `provider/model` path here would be readable in the
+        // rendered HTML and in the sign-up redirect the composer builds.
+        expect(model.id).toMatch(/^[a-z0-9-]+$/);
       }
 
       // Audio has no aspect ratio and must not offer one — a ratio on an

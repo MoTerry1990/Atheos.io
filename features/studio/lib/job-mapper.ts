@@ -1,6 +1,6 @@
 import type { GenerationDTO } from "@/features/studio/lib/dto";
 import type { StudioJob, StudioParams } from "@/features/studio/types";
-import { env } from "@/lib/env";
+import { R2_PUBLIC_URL } from "@/lib/public-env";
 
 /**
  * Server generation → the shape the studio already renders.
@@ -16,7 +16,7 @@ import { env } from "@/lib/env";
  * means moving the CDN is a config change rather than a data migration.
  */
 export function assetUrl(storageKey: string): string {
-  const base = env.NEXT_PUBLIC_R2_PUBLIC_URL;
+  const base = R2_PUBLIC_URL;
   if (!base) return "";
   return `${base.replace(/\/$/, "")}/${storageKey.replace(/^\//, "")}`;
 }
