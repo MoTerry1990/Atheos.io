@@ -1,8 +1,17 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { env } from "@/lib/env";
-import { listModels } from "@/services/ai/registry";
+import { isAdmin } from "@/services/admin/auth";
+import type { Caller } from "@/services/ai/model-policy";
 import { resolveApiKey } from "@/services/api-keys";
+import {
+  connectorModels,
+  defaultConnectorModel,
+  DurationError,
+  exactDuration,
+  resolveConnectorModel,
+  type ConnectorModel,
+} from "@/services/connectors/catalogue";
 import {
   GenerationError,
   pollGeneration,
@@ -77,84 +86,115 @@ function toolResult(text: string, isError = false) {
   return { content: [{ type: "text", text }], isError };
 }
 
-const TOOLS = [
-  {
-    name: "generate_image",
-    description:
-      "Generate an image from a text prompt using Atheos. Returns a job id " +
-      "immediately; call check_generation with it to get the finished image " +
-      "URL. Costs credits from the account the API key belongs to.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        prompt: {
-          type: "string",
-          description:
-            "What to generate. Be specific about subject, light and lens — " +
-            "vague prompts produce vague images and still cost credits.",
+/**
+ * The tool list, built from the catalogue rather than written by hand.
+ *
+ * Every enum here used to be a literal. `durationSeconds` said `[5, 10]` while
+ * Motion 1 accepts 5 and 7.5, so a client asking for ten received a
+ * 7.5-second clip, priced as 7.5, having been told twice that it would get ten
+ * — once by the enum and once by "ten seconds costs twice five". A schema
+ * written beside a capability table is a schema that will disagree with it.
+ *
+ * Built per caller, because what a caller may run decides what they should be
+ * offered. `models` arrives already filtered by policy.
+ */
+function toolsFor(models: ConnectorModel[]) {
+  const image = models.find((model) => model.modality === "IMAGE");
+  const video = models.find((model) => model.modality === "VIDEO");
+
+  const tools: unknown[] = [];
+
+  if (image) {
+    tools.push({
+      name: "generate_image",
+      description:
+        `Generate an image with ${image.name}. Returns a job id immediately; ` +
+        "call check_generation with it to get the finished image URL. Costs " +
+        `${image.credits} credits from the account the API key belongs to.`,
+      inputSchema: {
+        type: "object",
+        properties: {
+          prompt: {
+            type: "string",
+            description:
+              "What to generate. Be specific about subject, light and lens — " +
+              "vague prompts produce vague images and still cost credits.",
+          },
+          aspectRatio: {
+            type: "string",
+            enum: [...image.aspectRatios],
+            description: `Defaults to ${image.aspectRatios[0] ?? "1:1"}.`,
+          },
+          outputs: {
+            type: "integer",
+            minimum: 1,
+            maximum: image.maxOutputs,
+            description: "How many variations. Each one costs credits.",
+          },
         },
-        aspectRatio: {
-          type: "string",
-          enum: ["1:1", "16:9", "9:16", "4:3", "3:4"],
-          description: "Defaults to 1:1.",
-        },
-        outputs: {
-          type: "integer",
-          minimum: 1,
-          maximum: 4,
-          description: "How many variations. Each one costs credits.",
-        },
+        required: ["prompt"],
       },
-      required: ["prompt"],
-    },
-  },
-  {
-    name: "generate_video",
-    description:
-      "Generate a short video from a text prompt using Atheos. Returns a job " +
-      "id immediately; videos take one to several minutes, so call " +
-      "check_generation to poll. Costs significantly more credits than an image.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        prompt: {
-          type: "string",
-          description: "What should happen, and how the camera moves.",
+    });
+  }
+
+  if (video) {
+    tools.push({
+      name: "generate_video",
+      description:
+        `Generate a short video with ${video.name}. ${video.audioNote} ` +
+        "Returns a job id immediately; videos take one to several minutes, " +
+        `so call check_generation to poll. Costs ${video.credits} credits at ` +
+        `${Math.min(...video.durations)} seconds.`,
+      inputSchema: {
+        type: "object",
+        properties: {
+          prompt: {
+            type: "string",
+            description: "What should happen, and how the camera moves.",
+          },
+          durationSeconds: {
+            type: "number",
+            enum: [...video.durations],
+            description:
+              "Clip length in seconds. This model accepts exactly " +
+              `${video.durations.join(" or ")}; any other value is refused ` +
+              "rather than rounded to the nearest.",
+          },
+          aspectRatio: { type: "string", enum: [...video.aspectRatios] },
         },
-        durationSeconds: {
-          type: "integer",
-          enum: [5, 10],
-          description: "Clip length. Ten seconds costs twice five.",
-        },
-        aspectRatio: { type: "string", enum: ["16:9", "9:16"] },
+        required: ["prompt"],
       },
-      required: ["prompt"],
-    },
-  },
-  {
-    name: "check_generation",
-    description:
-      "Check whether a generation has finished and get its output URLs. " +
-      "Free — it spends no credits.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        generationId: {
-          type: "string",
-          description: "The id returned by a generate tool.",
+    });
+  }
+
+  tools.push(
+    {
+      name: "check_generation",
+      description:
+        "Check whether a generation has finished and get its output URLs. " +
+        "Free — it spends no credits.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          generationId: {
+            type: "string",
+            description: "The id returned by a generate tool.",
+          },
         },
+        required: ["generationId"],
       },
-      required: ["generationId"],
     },
-  },
-  {
-    name: "list_models",
-    description:
-      "List the models available on this account, with their credit cost and " +
-      "capabilities. Free.",
-    inputSchema: { type: "object", properties: {} },
-  },
-] as const;
+    {
+      name: "list_models",
+      description:
+        "List the models available on this account, with their credit cost " +
+        "and capabilities. Free.",
+      inputSchema: { type: "object", properties: {} },
+    },
+  );
+
+  return tools;
+}
 
 /**
  * Run a tool.
@@ -164,16 +204,24 @@ const TOOLS = [
  * request. Passing an id in would create a second, weaker path to the same
  * authorisation decision — the thing `lib/auth.ts` exists to prevent.
  */
-async function callTool(name: string, args: Record<string, unknown>) {
+async function callTool(
+  name: string,
+  args: Record<string, unknown>,
+  caller: Caller,
+) {
   switch (name) {
     case "list_models": {
-      const models = listModels().map((model) => ({
-        id: model.id,
-        name: model.displayName,
-        credits: model.creditCost,
-        modality: model.modality,
-      }));
-      return toolResult(JSON.stringify(models, null, 2));
+      /**
+       * The catalogue, filtered by policy and stripped of provider identity.
+       *
+       * This returned `listModels()` unfiltered — so every API-key holder was
+       * shown `replicate/video-gen` and `FLUX Schnell`, plus Score, which is
+       * blocked, and Motion Pro and both Cinematic tiers, which no customer
+       * may buy. Submission would have refused all four; a catalogue is still
+       * an offer, and offering what the server refuses is the defect this
+       * codebase fixed everywhere else.
+       */
+      return toolResult(JSON.stringify(connectorModels(caller), null, 2));
     }
 
     case "check_generation": {
@@ -185,26 +233,61 @@ async function callTool(name: string, args: Record<string, unknown>) {
     case "generate_image":
     case "generate_video": {
       const isVideo = name === "generate_video";
+      const modality = isVideo ? "VIDEO" : "IMAGE";
+
+      const model = defaultConnectorModel(modality, caller);
+      if (!model) {
+        return toolResult(
+          `No ${modality.toLowerCase()} model is available on this account.`,
+          true,
+        );
+      }
+
+      const catalogueId = resolveConnectorModel(model.id, caller);
+      if (!catalogueId) {
+        return toolResult("That model is not available.", true);
+      }
+
+      /**
+       * An impossible duration is refused, never rounded.
+       *
+       * The pipeline's own `resolveDuration` snaps to the nearest allowed
+       * value, which is right for a slider bounded by the same list and wrong
+       * for an API whose caller is writing code against the answer.
+       */
+      let durationSeconds: number | undefined;
+      if (isVideo) {
+        try {
+          durationSeconds = exactDuration(
+            model,
+            typeof args.durationSeconds === "number"
+              ? args.durationSeconds
+              : undefined,
+          );
+        } catch (error) {
+          if (error instanceof DurationError) {
+            return toolResult(
+              `${model.name} does not support that clip length. ${error.message}`,
+              true,
+            );
+          }
+          throw error;
+        }
+      }
 
       const generation = await submitGeneration({
         operation: isVideo ? "text-to-video" : "text-to-image",
-        modelId: isVideo ? "replicate/video-gen" : "replicate/flux-schnell",
+        modelId: catalogueId,
         prompt: String(args.prompt ?? ""),
         aspectRatio:
           typeof args.aspectRatio === "string" ? args.aspectRatio : undefined,
         outputs: typeof args.outputs === "number" ? args.outputs : 1,
-        ...(isVideo
-          ? {
-              durationSeconds:
-                typeof args.durationSeconds === "number"
-                  ? args.durationSeconds
-                  : 5,
-            }
-          : {}),
+        ...(isVideo ? { durationSeconds } : {}),
       });
 
       return toolResult(
-        `Started. Generation id: ${generation.generationId}\n` +
+        `Started. Generation id: ${generation.generationId}` +
+          "\n" +
           // Named, because a model relaying "done!" for a placeholder would be
           // telling the user something false about their own account.
           (generation.usingMockProvider
@@ -258,14 +341,27 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  if (method === "tools/list") return result(id, { tools: TOOLS });
+  /**
+   * The caller decides the catalogue, and it comes from the key's owner.
+   *
+   * Never from a request field: an API key resolves to a user, and whether
+   * that user is the owner is a server-side question. A client sending
+   * `{ role: "admin" }` has nothing to bind to.
+   */
+  const caller: Caller = (await isAdmin().catch(() => false))
+    ? "owner"
+    : "public";
+
+  if (method === "tools/list") {
+    return result(id, { tools: toolsFor(connectorModels(caller)) });
+  }
 
   if (method === "tools/call") {
     const name = String(params.name ?? "");
     const args = (params.arguments ?? {}) as Record<string, unknown>;
 
     try {
-      return result(id, await callTool(name, args));
+      return result(id, await callTool(name, args, caller));
     } catch (error) {
       // Domain failures — not enough credits, bad model, prompt rejected — are
       // returned as *tool* errors rather than protocol errors, so the model
@@ -296,7 +392,11 @@ export function GET() {
     protocolVersion: PROTOCOL_VERSION,
     transport: "http",
     authentication: "Authorization: Bearer <api key>",
-    tools: TOOLS.map((tool) => tool.name),
+    // Named from the public catalogue, so this description cannot drift from
+    // what `tools/list` actually returns.
+    tools: toolsFor(connectorModels("public")).map(
+      (tool) => (tool as { name: string }).name,
+    ),
     documentation: `${env.NEXT_PUBLIC_APP_URL}/connect`,
   });
 }

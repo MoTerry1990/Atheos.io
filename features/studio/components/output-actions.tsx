@@ -99,7 +99,22 @@ export function OutputActions({
         // the original so the result stays recognisably related.
         prompt: operation === "variations" ? job.params.prompt : "",
         inputImageUrls: [outputUrl!],
-        outputs: operation === "variations" ? 2 : 1,
+        /**
+         * Derived from the model, not assumed.
+         *
+         * This sent a flat `2` for variations, which happens to be valid
+         * because the only model declaring that operation renders up to four.
+         * That is luck, not design — and the server now refuses an output
+         * count a model cannot produce rather than clamping it, so a model
+         * capped at one would have turned this button into an error.
+         *
+         * Choosing a valid value from the catalogue is the client's job; the
+         * ban on silent substitution is a rule about the server.
+         */
+        outputs:
+          operation === "variations"
+            ? Math.min(2, model.capabilities.maxOutputs)
+            : 1,
         scale: operation === "upscale" ? 2 : undefined,
         parentId: job.id,
       });

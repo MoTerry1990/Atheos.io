@@ -138,7 +138,7 @@ function compileMotion1(
     continuityLine(brief),
   ].filter(Boolean);
 
-  const seconds = nearestAllowed(brief.durationSeconds.value, model);
+  const seconds = nearestAllowed(brief.durationSeconds.value, model, omitted);
 
   return {
     modelId: model.id,
@@ -179,7 +179,7 @@ function compileMotionPro(
       .join(" "),
     negativePrompt: "",
     parameters: {
-      duration: nearestAllowed(brief.durationSeconds.value, model),
+      duration: nearestAllowed(brief.durationSeconds.value, model, omitted),
       resolution: brief.resolution.value,
       aspect_ratio: brief.aspectRatio.value,
       fps: 24,
@@ -291,7 +291,7 @@ function compileVeo(
   }
 
   const parameters: Record<string, unknown> = {
-    duration: nearestAllowed(brief.durationSeconds.value, model),
+    duration: nearestAllowed(brief.durationSeconds.value, model, omitted),
     resolution: brief.resolution.value,
     aspect_ratio: brief.aspectRatio.value,
     generate_audio: brief.audioStrategy.value === "NATIVE",
@@ -317,16 +317,52 @@ function compileVeo(
  * is offered and then refused.
  */
 
-/** Snap to a length the model will actually render. */
-function nearestAllowed(seconds: number, model: ModelCapability): number {
+/**
+ * The nearest length this model will render, and it says so.
+ *
+ * ## Why this one snaps when the submission gate refuses
+ *
+ * They are different jobs. `resolveDuration` in `services/generation.ts`
+ * guards *money*: it receives whatever another company's software sent, and a
+ * caller who asked for ten seconds must never be billed for 7.5 without
+ * knowing. It refuses, before the quote and before the reservation.
+ *
+ * This is the compiler, whose entire purpose is adapting one model-agnostic
+ * brief to several models so they can be compared. A brief written for ten
+ * seconds is a legitimate thing to compile for a model that renders 4, 6 or 8
+ * — that comparison is how the Studio recommends a model at all. Refusing here
+ * would make "show me this brief on each tier" impossible.
+ *
+ * What was actually wrong was silence. It adjusted the length and told nobody,
+ * so a quote could name a duration the render would not honour. It now writes
+ * the change into `omitted`, which the confirmation panel shows, so the
+ * adjustment is something the user accepts rather than discovers.
+ */
+function nearestAllowed(
+  seconds: number,
+  model: ModelCapability,
+  omitted?: string[],
+): number {
+  const disclose = (chosen: number) => {
+    if (chosen !== seconds) {
+      omitted?.push(
+        `clip length — you asked for ${seconds}s and this model renders ${chosen}s`,
+      );
+    }
+    return chosen;
+  };
+
   if (!model.allowedDurations?.length) {
-    return Math.min(seconds, model.maxDurationSeconds);
+    return disclose(Math.min(seconds, model.maxDurationSeconds));
   }
   if (model.allowedDurations.includes(seconds)) return seconds;
+
   const longer = model.allowedDurations.filter((d) => d >= seconds);
-  return longer.length > 0
-    ? Math.min(...longer)
-    : Math.max(...model.allowedDurations);
+  return disclose(
+    longer.length > 0
+      ? Math.min(...longer)
+      : Math.max(...model.allowedDurations),
+  );
 }
 
 /**

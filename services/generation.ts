@@ -481,10 +481,7 @@ export async function submitGeneration(input: SubmitInput) {
     );
   }
 
-  const outputs = Math.min(
-    Math.max(1, input.outputs ?? 1),
-    model.capabilities.maxOutputs,
-  );
+  const outputs = resolveOutputs(model, input.outputs);
 
   const durationSeconds = resolveDuration(model, input.durationSeconds);
 
@@ -889,17 +886,82 @@ async function failGeneration(generationId: string, message: string) {
  * Returns undefined for image models, so nothing about video leaks into an
  * image request.
  */
+/**
+ * The requested number of outputs, or a refusal. Never a clamp.
+ *
+ * This was `Math.min(Math.max(1, requested), maxOutputs)`, which is the same
+ * defect as the duration snap wearing different arithmetic: a caller asking a
+ * one-output model for four received one, was billed for one, and was told
+ * nothing. `0` and `-3` silently became `1`, and `2.5` became `2.5` — a
+ * fractional count that then priced a fractional job.
+ *
+ * A Studio picker offering only valid counts cannot express any of those. An
+ * API caller can, and is writing code against the answer.
+ *
+ * Refused here, before `priceFor` and before the reservation, so an impossible
+ * request costs nothing and creates no generation row.
+ */
+function resolveOutputs(
+  model: { capabilities: { maxOutputs: number } },
+  requested: number | undefined,
+): number {
+  const max = model.capabilities.maxOutputs;
+
+  // The documented default. Nobody chose, so the cheapest valid count.
+  if (requested === undefined) return 1;
+
+  if (!Number.isInteger(requested) || requested < 1 || requested > max) {
+    throw new GenerationError(
+      max === 1
+        ? "This model produces a single output per generation."
+        : `Choose a whole number of outputs between 1 and ${max}.`,
+      400,
+      "model_setting_unavailable",
+    );
+  }
+
+  return requested;
+}
+
+/**
+ * The requested duration, or a refusal. Never the nearest.
+ *
+ * This used to snap a request to the closest allowed value, and that quietly
+ * produced three lies at once. MCP advertised 5 and 10 seconds for Motion 1,
+ * which accepts 5 and 7.5; asking for ten rendered 7.5, billed 7.5, and told
+ * the caller they were getting ten. The sequence builder made the same
+ * promise on a card reading "180 credits" and charged 135.
+ *
+ * Snapping is defensible in a slider bounded by the same list — the user
+ * cannot express an impossible value there. It is not defensible on a server
+ * that accepts arbitrary input from other people's software, because the
+ * caller is writing code against the answer and will never see the
+ * substitution.
+ *
+ * Refused here, which is *before* `priceFor`, before the spending controls and
+ * before the reservation — so an impossible request costs nothing and creates
+ * no generation row.
+ */
 function resolveDuration(
-  model: { capabilities: { durations?: readonly number[] } },
+  model: { id?: string; capabilities: { durations?: readonly number[] } },
   requested: number | undefined,
 ): number | undefined {
   const durations = model.capabilities.durations;
   if (!durations?.length) return undefined;
+
+  // Nobody chose, so the cheapest option rather than the longest: a caller who
+  // did not ask must not be billed for the most expensive length available.
   if (requested === undefined) return Math.min(...durations);
 
-  return durations.reduce((best, option) =>
-    Math.abs(option - requested) < Math.abs(best - requested) ? option : best,
-  );
+  if (!durations.includes(requested)) {
+    throw new GenerationError(
+      `That clip length is not available. Choose one of: ${durations.join(", ")} seconds.`,
+      400,
+      "model_setting_unavailable",
+    );
+  }
+
+  return requested;
 }
 
 function assetKindFor(mimeType: string): AssetKind {

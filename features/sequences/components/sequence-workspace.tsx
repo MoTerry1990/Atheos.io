@@ -77,10 +77,21 @@ const CLIP_OPTIONS = [
     credits: 90,
   },
   {
+    /**
+     * 7.5 seconds, not 10.
+     *
+     * This said 10, and Motion 1 accepts only 5 and 7.5 — so every long clip
+     * built here was quietly rendered at 7.5 by the pipeline's nearest-match
+     * and billed 135 credits against a card that promised 180 for 10 seconds.
+     * The picker was wrong, not the model.
+     *
+     * Now that the server refuses a duration it cannot honour, an option that
+     * lies is an option that fails rather than one that silently shortens.
+     */
     modelId: "motion-1",
     label: "Motion 1 · 720p",
-    seconds: 10,
-    credits: 180,
+    seconds: 7.5,
+    credits: 135,
   },
   /**
    * The three Motion Pro lengths were removed by the licence audit.
