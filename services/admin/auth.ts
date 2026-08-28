@@ -67,6 +67,33 @@ function allowlistedClerkIds(): Set<string> {
  * decide whether to *show* something — the nav. Everything that guards data
  * uses `requireAdmin`.
  */
+/**
+ * Is *this* user an admin, by clerk id?
+ *
+ * `isAdmin()` reads the Clerk session, which is right for a page and useless
+ * for an API key: a key resolves to a user without a session, so the session
+ * lookup returns nothing and every key-holder was treated as an ordinary
+ * customer. That failed closed — the owner's key simply saw the public
+ * catalogue — but it meant the owner could not reach their own
+ * owner-evaluation models through a connector at all.
+ *
+ * Same two grants as `isAdmin`, in the same order, against an id the caller
+ * has already authenticated. It takes a clerk id rather than a session so
+ * there is exactly one place that decides what admin means; it does **not**
+ * take anything a client could send.
+ */
+export async function isAdminClerkId(clerkId: string): Promise<boolean> {
+  if (!clerkId) return false;
+  if (allowlistedClerkIds().has(clerkId)) return true;
+
+  const user = await prisma.user.findUnique({
+    where: { clerkId },
+    select: { role: true },
+  });
+
+  return user?.role === "ADMIN";
+}
+
 export async function isAdmin(): Promise<boolean> {
   const clerkId = await getUserId();
   if (!clerkId) return false;

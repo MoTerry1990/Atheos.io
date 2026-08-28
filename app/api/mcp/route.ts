@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { env } from "@/lib/env";
-import { isAdmin } from "@/services/admin/auth";
+import { isAdminClerkId } from "@/services/admin/auth";
 import type { Caller } from "@/services/ai/model-policy";
 import { resolveApiKey } from "@/services/api-keys";
 import {
@@ -344,11 +344,16 @@ export async function POST(request: NextRequest) {
   /**
    * The caller decides the catalogue, and it comes from the key's owner.
    *
-   * Never from a request field: an API key resolves to a user, and whether
-   * that user is the owner is a server-side question. A client sending
-   * `{ role: "admin" }` has nothing to bind to.
+   * Resolved from the key's owner, not from a session. `isAdmin()` reads the
+   * Clerk session, which an API key does not have — so every key-holder was
+   * treated as an ordinary customer and the owner could not reach their own
+   * owner-evaluation models through a connector at all. It failed closed,
+   * which is the right direction to fail, but it was still wrong.
+   *
+   * Never from a request field: the id comes from the authenticated key
+   * record, so a client sending `{ role: "admin" }` has nothing to bind to.
    */
-  const caller: Caller = (await isAdmin().catch(() => false))
+  const caller: Caller = (await isAdminClerkId(user.clerkId).catch(() => false))
     ? "owner"
     : "public";
 
