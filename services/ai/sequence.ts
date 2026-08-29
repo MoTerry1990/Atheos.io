@@ -52,15 +52,22 @@ export type SequenceMode =
   | "multi_shot";
 
 /** The model facts a quote depends on. Mirrors `video-capabilities.ts`. */
+/**
+ * What a model can do — and nothing about who runs it or what it costs us.
+ *
+ * `reachableVia` and `costBasis` were fields here. This interface describes
+ * objects that three client components import, so a provider name and notes
+ * reading "Replicate margin unverified" were shipping to every browser that
+ * opened the Studio. They were commercial working notes on a capability
+ * object, which is the wrong home twice over; they now live in
+ * `SEQUENCE_COST_NOTES`, server-side.
+ */
 export interface SequenceModelFacts {
   id: string;
   label: string;
-  creditCost: number;
   /** Lengths the model accepts. The smallest is the floor for every shot. */
   durationsSeconds: readonly number[];
   maxDurationSeconds: number;
-  /** Provider cost per second of generated output, in micro-USD. */
-  perSecondMicroUsd: number;
   /** Resolution the provider actually returns. Not what the UI offers. */
   nativeResolution: string;
   /** Frames per second in the delivered file. */
@@ -89,9 +96,6 @@ export interface SequenceModelFacts {
   /** Continue an existing clip. Distinct from chaining by last frame. */
   supportsVideoExtension: boolean;
   /** How the model is reached. Decides whether a new adapter is needed. */
-  reachableVia: "replicate" | "google-direct" | "unavailable";
-  /** Where `perSecondMicroUsd` came from. Never left to the reader to assume. */
-  costBasis: string;
 }
 
 export interface SequenceQuote {
@@ -114,8 +118,6 @@ export interface SequenceQuote {
   frameRate: number;
 
   audio: "native" | "atheos_soundscape" | "none";
-
-  providerCostMicroUsd: number;
   creditCharge: number;
   estimatedSeconds: number;
 
@@ -188,6 +190,19 @@ export function clipLengthsFor(
  * calculation rather than two.
  */
 export function quoteSequence(input: {
+  /**
+   * The model's base price in credits, from the public model DTO.
+   *
+   * Passed in rather than read from the facts. The price used to sit on the
+   * capability table this function reads, which three client components
+   * import — so the whole price list shipped to the browser, and beside it the
+   * per-second cost it was derived from.
+   *
+   * `/api/generations` already computes this per request and hands it over in
+   * the public DTO. Taking it as an argument keeps one source of truth for
+   * money and lets the capability table stay free of it.
+   */
+  baseCredits: number;
   plan: VideoDirectorPlan;
   facts: SequenceModelFacts;
   mode: SequenceMode;
@@ -292,7 +307,7 @@ export function quoteSequence(input: {
       total +
       creditsFor(
         {
-          creditCost: facts.creditCost,
+          creditCost: input.baseCredits,
           capabilities: { durations: facts.durationsSeconds },
         },
         1,
@@ -351,9 +366,6 @@ export function quoteSequence(input: {
     exportResolution,
     frameRate: facts.deliveredFrameRate,
     audio,
-    providerCostMicroUsd: Math.round(
-      generatedSeconds * facts.perSecondMicroUsd,
-    ),
     creditCharge,
     estimatedSeconds,
     beats,
@@ -375,8 +387,16 @@ export function quoteSequence(input: {
  * price automatically instead of leaving a stale number behind.
  */
 export function creditsAtMargin(input: {
-  perSecondMicroUsd: number;
   seconds: number;
+  /**
+   * Our cost per generated second, in micro-USD.
+   *
+   * Passed in rather than read from the model facts: the facts object is
+   * imported by client components, so a cost figure living on it ends up in a
+   * browser bundle. It lives in `sequence-cost-notes.ts` instead, which is
+   * `server-only`, and reaches this function as an argument.
+   */
+  perSecondMicroUsd: number;
   /** Credit value in micro-USD. $0.005 per `model-costs.ts`. */
   creditValueMicroUsd?: number;
   /** Revenue as a multiple of cost. 3 for video. */
@@ -619,6 +639,16 @@ export interface RetryBudget {
  */
 export function retryBudgetFor(input: {
   quote: SequenceQuote;
+  /**
+   * What the quote costs Atheos, in micro-USD.
+   *
+   * Passed in rather than read off the quote. The quote is handed to a
+   * browser, and a provider cost on it is the margin — the Studio was
+   * rendering exactly that as a "Provider cost" row. Compute it with
+   * `providerCostMicroUsdFor` from `sequence-cost-notes.ts`, which is
+   * `server-only`.
+   */
+  providerCostMicroUsd: number;
   attemptsSoFar: number;
   spentMicroUsd: number;
   /** Retries per shot, not per sequence. */
@@ -630,7 +660,7 @@ export function retryBudgetFor(input: {
   const ceiling = input.overspendCeiling ?? 1.5;
 
   const perCallMicroUsd = Math.round(
-    input.quote.providerCostMicroUsd / Math.max(1, input.quote.providerCalls),
+    input.providerCostMicroUsd / Math.max(1, input.quote.providerCalls),
   );
 
   if (input.attemptsSoFar >= maxAttempts) {
@@ -642,14 +672,14 @@ export function retryBudgetFor(input: {
   }
 
   const projected = input.spentMicroUsd + perCallMicroUsd;
-  const cap = Math.round(input.quote.providerCostMicroUsd * ceiling);
+  const cap = Math.round(input.providerCostMicroUsd * ceiling);
 
   if (projected > cap) {
     return {
       allowed: false,
       reason:
         `a retry would take provider spend to ${formatUsd(projected)}, past the ` +
-        `${formatUsd(cap)} ceiling for a ${formatUsd(input.quote.providerCostMicroUsd)} quote`,
+        `${formatUsd(cap)} ceiling for a ${formatUsd(input.providerCostMicroUsd)} quote`,
       additionalCostMicroUsd: 0,
     };
   }

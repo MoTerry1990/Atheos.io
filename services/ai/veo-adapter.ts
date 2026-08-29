@@ -94,7 +94,7 @@ export function buildVeoRequest(input: {
    * they asked for.
    */
   if (
-    facts.id === "replicate/veo-3.1-lite" &&
+    facts.id === "cinematic-lite" &&
     resolution === "1080p" &&
     duration !== 8
   ) {
@@ -158,7 +158,7 @@ export function buildVeoRequest(input: {
   if (facts.supportsNegativePrompt && directed.negativePrompt) {
     veo.negative_prompt = directed.negativePrompt;
   }
-  if (facts.id !== "replicate/veo-3.1-lite") {
+  if (facts.id !== "cinematic-lite") {
     veo.generate_audio = directed.includesAudioDirection;
   } else if (!directed.includesAudioDirection) {
     adjustments.push(

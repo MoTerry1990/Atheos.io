@@ -1,3 +1,11 @@
+/**
+ * Public ids, even here.
+ *
+ * These were catalogue paths. The route 404s in production, but the chunk is
+ * still built and served, and a fixture that models the real shape wrong is a
+ * fixture that teaches the wrong shape — the next person copies it into
+ * something customer-facing.
+ */
 import { ApiError, type BillingSummary } from "@/features/billing/lib/api";
 import type { BillingApi } from "@/features/billing/lib/api-context";
 import {
@@ -160,9 +168,13 @@ export function createFixtureApi(now: number, scenario: Scenario): BillingApi {
           : [{ modality: "IMAGE", credits: 82, generations: 9 }],
         byModel: subscribed
           ? [
-              { model: "replicate/video-gen", credits: 540, generations: 6 },
-              { model: "replicate/flux-dev", credits: 240, generations: 20 },
-              { model: "replicate/flux-schnell", credits: 80, generations: 21 },
+              { model: "motion-1", credits: 540, generations: 6 },
+              {
+                model: "atheos-image-realistic",
+                credits: 240,
+                generations: 20,
+              },
+              { model: "atheos-image-fast", credits: 80, generations: 21 },
             ]
           : [{ model: "mock/standard", credits: 82, generations: 9 }],
       },
@@ -231,7 +243,7 @@ export function createFixtureApi(now: number, scenario: Scenario): BillingApi {
           createdAt: now - 2 * 3_600_000,
           generation: {
             id: "gen_1",
-            model: "replicate/video-gen",
+            model: "motion-1",
             operation: "text-to-video",
             modality: "VIDEO" as const,
           },

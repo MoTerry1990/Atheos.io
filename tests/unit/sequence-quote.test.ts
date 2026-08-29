@@ -11,12 +11,10 @@ import {
   validateSequenceContinuity,
   type ShotMeasurement,
 } from "@/services/ai/sequence";
-import {
-  MOTION_1,
-  MOTION_PRO,
-  SEQUENCE_CANDIDATES,
-} from "@/services/ai/sequence-models";
+import { MOTION_1, MOTION_PRO } from "@/services/ai/sequence-models.public";
 import { buildDirectorPlan } from "@/services/ai/video-director";
+import { providerCostMicroUsdFor } from "@/services/ai/sequence-models.server";
+import { SEQUENCE_CANDIDATES } from "@/services/ai/sequence-candidates.server";
 
 const CINEMATIC_ES =
   "video cinematográfico del carro rojo en la carretera de la costa, " +
@@ -37,8 +35,12 @@ describe("the plan the production test produced", () => {
   it("is four shots, and that is what gets priced", () => {
     expect(FOUR_SHOT.shots).toHaveLength(4);
     expect(
-      quoteSequence({ plan: FOUR_SHOT, facts: MOTION_PRO, mode: "multi_shot" })
-        .providerCalls,
+      quoteSequence({
+        baseCredits: 90,
+        plan: FOUR_SHOT,
+        facts: MOTION_PRO,
+        mode: "multi_shot",
+      }).providerCalls,
     ).toBe(4);
   });
 });
@@ -51,6 +53,7 @@ describe("a four-shot prompt cannot silently become one shot", () => {
      * unrelated cars, so this is a refusal rather than a warning.
      */
     const quote = quoteSequence({
+      baseCredits: 90,
       plan: FOUR_SHOT,
       facts: MOTION_1,
       mode: "multi_shot",
@@ -65,6 +68,7 @@ describe("a four-shot prompt cannot silently become one shot", () => {
     // charge for one. A quote that says "1 call" for a four-shot request is
     // that bug regardless of what the warning text says.
     const quote = quoteSequence({
+      baseCredits: 180,
       plan: FOUR_SHOT,
       facts: MOTION_PRO,
       mode: "multi_shot",
@@ -75,6 +79,7 @@ describe("a four-shot prompt cannot silently become one shot", () => {
 
   it("says so plainly when a single-shot plan is asked to be a sequence", () => {
     const quote = quoteSequence({
+      baseCredits: 180,
       plan: CONTINUOUS,
       facts: MOTION_PRO,
       mode: "multi_shot",
@@ -90,6 +95,7 @@ describe("the displayed credits buy the whole deliverable", () => {
      * each are still four 5s clips: 20 seconds generated to deliver 5.
      */
     const quote = quoteSequence({
+      baseCredits: 180,
       plan: FOUR_SHOT,
       facts: MOTION_PRO,
       mode: "multi_shot",
@@ -101,6 +107,7 @@ describe("the displayed credits buy the whole deliverable", () => {
     expect(quote.creditCharge).toBe(
       4 *
         quoteSequence({
+          baseCredits: 180,
           plan: CONTINUOUS,
           facts: MOTION_PRO,
           mode: "continuous",
@@ -110,13 +117,26 @@ describe("the displayed credits buy the whole deliverable", () => {
 
   it("prices the provider cost from seconds generated, not seconds delivered", () => {
     const quote = quoteSequence({
+      baseCredits: 180,
       plan: FOUR_SHOT,
       facts: MOTION_PRO,
       mode: "multi_shot",
     });
     // 20s x $0.054. Quoting the delivered 5s would understate it fourfold.
-    expect(quote.providerCostMicroUsd).toBe(1_080_000);
-    expect(formatUsd(quote.providerCostMicroUsd)).toBe("$1.08");
+    expect(
+      providerCostMicroUsdFor({
+        publicModelId: quote.modelId,
+        generatedSeconds: quote.generatedSeconds,
+      }),
+    ).toBe(1_080_000);
+    expect(
+      formatUsd(
+        providerCostMicroUsdFor({
+          publicModelId: quote.modelId,
+          generatedSeconds: quote.generatedSeconds,
+        }),
+      ),
+    ).toBe("$1.08");
   });
 
   it("labels the button with the deliverable and its full price", () => {
@@ -126,6 +146,7 @@ describe("the displayed credits buy the whole deliverable", () => {
      * cannot be read apart.
      */
     const sequence = quoteSequence({
+      baseCredits: 180,
       plan: FOUR_SHOT,
       facts: MOTION_PRO,
       mode: "multi_shot",
@@ -135,6 +156,7 @@ describe("the displayed credits buy the whole deliverable", () => {
     );
 
     const single = quoteSequence({
+      baseCredits: 90,
       plan: FOUR_SHOT,
       facts: MOTION_1,
       mode: "continuous",
@@ -144,7 +166,12 @@ describe("the displayed credits buy the whole deliverable", () => {
     // And a blocked sequence offers no price at all.
     expect(
       generateLabel(
-        quoteSequence({ plan: FOUR_SHOT, facts: MOTION_1, mode: "multi_shot" }),
+        quoteSequence({
+          baseCredits: 90,
+          plan: FOUR_SHOT,
+          facts: MOTION_1,
+          mode: "multi_shot",
+        }),
       ),
     ).toBe("Not available on this model");
   });
@@ -153,11 +180,13 @@ describe("the displayed credits buy the whole deliverable", () => {
 describe("the two modes are distinct, not a default and a footnote", () => {
   it("differ in calls, cost, credits and time", () => {
     const single = quoteSequence({
+      baseCredits: 180,
       plan: FOUR_SHOT,
       facts: MOTION_PRO,
       mode: "continuous",
     });
     const sequence = quoteSequence({
+      baseCredits: 180,
       plan: FOUR_SHOT,
       facts: MOTION_PRO,
       mode: "multi_shot",
@@ -166,8 +195,16 @@ describe("the two modes are distinct, not a default and a footnote", () => {
     expect(single.providerCalls).toBe(1);
     expect(sequence.providerCalls).toBe(4);
     expect(sequence.creditCharge).toBeGreaterThan(single.creditCharge);
-    expect(sequence.providerCostMicroUsd).toBeGreaterThan(
-      single.providerCostMicroUsd,
+    expect(
+      providerCostMicroUsdFor({
+        publicModelId: sequence.modelId,
+        generatedSeconds: sequence.generatedSeconds,
+      }),
+    ).toBeGreaterThan(
+      providerCostMicroUsdFor({
+        publicModelId: single.modelId,
+        generatedSeconds: single.generatedSeconds,
+      }),
     );
     // Chained shots run one after another, so the wait is four clips long.
     expect(sequence.estimatedSeconds).toBe(single.estimatedSeconds * 4);
@@ -179,6 +216,7 @@ describe("the two modes are distinct, not a default and a footnote", () => {
       durationSeconds: 30,
     });
     const quote = quoteSequence({
+      baseCredits: 90,
       plan: long,
       facts: MOTION_1,
       mode: "continuous",
@@ -190,6 +228,7 @@ describe("the two modes are distinct, not a default and a footnote", () => {
 
 describe("nothing is charged for work that was not done", () => {
   const quote = quoteSequence({
+    baseCredits: 180,
     plan: FOUR_SHOT,
     facts: MOTION_PRO,
     mode: "multi_shot",
@@ -252,6 +291,7 @@ describe("nothing is charged for work that was not done", () => {
 
 describe("retries have a hard ceiling", () => {
   const quote = quoteSequence({
+    baseCredits: 180,
     plan: FOUR_SHOT,
     facts: MOTION_PRO,
     mode: "multi_shot",
@@ -260,6 +300,10 @@ describe("retries have a hard ceiling", () => {
   it("allows a first retry", () => {
     const budget = retryBudgetFor({
       quote,
+      providerCostMicroUsd: providerCostMicroUsdFor({
+        publicModelId: quote.modelId,
+        generatedSeconds: quote.generatedSeconds,
+      }),
       attemptsSoFar: 1,
       spentMicroUsd: 270_000,
     });
@@ -270,6 +314,10 @@ describe("retries have a hard ceiling", () => {
   it("stops at the attempt limit", () => {
     const budget = retryBudgetFor({
       quote,
+      providerCostMicroUsd: providerCostMicroUsdFor({
+        publicModelId: quote.modelId,
+        generatedSeconds: quote.generatedSeconds,
+      }),
       attemptsSoFar: 2,
       spentMicroUsd: 270_000,
     });
@@ -285,6 +333,10 @@ describe("retries have a hard ceiling", () => {
      */
     const budget = retryBudgetFor({
       quote,
+      providerCostMicroUsd: providerCostMicroUsdFor({
+        publicModelId: quote.modelId,
+        generatedSeconds: quote.generatedSeconds,
+      }),
       attemptsSoFar: 0,
       spentMicroUsd: 1_600_000,
     });
@@ -355,6 +407,7 @@ describe("continuity is checked before the shots are joined", () => {
 
 describe("the delivered duration is the quoted duration", () => {
   const quote = quoteSequence({
+    baseCredits: 180,
     plan: FOUR_SHOT,
     facts: MOTION_PRO,
     mode: "multi_shot",
@@ -380,6 +433,7 @@ describe("resolution and audio are never overstated", () => {
      * the Size control, so choosing 1080px changes the label and nothing else.
      */
     const quote = quoteSequence({
+      baseCredits: 90,
       plan: CONTINUOUS,
       facts: MOTION_1,
       mode: "continuous",
@@ -391,6 +445,7 @@ describe("resolution and audio are never overstated", () => {
 
   it("says plain 720p when nothing larger was asked for", () => {
     const quote = quoteSequence({
+      baseCredits: 90,
       plan: CONTINUOUS,
       facts: MOTION_1,
       mode: "continuous",
@@ -401,6 +456,7 @@ describe("resolution and audio are never overstated", () => {
 
   it("calls Atheos audio Atheos audio", () => {
     const quote = quoteSequence({
+      baseCredits: 180,
       plan: FOUR_SHOT,
       facts: MOTION_PRO,
       mode: "multi_shot",
@@ -413,13 +469,18 @@ describe("resolution and audio are never overstated", () => {
 
   it("reports no audio when none was asked for", () => {
     expect(
-      quoteSequence({ plan: FOUR_SHOT, facts: MOTION_PRO, mode: "multi_shot" })
-        .audio,
+      quoteSequence({
+        baseCredits: 90,
+        plan: FOUR_SHOT,
+        facts: MOTION_PRO,
+        mode: "multi_shot",
+      }).audio,
     ).toBe("none");
   });
 
   it("would report native audio only for a model that has it", () => {
     const quote = quoteSequence({
+      baseCredits: 90,
       plan: CONTINUOUS,
       facts: { ...MOTION_PRO, nativeAudio: true },
       mode: "continuous",

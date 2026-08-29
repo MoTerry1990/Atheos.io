@@ -49,9 +49,11 @@ import { ReferenceUpload } from "@/features/studio/components/reference-upload";
 import { StyleAndCamera } from "@/features/studio/components/style-and-camera";
 import { VideoSettings } from "@/features/studio/components/video-settings";
 import { findModelIn } from "@/features/studio/data/models";
-import { generateLabel, quoteSequence } from "@/services/ai/sequence";
-import { SEQUENCE_MODEL_FACTS } from "@/services/ai/sequence-models";
-import { buildDirectorPlan } from "@/services/ai/video-director";
+import {
+  canGenerate,
+  quoteLabel,
+  useSequenceQuote,
+} from "@/features/studio/lib/use-sequence-quote";
 import {
   chooseModelForModality,
   modalityOf,
@@ -481,31 +483,37 @@ function GenerateBar({
    * disagree again — and a model that cannot make the chosen mode gets a label
    * saying so rather than a price.
    */
-  const facts = SEQUENCE_MODEL_FACTS[model.id];
-  const label = useMemo(() => {
-    if (!facts || model.modality !== "VIDEO") {
-      return `Generate · ${cost} credits`;
-    }
-    return generateLabel(
-      quoteSequence({
-        plan: buildDirectorPlan({
+  /**
+   * The price comes from the server, and only for the settings on screen.
+   *
+   * This block used to call `quoteSequence` locally against a price table that
+   * shipped with the bundle. The table was a second source of truth for money
+   * and had already drifted from the registry, so the figure a customer read
+   * and the figure the ledger took were not guaranteed to match.
+   *
+   * `useSequenceQuote` invalidates on every settings change *before* the
+   * request goes out, aborts the previous one, and drops replies that arrive
+   * out of order — so the number on the button always belongs to what is
+   * currently selected, or there is no number.
+   */
+  const isVideo = model.modality === "VIDEO";
+  const quoteState = useSequenceQuote(
+    isVideo && params.prompt.trim()
+      ? {
+          publicModelId: model.id,
+          mode: params.sequenceMode,
           prompt: params.prompt,
           durationSeconds: params.durationSeconds,
-        }),
-        facts,
-        mode: params.sequenceMode,
-        hasReferenceImage: params.references.some((r) => r.status === "ready"),
-      }),
-    );
-  }, [
-    facts,
-    model.modality,
-    cost,
-    params.prompt,
-    params.durationSeconds,
-    params.sequenceMode,
-    params.references,
-  ]);
+          hasReferenceImage: params.references.some(
+            (r) => r.status === "ready",
+          ),
+        }
+      : null,
+  );
+
+  // Stills are priced from the catalogue, which is exact for a single output.
+  const label = isVideo ? quoteLabel(quoteState) : `Generate · ${cost} credits`;
+  const quoteBlocks = isVideo && !canGenerate(quoteState);
 
   // A reference still uploading has no URL to send, so submitting now would
   // silently drop it and produce a text-only result the user did not ask for.
@@ -542,12 +550,23 @@ function GenerateBar({
         block
         onClick={onGenerate}
         loading={submitting}
-        disabled={Boolean(blocked)}
+        // Disabled while a quote is in flight or failed: Generate must never
+        // be pressable against a price the server has not just confirmed.
+        disabled={Boolean(blocked) || quoteBlocks}
         title={blocked ?? undefined}
       >
         <Sparkles />
         {label}
       </Button>
+
+      {/*
+        Announced, not just drawn. The price changes without the user acting —
+        they alter a setting and a number arrives a moment later — which is
+        exactly the case a screen reader user has no way to notice.
+      */}
+      <span aria-live="polite" className="sr-only">
+        {label}
+      </span>
 
       <p className="text-center text-2xs text-muted-foreground">
         {blocked ??

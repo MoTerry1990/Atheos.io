@@ -335,10 +335,20 @@ describe("the hand-copied public ids stay in step", () => {
      * So the duplication is allowed and pinned here.
      */
     const { SEQUENCE_MODEL_FACTS } =
-      await import("@/services/ai/sequence-models");
+      await import("@/services/ai/sequence-models.public");
 
     for (const [publicId, facts] of Object.entries(SEQUENCE_MODEL_FACTS)) {
-      expect(catalogueModelId(publicId), publicId).toBe(facts.id);
+      /**
+       * Both sides are public ids now. `facts.id` used to be the catalogue
+       * path — which shipped to the browser, because three client components
+       * import this table — so the assertion was that the key resolved to it.
+       *
+       * The stronger invariant survives the change: the key and the fact
+       * agree, and the public id still resolves to a real catalogue model, so
+       * a typo in either is caught.
+       */
+      expect(facts.id, publicId).toBe(publicId);
+      expect(catalogueModelId(publicId), publicId).not.toBeNull();
     }
   });
 });

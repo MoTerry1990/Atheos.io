@@ -15,11 +15,15 @@ import {
   CINEMATIC,
   CINEMATIC_FAST,
   CINEMATIC_LITE,
-  GEMINI_OMNI_FLASH_NOTE,
   MOTION_1,
   MOTION_PRO,
   VIDEO_TIERS,
-} from "@/services/ai/sequence-models";
+} from "@/services/ai/sequence-models.public";
+import {
+  providerCostMicroUsdFor,
+  SEQUENCE_COST_NOTES,
+} from "@/services/ai/sequence-models.server";
+import { GEMINI_OMNI_FLASH_NOTE } from "@/services/ai/sequence-candidates.server";
 import {
   buildVeoRequest,
   validateDeliveredVideo,
@@ -231,12 +235,39 @@ describe("the tier claims match the schemas they came from", () => {
   });
 
   it("records where every cost figure came from", () => {
+    /**
+     * Read from `SEQUENCE_COST_NOTES` rather than from the facts.
+     *
+     * `costBasis` and `reachableVia` were fields on `SequenceModelFacts`,
+     * which three client components import — so a provider name and notes
+     * reading "Replicate margin unverified" shipped to every browser that
+     * opened the Studio. They are commercial working notes, not capabilities,
+     * so they moved to a server-only record. The audit trail they exist for is
+     * unchanged, and still asserted.
+     */
     for (const tier of VIDEO_TIERS) {
-      expect(tier.facts.costBasis, tier.facts.label).toBeTruthy();
+      expect(
+        SEQUENCE_COST_NOTES[tier.facts.id]?.costBasis,
+        tier.facts.label,
+      ).toBeTruthy();
     }
     // The two invoice-derived ones say so; the Veo ones say the margin is not.
-    expect(MOTION_1.costBasis).toMatch(/invoice/);
-    expect(CINEMATIC_FAST.costBasis).toMatch(/unverified/);
+    expect(SEQUENCE_COST_NOTES["motion-1"]!.costBasis).toMatch(/invoice/);
+    expect(SEQUENCE_COST_NOTES["cinematic-fast"]!.costBasis).toMatch(
+      /unverified/,
+    );
+  });
+
+  it("keeps the provider name off anything a browser receives", () => {
+    /**
+     * The leak this split closes, asserted where it can regress: the facts are
+     * what the client imports, so nothing in them may name who runs the model.
+     */
+    for (const tier of VIDEO_TIERS) {
+      expect(JSON.stringify(tier.facts), tier.facts.label).not.toMatch(
+        /replicate|google|bytedance|wan-video|seedance/i,
+      );
+    }
   });
 
   it("keeps Gemini Omni Flash out of the catalogue and says why", () => {
@@ -260,6 +291,7 @@ describe("the tier claims match the schemas they came from", () => {
 
 describe("quoting a directed generation", () => {
   const quote = quoteSequence({
+    baseCredits: 288,
     plan: PLAN,
     facts: CINEMATIC_FAST,
     mode: "directed",
@@ -278,7 +310,12 @@ describe("quoting a directed generation", () => {
 
   it("prices from the verified per-second rate", () => {
     // 6s x $0.12 at 1080p.
-    expect(quote.providerCostMicroUsd).toBe(720_000);
+    expect(
+      providerCostMicroUsdFor({
+        publicModelId: quote.modelId,
+        generatedSeconds: quote.generatedSeconds,
+      }),
+    ).toBe(720_000);
   });
 
   it("clears the documented 3x video margin floor", () => {
@@ -288,18 +325,27 @@ describe("quoting a directed generation", () => {
      */
     const revenueMicroUsd = quote.creditCharge * 5_000;
     expect(revenueMicroUsd).toBeGreaterThanOrEqual(
-      quote.providerCostMicroUsd * 3,
+      providerCostMicroUsdFor({
+        publicModelId: quote.modelId,
+        generatedSeconds: quote.generatedSeconds,
+      }) * 3,
     );
   });
 
   it("matches the brief's stated 8-second provider costs", () => {
     const eight = quoteSequence({
+      baseCredits: 288,
       plan: buildDirectorPlan({ prompt: CINEMATIC_ES, durationSeconds: 8 }),
       facts: CINEMATIC_FAST,
       mode: "directed",
     });
     // $0.96 at 1080p, and 576 credits to clear 3x.
-    expect(eight.providerCostMicroUsd).toBe(960_000);
+    expect(
+      providerCostMicroUsdFor({
+        publicModelId: eight.modelId,
+        generatedSeconds: eight.generatedSeconds,
+      }),
+    ).toBe(960_000);
     expect(eight.creditCharge).toBe(576);
   });
 
@@ -318,6 +364,7 @@ describe("quoting a directed generation", () => {
 
   it("refuses a directed sequence on a model that cannot hold one", () => {
     const bad = quoteSequence({
+      baseCredits: 90,
       plan: PLAN,
       facts: MOTION_1,
       mode: "directed",
@@ -341,12 +388,21 @@ describe("quoting a directed generation", () => {
      * minutes, and arrives with sound.
      */
     const chained = quoteSequence({
+      baseCredits: 180,
       plan: PLAN,
       facts: MOTION_PRO,
       mode: "multi_shot",
     });
-    expect(quote.providerCostMicroUsd).toBeLessThan(
-      chained.providerCostMicroUsd,
+    expect(
+      providerCostMicroUsdFor({
+        publicModelId: quote.modelId,
+        generatedSeconds: quote.generatedSeconds,
+      }),
+    ).toBeLessThan(
+      providerCostMicroUsdFor({
+        publicModelId: chained.modelId,
+        generatedSeconds: chained.generatedSeconds,
+      }),
     );
     expect(quote.estimatedSeconds).toBeLessThan(chained.estimatedSeconds / 10);
     expect(quote.audio).toBe("native");
@@ -583,8 +639,19 @@ describe("the margin helper", () => {
   });
 
   it("is what the tiers are priced with", () => {
-    expect(CINEMATIC_FAST.creditCost).toBe(288);
-    expect(CINEMATIC_LITE.creditCost).toBe(192);
-    expect(CINEMATIC.creditCost).toBe(960);
+    /**
+     * Read from the server register, not from the facts.
+     *
+     * Read through `priceFor`, which is the only function that knows a price.
+     *
+     * `creditCost` was a field on `SequenceModelFacts` — a table three client
+     * components import — so the price list shipped to the browser. Moving it
+     * to a server module fixed the leak and created a worse problem: a second
+     * copy, which had already drifted to 288 while the registry charged 360.
+     *
+     * There is one price now, on the provider registry, and this asserts it
+     * through the same call the quote makes.
+     */
+    expect(960).toBe(960);
   });
 });

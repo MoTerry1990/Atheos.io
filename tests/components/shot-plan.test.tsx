@@ -2,25 +2,55 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { ShotPlanPreview } from "@/features/studio/components/shot-plan";
-import { MOTION_1, MOTION_PRO } from "@/services/ai/sequence-models";
+import { MOTION_1, MOTION_PRO } from "@/services/ai/sequence-models.public";
 
 const CINEMATIC_ES =
   "video cinematográfico del carro rojo desde el cielo, de todos los ángulos, con audio";
 
 const CONTINUOUS_ES = "un carro rojo en la carretera de la costa, sin cortes";
 
+/**
+ * Prices for the fixtures, written out.
+ *
+ * This panel takes `baseCredits` as a prop because the real figure comes from
+ * the server's pricing service. A component test has no server, and reaching
+ * for the registry here would make these assertions depend on whether a
+ * provider key happens to be in the environment.
+ *
+ * `tests/unit/sequence-pricing.test.ts` is where the registry-to-quote link is
+ * proven; this file is about what the panel renders.
+ */
+const BASE_CREDITS: Record<string, number> = {
+  "motion-1": 90,
+  "motion-pro": 180,
+  "cinematic-fast": 360,
+  cinematic: 960,
+};
+
 function renderPanel(
   props: Partial<React.ComponentProps<typeof ShotPlanPreview>> = {},
 ) {
   const onModeChange = vi.fn();
+
+  /**
+   * The price follows whichever model the caller passed in.
+   *
+   * A fixed default would price Motion 1's panel at Motion Pro's rate — which
+   * is exactly the class of bug this split exists to prevent, reproduced in a
+   * test helper. The component takes the figure as a prop now because the real
+   * one comes from the server's public model DTO.
+   */
+  const facts = props.facts ?? MOTION_PRO;
+
   render(
     <ShotPlanPreview
       prompt={CINEMATIC_ES}
       durationSeconds={5}
-      facts={MOTION_PRO}
       mode="continuous"
       onModeChange={onModeChange}
       {...props}
+      facts={facts}
+      baseCredits={props.baseCredits ?? BASE_CREDITS[facts.id]!}
     />,
   );
   return { onModeChange };
@@ -46,6 +76,7 @@ describe("choosing what to generate", () => {
         prompt="   "
         durationSeconds={5}
         facts={MOTION_PRO}
+        baseCredits={180}
         mode="continuous"
         onModeChange={() => {}}
       />,
@@ -104,7 +135,7 @@ describe("choosing what to generate", () => {
 });
 
 describe("the disclosure before spending", () => {
-  it("states calls, seconds generated, final length, resolution, cost and wait", () => {
+  it("states calls, seconds generated, final length, resolution and wait", () => {
     renderPanel({ mode: "multi_shot" });
 
     expect(screen.getAllByText("Provider calls").length).toBeGreaterThan(0);
@@ -112,8 +143,23 @@ describe("the disclosure before spending", () => {
     expect(screen.getByText("20s (5 + 5 + 5 + 5)")).toBeTruthy();
     // Both cards deliver 5s — the difference is what it costs to get there.
     expect(screen.getAllByText("5s · 24fps")).toHaveLength(2);
-    expect(screen.getByText("$1.08")).toBeTruthy();
     expect(screen.getByText("~47 min")).toBeTruthy();
+  });
+
+  it("does not show the customer what Atheos pays", () => {
+    /**
+     * This panel rendered a "Provider cost" row — `$1.08` on this fixture —
+     * showing our own spend in USD. Read next to the credit price it hands the
+     * customer the markup on their own generation, and it was the reason the
+     * per-second cost had to reach the browser at all.
+     *
+     * Asserted as an absence, and by shape rather than by that one figure, so
+     * reintroducing any dollar amount fails here.
+     */
+    renderPanel({ mode: "multi_shot" });
+
+    expect(screen.queryByText("Provider cost")).toBeNull();
+    expect(document.body.textContent ?? "").not.toMatch(/\$\d/);
   });
 
   it("names the continuity limitations rather than implying there are none", () => {

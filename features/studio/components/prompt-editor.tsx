@@ -20,7 +20,7 @@ import {
 } from "@/features/studio/components/prompt-field";
 import { Control } from "@/features/studio/components/model-picker";
 import { ShotPlanPreview } from "@/features/studio/components/shot-plan";
-import { SEQUENCE_MODEL_FACTS } from "@/services/ai/sequence-models";
+import { SEQUENCE_MODEL_FACTS } from "@/services/ai/sequence-models.public";
 import { PROMPT_TEMPLATES } from "@/features/studio/data/presets";
 import { assemblePrompt, useStudioStore } from "@/store/studio-store";
 import { useSelectedModel } from "@/features/studio/lib/use-model";
@@ -221,6 +221,7 @@ export function PromptEditor({ onGenerate }: { onGenerate?: () => void } = {}) {
               prompt={prompt}
               durationSeconds={params.durationSeconds}
               facts={facts}
+              baseCredits={model.creditCost}
               mode={params.sequenceMode}
               onModeChange={(next) => setParam("sequenceMode", next)}
               hasReferenceImage={params.references.some(

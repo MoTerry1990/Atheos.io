@@ -193,3 +193,58 @@ describe("what the server accepts from a client", () => {
     expect(catalogueModelId("")).toBeNull();
   });
 });
+
+describe("history shows what was charged, not what it would cost today", () => {
+  it("reads the captured credit cost from the row", () => {
+    /**
+     * A generation's price is a fact about a transaction, not a lookup.
+     *
+     * Re-deriving it from the current registry would rewrite history every
+     * time a price changed: a customer who paid 90 credits in March would see
+     * 120 in April, and their statement would stop matching their library.
+     *
+     * `toGenerationDTO` reads `row.creditsCost` — the figure captured when the
+     * reservation was made — and nothing in the history path calls `priceFor`.
+     */
+    const charged = toPublicGenerationFrom({
+      id: "gen_old",
+      status: "succeeded",
+      operation: "TEXT_TO_VIDEO",
+      modelId: "replicate/video-gen",
+      prompt: "a wolf in a forest",
+      negativePrompt: null,
+      // Deliberately unlike any current price, so a recomputation would show.
+      creditCost: 47,
+      error: null,
+      createdAt: 0,
+      completedAt: 1,
+      parameters: { durationSeconds: 5 },
+      outputs: [],
+    });
+
+    expect(charged.creditCost).toBe(47);
+  });
+
+  it("keeps two generations of the same model at their own prices", () => {
+    // The property that makes a statement reconcilable: same model, different
+    // days, different prices, both preserved.
+    const base = {
+      status: "succeeded",
+      operation: "TEXT_TO_VIDEO",
+      modelId: "replicate/video-gen",
+      prompt: "a wolf in a forest",
+      negativePrompt: null,
+      error: null,
+      createdAt: 0,
+      completedAt: 1,
+      parameters: {},
+      outputs: [],
+    };
+
+    const older = toPublicGenerationFrom({ ...base, id: "a", creditCost: 90 });
+    const newer = toPublicGenerationFrom({ ...base, id: "b", creditCost: 135 });
+
+    expect(older.creditCost).toBe(90);
+    expect(newer.creditCost).toBe(135);
+  });
+});

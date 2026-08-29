@@ -16,7 +16,6 @@ import {
   type AudioDirectorPlan,
 } from "@/services/ai/audio-director";
 import {
-  formatUsd,
   quoteSequence,
   type SequenceMode,
   type SequenceModelFacts,
@@ -55,6 +54,7 @@ export function ShotPlanPreview({
   prompt,
   durationSeconds,
   facts,
+  baseCredits,
   mode,
   onModeChange,
   hasReferenceImage,
@@ -64,7 +64,15 @@ export function ShotPlanPreview({
 }: {
   prompt: string;
   durationSeconds: number;
-  /** The selected model's real capabilities. See `sequence-models.ts`. */
+  /**
+   * The model's base price in credits, from the public model DTO.
+   *
+   * Passed down rather than looked up. The price used to come from the same
+   * static table as the capabilities, which ships to the browser; it now comes
+   * from `/api/generations`, which computes it server-side per request.
+   */
+  baseCredits: number;
+  /** The selected model's real capabilities. See `sequence-models.public.ts`. */
   facts: SequenceModelFacts;
   mode: SequenceMode;
   onModeChange: (next: SequenceMode) => void;
@@ -90,6 +98,7 @@ export function ShotPlanPreview({
     const common = {
       plan,
       facts,
+      baseCredits,
       hasReferenceImage,
       requestedResolution,
       wantsAudio: /\b(con audio|con sonido|with (audio|sound))\b/i.test(prompt),
@@ -100,7 +109,14 @@ export function ShotPlanPreview({
       directed: quoteSequence({ ...common, mode: "directed" as const }),
       sequence: quoteSequence({ ...common, mode: "multi_shot" as const }),
     };
-  }, [prompt, durationSeconds, facts, hasReferenceImage, requestedResolution]);
+  }, [
+    prompt,
+    durationSeconds,
+    facts,
+    baseCredits,
+    hasReferenceImage,
+    requestedResolution,
+  ]);
 
   const audio = useMemo(
     () =>
@@ -266,10 +282,13 @@ function ModeCard({
               value={`${quote.assembledDurationSeconds}s · ${quote.frameRate}fps`}
             />
             <Fact label="Resolution" value={quote.exportResolution} />
-            <Fact
-              label="Provider cost"
-              value={formatUsd(quote.providerCostMicroUsd)}
-            />
+            {/*
+              The "Provider cost" row was here, showing what Atheos pays per
+              generation in USD. A customer reading it alongside the credit
+              price can compute the markup on their own work, which is not
+              theirs to have — and rendering it is why our per-second cost had
+              to travel to the browser at all. Both are gone.
+            */}
             <Fact
               label="Estimated wait"
               value={`~${Math.round(quote.estimatedSeconds / 60)} min`}

@@ -3,6 +3,8 @@ import { z } from "zod";
 
 import { guard, withHeaders } from "@/lib/api-guard";
 import { isAdmin } from "@/services/admin/auth";
+import type { Caller } from "@/services/ai/model-policy";
+import { quoteSequenceForCaller } from "@/services/connectors/sequence-quote";
 import {
   isRunnableFor,
   MODEL_UNAVAILABLE_CODE,
@@ -71,6 +73,21 @@ const planSchema = z.object({
   // make the server do expensive work.
   prompt: z.string().min(1).max(4000),
   modality: z.enum(["video", "image"]).default("video"),
+  /**
+   * What kind of plan this is.
+   *
+   * `sequence` reuses this route rather than getting one of its own, so there
+   * is a single place that resolves a caller, checks policy, prices work and
+   * signs the result. A second endpoint would be a second chance to forget one
+   * of those.
+   *
+   * Deliberately not inferred from the presence of `clips`: a client that
+   * mistypes a field should get a plain single-shot plan, not silently switch
+   * product.
+   */
+  kind: z.enum(["single", "sequence"]).default("single"),
+  mode: z.enum(["continuous", "directed", "multi_shot"]).optional(),
+  outputs: z.number().int().min(1).max(8).optional(),
   modelId: z.string().max(120).optional(),
   durationSeconds: z.number().int().min(1).max(60).optional(),
   /**
@@ -147,6 +164,13 @@ export async function POST(request: NextRequest) {
    */
   const user = gate.user!;
   const body = gate.body;
+
+  if (body.kind === "sequence") {
+    return withHeaders(
+      NextResponse.json(await planSequence(body, user.id)),
+      gate,
+    );
+  }
 
   if (body.modality === "image") {
     return withHeaders(NextResponse.json(await planImage(body, user.id)), gate);
@@ -478,3 +502,76 @@ const IMAGE_RATIOS = new Set([
   "5:4",
 ]);
 const IMAGE_SIZES = new Set(["1K", "2K", "4K"]);
+
+/**
+ * A sequence quote, priced and signed.
+ *
+ * ## Why it lives here
+ *
+ * Everything money touches goes through one door. This route already resolves
+ * the caller from the session, checks the licence policy, refuses a model the
+ * caller may not run and mints the signed token that submission verifies —
+ * and a sequence needs all four. Giving it its own endpoint would mean writing
+ * them again, and the second copy is the one that forgets something.
+ *
+ * ## The client sends settings, never a price
+ *
+ * `SequenceQuoteRequest` has no price field. If a client sends one anyway it
+ * is dropped by the schema above and would be ignored regardless:
+ * `quoteSequenceForCaller` computes the figure from the settings through
+ * `priceFor`, which is the only function that knows what anything costs.
+ */
+async function planSequence(
+  body: z.infer<typeof planSchema>,
+  userId: string,
+): Promise<Record<string, unknown>> {
+  const caller: Caller = (await isAdmin().catch(() => false))
+    ? "owner"
+    : "public";
+
+  const result = quoteSequenceForCaller(
+    {
+      publicModelId: body.modelId ?? "",
+      mode: body.mode ?? "continuous",
+      prompt: body.prompt,
+      durationSeconds: body.durationSeconds ?? 5,
+      outputs: body.outputs,
+      hasReferenceImage: (body.referenceIds?.length ?? 0) > 0,
+      requestedResolution: body.resolution,
+    },
+    caller,
+  );
+
+  if (!result.ok || !result.quote) {
+    return { ok: false, code: result.reason, message: result.message };
+  }
+
+  const { quote } = result;
+
+  /**
+   * Signed against the *normalised* request, not the one that arrived.
+   *
+   * The settings below are what the server decided — a duration it accepted, an
+   * output count it validated — so confirming with anything else changes the
+   * hash and fails verification. Binding the request as sent would let a client
+   * quote one thing and confirm another.
+   */
+  const { token } = issuePlanToken({
+    userId,
+    brief: {
+      version: 1,
+      originalPrompt: body.prompt,
+      kind: "sequence",
+      publicModelId: body.modelId ?? "",
+      mode: body.mode ?? "continuous",
+      durationSeconds: body.durationSeconds ?? 5,
+      outputs: body.outputs ?? 1,
+      clips: quote.providerCalls,
+    },
+    modelId: body.modelId ?? "",
+    quotedCredits: quote.creditCost,
+    nowMs: Date.now(),
+  });
+
+  return { ok: true, quote, token };
+}

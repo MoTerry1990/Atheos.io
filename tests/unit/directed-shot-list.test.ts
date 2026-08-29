@@ -7,7 +7,7 @@ import {
   MULTI_SHOT_EXCLUSIONS,
 } from "@/services/ai/directed-prompt";
 import { generateLabel, quoteSequence } from "@/services/ai/sequence";
-import { CINEMATIC_FAST } from "@/services/ai/sequence-models";
+import { CINEMATIC_FAST } from "@/services/ai/sequence-models.public";
 import {
   describeDelivered,
   detectShotBoundaries,
@@ -232,6 +232,7 @@ describe("6. the UI says directed camera movement until shots are verified", () 
 
   it("labels the button by the instruction, not by a shot count", () => {
     const quote = quoteSequence({
+      baseCredits: 288,
       plan: PLAN,
       facts: CINEMATIC_FAST,
       mode: "directed",

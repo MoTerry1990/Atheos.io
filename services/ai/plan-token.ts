@@ -157,8 +157,35 @@ function sign(body: string): string {
  * image plan to carry a silent-audio field nobody chose — a meaningless value
  * inside the hash is a value the user is nonetheless held to.
  */
+/**
+ * A sequence request, normalised, in a shape this signer can hash.
+ *
+ * Not a `CreativeBrief`: a sequence is several clips of one model rather than
+ * one shot, so it has no shot list to confirm and no clarifications to answer.
+ * What it does have is a settings tuple that must not change between the quote
+ * and the confirmation, and `briefHash` covers the whole object — so listing
+ * the settings here is what binds them.
+ *
+ * `version` and `originalPrompt` are named to match the other briefs because
+ * `issuePlanToken` reads them directly; the rest is hashed wholesale.
+ */
+export interface SequenceSignable {
+  version: number;
+  originalPrompt: string;
+  audioStrategy?: undefined;
+  kind: "sequence";
+  /** Public id. A catalogue path must never reach a signed payload. */
+  publicModelId: string;
+  mode: string;
+  durationSeconds: number;
+  outputs: number;
+  clips: number;
+}
+
 export type SignableBrief =
-  CreativeBrief | (ImageBrief & { audioStrategy?: undefined });
+  | CreativeBrief
+  | (ImageBrief & { audioStrategy?: undefined })
+  | SequenceSignable;
 
 /** Issue a token for a confirmed brief. */
 export function issuePlanToken(input: {
