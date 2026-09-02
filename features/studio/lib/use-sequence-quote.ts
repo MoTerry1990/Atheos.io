@@ -44,11 +44,57 @@ export interface SequenceQuoteView {
   modelId: string;
 }
 
+/**
+ * What kind of number is on screen, if any.
+ *
+ * Named rather than inferred, because "is this figure binding?" is the
+ * question the button, the label and the screen reader all need to answer, and
+ * three components deriving it separately is three chances to disagree.
+ *
+ *   `estimate`     a local comparison figure. Must be labelled as such and
+ *                  must never enable Generate.
+ *   `loading`      a server quote is in flight. Any previous exact figure is
+ *                  already void; an estimate may remain if it says it is one.
+ *   `exact`        the server priced these exact settings and has not expired.
+ *                  The only state that may be called a quote and the only one
+ *                  that enables Generate.
+ *   `unavailable`  no figure may be shown. Not "show the last one" — a stale
+ *                  price that looks deliberate is worse than none.
+ */
+export type QuoteStatus = "estimate" | "loading" | "exact" | "unavailable";
+
 export type QuoteState =
-  | { status: "idle" }
-  | { status: "loading" }
-  | { status: "ready"; quote: SequenceQuoteView; token: string }
-  | { status: "error" };
+  | { status: "estimate"; estimateCredits: number }
+  | { status: "loading"; estimateCredits?: number }
+  | {
+      status: "exact";
+      quote: SequenceQuoteView;
+      token: string;
+      expiresAtMs: number;
+      /**
+       * The settings this quote was issued for, serialised.
+       *
+       * Carried so "is this quote for what is on screen?" is answerable from
+       * the state alone rather than from the hook's private bookkeeping. The
+       * hook already resets to `loading` on a settings change, so in practice
+       * the two agree — but a consumer holding a state across a render, or a
+       * future caller that keeps one, has no way to check without this.
+       */
+      fingerprint: string;
+    }
+  | { status: "unavailable" };
+
+/**
+ * The fingerprint for a set of settings.
+ *
+ * The whole input object, so anything a customer can change — model, mode,
+ * duration, outputs, prompt, reference, resolution — changes it. Adding a
+ * field to `SequenceQuoteInput` therefore invalidates quotes automatically
+ * rather than needing to be remembered here.
+ */
+export function fingerprintOf(input: SequenceQuoteInput | null): string {
+  return input ? JSON.stringify(input) : "";
+}
 
 export interface SequenceQuoteInput {
   publicModelId: string;
@@ -63,8 +109,24 @@ export interface SequenceQuoteInput {
 /** Long enough to skip per-keystroke requests, short enough not to feel laggy. */
 const DEBOUNCE_MS = 350;
 
-export function useSequenceQuote(input: SequenceQuoteInput | null): QuoteState {
-  const [state, setState] = useState<QuoteState>({ status: "idle" });
+export function useSequenceQuote(
+  input: SequenceQuoteInput | null,
+  /**
+   * A locally computed comparison figure, if the caller has one.
+   *
+   * Kept through `loading` so the interface is not blank while a quote is in
+   * flight — but only ever surfaced as an estimate. It can never become
+   * `exact`, because nothing on this side of the wire is entitled to say what
+   * something costs.
+   */
+  estimateCredits?: number,
+): QuoteState {
+  const initial: QuoteState =
+    estimateCredits === undefined
+      ? { status: "unavailable" }
+      : { status: "estimate", estimateCredits };
+
+  const [state, setState] = useState<QuoteState>(initial);
 
   /**
    * Monotonic request id.
@@ -82,16 +144,26 @@ export function useSequenceQuote(input: SequenceQuoteInput | null): QuoteState {
 
   useEffect(() => {
     if (!key) {
-      setState({ status: "idle" });
+      setState(
+        estimateCredits === undefined
+          ? { status: "unavailable" }
+          : { status: "estimate", estimateCredits },
+      );
       return;
     }
 
     const id = ++latest.current;
     const controller = new AbortController();
 
-    // Invalidated *now*, not when the reply lands. Generate is disabled from
-    // this moment, so nothing can be submitted against the previous price.
-    setState({ status: "loading" });
+    /**
+     * Invalidated *now*, not when the reply lands.
+     *
+     * Any previous `exact` quote is void the instant a setting changes, so
+     * Generate is disabled from this moment and nothing can be submitted
+     * against the old price. The estimate is carried through because it is
+     * still labelled as one.
+     */
+    setState({ status: "loading", estimateCredits });
 
     const timer = setTimeout(() => {
       const body = JSON.parse(key) as SequenceQuoteInput;
@@ -117,20 +189,33 @@ export function useSequenceQuote(input: SequenceQuoteInput | null): QuoteState {
           if (id !== latest.current) return;
 
           if (!payload?.ok || !payload.quote) {
-            setState({ status: "error" });
+            setState({ status: "unavailable" });
             return;
           }
           setState({
-            status: "ready",
+            status: "exact",
             quote: payload.quote as SequenceQuoteView,
             token: payload.token as string,
+            expiresAtMs:
+              typeof payload.expiresAtMs === "number"
+                ? payload.expiresAtMs
+                : Date.now() + PLAN_TTL_MS,
+            // The settings this reply answers, not whatever is on screen by
+            // the time it lands. The sequence check above already dropped a
+            // stale reply; this makes the same fact readable afterwards.
+            fingerprint: key,
           });
         })
         .catch(() => {
           if (id !== latest.current) return;
-          // No fallback to the last good price: a wrong number that looks
-          // deliberate is worse than an honest failure.
-          setState({ status: "error" });
+          /**
+           * No fallback to the last good price.
+           *
+           * Not even to the estimate: a figure that survives a failure reads as
+           * deliberate, and the whole point of the split is that only a live
+           * server answer may look binding.
+           */
+          setState({ status: "unavailable" });
         });
     }, DEBOUNCE_MS);
 
@@ -138,26 +223,119 @@ export function useSequenceQuote(input: SequenceQuoteInput | null): QuoteState {
       clearTimeout(timer);
       controller.abort();
     };
-  }, [key]);
+  }, [key, estimateCredits]);
 
   return state;
 }
 
-/** What the Generate button should say, given the quote state. */
-export function quoteLabel(state: QuoteState): string {
+/** How long a plan token is good for, mirrored from `plan-token.ts`. */
+const PLAN_TTL_MS = 600_000;
+
+/**
+ * Is this figure binding right now?
+ *
+ * An expired `exact` quote is not, and the check is here rather than in the
+ * hook because time passes between renders: a quote that was current when it
+ * arrived stops being current while the user reads it.
+ */
+export function isExact(
+  state: QuoteState,
+  nowMs: number = Date.now(),
+  /**
+   * The settings currently on screen, when the caller has them.
+   *
+   * Optional because the hook keeps state and screen in step by construction.
+   * Passing it turns that from a property of this file into something checked
+   * at the point it matters — the button.
+   */
+  forInput?: SequenceQuoteInput | null,
+): boolean {
+  if (state.status !== "exact") return false;
+  if (state.expiresAtMs <= nowMs) return false;
+  if (forInput !== undefined && state.fingerprint !== fingerprintOf(forInput)) {
+    return false;
+  }
+  return true;
+}
+
+/**
+ * What the Generate button says.
+ *
+ * The wording carries the status, because the number alone cannot: "180
+ * credits" is a promise, "Estimated from 180 credits" is a comparison, and a
+ * customer reading the first when we meant the second has been misled.
+ */
+export function quoteLabel(
+  state: QuoteState,
+  nowMs: number = Date.now(),
+  forInput?: SequenceQuoteInput | null,
+): string {
   switch (state.status) {
-    case "idle":
-      return "Generate";
-    case "loading":
-      return "Calculating quote…";
-    case "error":
+    case "unavailable":
       return "Quote unavailable — Try again";
-    case "ready":
-      return `Generate · ${state.quote.creditCost} credits`;
+
+    case "estimate":
+      return `Estimated from ${state.estimateCredits} credits`;
+
+    case "loading":
+      return state.estimateCredits === undefined
+        ? "Calculating quote…"
+        : `Calculating quote… (estimated from ${state.estimateCredits} credits)`;
+
+    case "exact":
+      // An expired quote is not a quote, whatever it used to be.
+      return isExact(state, nowMs, forInput)
+        ? `Generate · ${state.quote.creditCost} credits`
+        : "Quote expired — Try again";
   }
 }
 
-/** Generate is only ever enabled against a price the server just gave us. */
-export function canGenerate(state: QuoteState): boolean {
-  return state.status === "ready" && state.quote.blockers.length === 0;
+/**
+ * What a screen reader is told, which is more than the button shows.
+ *
+ * The visual label leans on context a sighted user has — the settings panel
+ * above it, the spinner beside it. Read aloud on its own, "Generate · 180
+ * credits" and "Estimated from 180 credits" are the only two strings that
+ * distinguish a binding price from a guess, so the accessible name says which
+ * one it is in words rather than by formatting.
+ */
+export function quoteAccessibleLabel(
+  state: QuoteState,
+  nowMs: number = Date.now(),
+  forInput?: SequenceQuoteInput | null,
+): string {
+  switch (state.status) {
+    case "unavailable":
+      return "No price is available. Try again.";
+
+    case "estimate":
+      return `Estimated from ${state.estimateCredits} credits. Not a final price — Generate is unavailable until the exact price is confirmed.`;
+
+    case "loading":
+      return state.estimateCredits === undefined
+        ? "Calculating the exact price. Generate is unavailable until it arrives."
+        : `Estimated from ${state.estimateCredits} credits. Calculating the exact price; Generate is unavailable until it arrives.`;
+
+    case "exact":
+      return isExact(state, nowMs, forInput)
+        ? `Generate for ${state.quote.creditCost} credits. This is the exact price.`
+        : "This price has expired. Try again for a current one.";
+  }
+}
+
+/**
+ * Generate is only ever enabled against a live, unexpired, unblocked quote.
+ *
+ * An estimate never qualifies. That is the whole distinction: a comparison
+ * figure computed in a browser must not be able to start a charge.
+ */
+export function canGenerate(
+  state: QuoteState,
+  nowMs: number = Date.now(),
+  forInput?: SequenceQuoteInput | null,
+): boolean {
+  return (
+    isExact(state, nowMs, forInput) &&
+    (state as { quote: SequenceQuoteView }).quote.blockers.length === 0
+  );
 }

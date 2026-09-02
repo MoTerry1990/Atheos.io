@@ -25,7 +25,20 @@ import { buildDirectorPlan } from "@/services/ai/video-director";
 import { cn } from "@/lib/utils";
 
 /**
- * What Atheos is about to make, priced, before any credits are spent.
+ * What Atheos is about to make, estimated, before any credits are spent.
+ *
+ * ## Estimates, not quotes
+ *
+ * The three cards are computed here so a person can compare all of them at
+ * once; asking the server for three would mean three round trips before
+ * anything appears. That trade-off is only honest if the numbers say what they
+ * are, so each reads "Estimated from N credits".
+ *
+ * The exact figure is a separate thing and comes from `/api/creative/plan`
+ * once a mode is selected — policy, settings validation and `priceFor` all run
+ * there, and any of them may refuse or price differently. The Generate button
+ * shows that figure and the confirmation charges it. These cards never feed
+ * either.
  *
  * ## Why this replaced a warning
  *
@@ -244,8 +257,22 @@ function ModeCard({
           {title}
         </span>
         {!blocked ? (
-          <span className="text-foreground tabular-nums">
-            {quote.creditCharge.toLocaleString("en-US")} credits
+          /**
+           * "Estimated", and the word is load-bearing.
+           *
+           * These three cards are computed in the browser so all of them can
+           * be compared at once without three round trips. That makes them a
+           * comparison, not a quote — the exact figure comes from
+           * `/api/creative/plan` when a mode is chosen, and it is that figure
+           * the Generate button shows and the confirmation charges.
+           *
+           * The two can differ: policy, settings validation and `priceFor` all
+           * run server-side and any of them may refuse or price differently.
+           * Calling this a quote would make the difference look like a bug
+           * rather than what it is.
+           */
+          <span className="text-muted-foreground tabular-nums">
+            Estimated from {quote.creditCharge.toLocaleString("en-US")} credits
           </span>
         ) : null}
       </div>

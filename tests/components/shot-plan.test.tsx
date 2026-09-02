@@ -106,8 +106,8 @@ describe("choosing what to generate", () => {
      * cost 90 credits when it costs eight times that.
      */
     renderPanel();
-    expect(screen.getByText("180 credits")).toBeTruthy();
-    expect(screen.getByText("720 credits")).toBeTruthy();
+    expect(screen.getByText("Estimated from 180 credits")).toBeTruthy();
+    expect(screen.getByText("Estimated from 720 credits")).toBeTruthy();
   });
 
   it("selects a mode when its card is clicked", () => {
@@ -204,12 +204,12 @@ describe("Motion 1 cannot do a sequence and says so", () => {
   it("shows no price for something that cannot be made", () => {
     // A price on a blocked option reads as an offer.
     renderPanel({ facts: MOTION_1 });
-    expect(screen.queryByText("360 credits")).toBeNull();
+    expect(screen.queryByText("Estimated from 360 credits")).toBeNull();
   });
 
   it("still offers the continuous shot, which it can do", () => {
     renderPanel({ facts: MOTION_1 });
-    expect(screen.getByText("90 credits")).toBeTruthy();
+    expect(screen.getByText("Estimated from 90 credits")).toBeTruthy();
   });
 });
 
@@ -245,7 +245,7 @@ describe("multi-shot is priced but not yet offered", () => {
      * other way.
      */
     renderPanel();
-    expect(screen.getByText("720 credits")).toBeTruthy();
+    expect(screen.getByText("Estimated from 720 credits")).toBeTruthy();
     expect(screen.getByText(/Not available yet/)).toBeTruthy();
   });
 
@@ -260,5 +260,40 @@ describe("multi-shot is priced but not yet offered", () => {
     fireEvent.click(card(/Advanced chained sequence/));
     expect(onModeChange).toHaveBeenCalledWith("multi_shot");
     expect(screen.queryByText(/Not available yet/)).toBeNull();
+  });
+});
+
+describe("the panel never presents a local figure as an exact quote", () => {
+  it("labels every price as an estimate", () => {
+    /**
+     * These three cards are computed in the browser so they can be compared
+     * without three round trips. That is defensible only while they say what
+     * they are: the exact figure comes from the server when a mode is chosen,
+     * and it is that one the button shows and the confirmation charges.
+     */
+    renderPanel({ facts: MOTION_PRO });
+
+    const prices = screen.getAllByText(/credits/);
+    expect(prices.length).toBeGreaterThan(0);
+
+    for (const node of prices) {
+      expect(node.textContent).toMatch(/Estimated from/);
+    }
+  });
+
+  it("never renders a bare credit total", () => {
+    /**
+     * The exact wording is the whole safeguard, so a regression to
+     * "720 credits" has to fail rather than merely read differently.
+     *
+     * `` matters: without it the engine can start the match mid-number —
+     * "80 credits" inside "from 180 credits" — where the lookbehind sees "1"
+     * rather than "from " and lets it through. The first version of this test
+     * failed for that reason and not because the panel was wrong.
+     */
+    renderPanel({ facts: MOTION_PRO });
+
+    const text = document.body.textContent ?? "";
+    expect(text).not.toMatch(/(?<!from )\d+ credits/);
   });
 });

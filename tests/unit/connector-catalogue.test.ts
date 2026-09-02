@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
+
 import { describe, expect, it, vi } from "vitest";
 
 /**
@@ -373,5 +376,84 @@ describe("one caller's catalogue never leaks into another's", () => {
     expect(connectorModels("public").map((m) => m.id)).not.toContain(
       "injected",
     );
+  });
+});
+
+describe("no MCP tool can charge directly", () => {
+  it("does not import the function that spends credits", () => {
+    /**
+     * `generate_image` and `generate_video` called `submitGeneration`, so a
+     * caller saying "make a video" had credits leave their account before
+     * anyone had seen a price. An agent relaying that is spending someone
+     * else's money without showing them the bill.
+     *
+     * Both tools prepare quotes now. Asserted against the route's source
+     * rather than by calling it, because the property worth pinning is that
+     * the spending function is not reachable from this file at all — a future
+     * edit that wants it has to add the import back, visibly, in a diff.
+     */
+    const route = readFileSync(
+      path.resolve(__dirname, "..", "..", "app/api/mcp/route.ts"),
+      "utf8",
+    );
+
+    expect(route).not.toMatch(/^\s*submitGeneration,/m);
+    expect(route).not.toMatch(/\bsubmitGeneration\(/);
+  });
+
+  it("tells an agent to get agreement before confirming", () => {
+    // The tool description is the only instruction an agent reads. If it does
+    // not say "ask first", the agent will not.
+    const route = readFileSync(
+      path.resolve(__dirname, "..", "..", "app/api/mcp/route.ts"),
+      "utf8",
+    );
+
+    expect(route).toMatch(/wait for them to say yes/i);
+    expect(route).toMatch(/confirm_generation/);
+    expect(route).toMatch(/DEPRECATED/);
+  });
+
+  it("takes nothing from the request body that decides what a call costs", () => {
+    /**
+     * The one tool that spends reads exactly two fields: the token and the
+     * idempotency key. Everything else about the generation — which model, how
+     * long, how many outputs, what it costs, and whether the caller is the
+     * owner — is either inside the signed token or resolved from the
+     * credential.
+     *
+     * Asserted against the source because the failure mode is an addition
+     * rather than a change: somebody adds `args.modelId` to the confirm branch
+     * to make an edit-before-confirm work, and the price stops being the one
+     * that was quoted.
+     */
+    const route = readFileSync(
+      path.resolve(__dirname, "..", "..", "app/api/mcp/route.ts"),
+      "utf8",
+    );
+
+    const confirm = route.slice(
+      route.indexOf('case "confirm_generation"'),
+      route.indexOf('case "check_generation"'),
+    );
+
+    expect(confirm).toContain("args.token");
+    expect(confirm).toContain("args.idempotencyKey");
+
+    for (const forbidden of [
+      "args.credits",
+      "args.creditCost",
+      "args.modelId",
+      "args.caller",
+      "args.userId",
+      "args.role",
+      "args.admin",
+      "args.requestHash",
+      "args.provider",
+      "args.durationSeconds",
+      "args.outputs",
+    ]) {
+      expect(confirm, forbidden).not.toContain(forbidden);
+    }
   });
 });

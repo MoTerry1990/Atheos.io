@@ -1,6 +1,11 @@
 import "server-only";
 
-import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import {
+  createHash,
+  createHmac,
+  randomBytes,
+  timingSafeEqual,
+} from "node:crypto";
 
 import { env } from "@/lib/env";
 import { COMPILER_VERSION } from "@/services/ai/compile-for-model";
@@ -34,7 +39,45 @@ import type { ImageBrief } from "@/services/ai/image-brief";
 /** Ten minutes. Long enough to read a confirmation panel, short enough to matter. */
 export const PLAN_TTL_SECONDS = 600;
 
+/**
+ * The settings a connector quote was issued for, carried inside the signature.
+ *
+ * ## Why the token carries them and the Studio's does not
+ *
+ * The Studio confirms by sending the brief back alongside the token, and
+ * `verifyPlanToken` compares the two. An MCP client sends nothing but the
+ * token and an idempotency key — deliberately, because every field a client
+ * can supply at confirmation time is a field it can supply differently from
+ * the one it was quoted for.
+ *
+ * So the settings have to be recoverable on this side. They are recovered from
+ * the signature rather than from a database row, which keeps the prompt out of
+ * `connector_quote`: a quote that is never confirmed then leaves no copy of
+ * what somebody wrote. The row records only that the quote existed and whether
+ * it has been spent.
+ *
+ * Readable by whoever holds the token — which is the person who wrote the
+ * prompt — and unforgeable by anyone, which is the property that matters.
+ */
+export interface ConnectorQuoteRequest {
+  publicModelId: string;
+  prompt: string;
+  durationSeconds?: number;
+  outputs: number;
+  aspectRatio?: string;
+  negativePrompt?: string;
+}
+
 export interface PlanPayload {
+  /**
+   * Unique per issued token.
+   *
+   * Without it, two identical quotes issued in the same millisecond are byte
+   * for byte the same token, and a table keyed on the token's identity would
+   * refuse the second one. It is also what `connector_quote` is keyed on —
+   * hashed, so the table holds no credential.
+   */
+  jti: string;
   /** Bound to one account. A plan is not transferable. */
   userId: string;
   briefVersion: number;
@@ -51,6 +94,12 @@ export interface PlanPayload {
   referenceIds: string[];
   issuedAtMs: number;
   expiresAtMs: number;
+  /**
+   * Set only by `prepareGeneration`. Absent on Studio plans, which resend
+   * their brief, and absent means "this token cannot be confirmed headlessly"
+   * rather than "confirm it with whatever the client sent".
+   */
+  connectorRequest?: ConnectorQuoteRequest;
 }
 
 export const CAPABILITY_VERSION = 1;
@@ -194,9 +243,13 @@ export function issuePlanToken(input: {
   modelId: string;
   quotedCredits: number;
   referenceIds?: string[];
+  connectorRequest?: ConnectorQuoteRequest;
   nowMs: number;
 }): { token: string; payload: PlanPayload } {
   const payload: PlanPayload = {
+    // 128 bits. Not derived from the payload: two identical quotes must be two
+    // distinguishable tokens, or the second one cannot be recorded.
+    jti: randomBytes(16).toString("hex"),
     userId: input.userId,
     briefVersion: input.brief.version,
     originalPromptHash: stableHash(input.brief.originalPrompt),
@@ -211,6 +264,9 @@ export function issuePlanToken(input: {
     referenceIds: input.referenceIds ?? [],
     issuedAtMs: input.nowMs,
     expiresAtMs: input.nowMs + PLAN_TTL_SECONDS * 1000,
+    ...(input.connectorRequest
+      ? { connectorRequest: input.connectorRequest }
+      : {}),
   };
 
   const body = Buffer.from(canonical(payload), "utf8").toString("base64url");
@@ -247,6 +303,54 @@ export function verifyPlanToken(input: {
   brief: SignableBrief;
   nowMs: number;
 }): PlanVerification {
+  const opened = readPlanToken({
+    token: input.token,
+    userId: input.userId,
+    nowMs: input.nowMs,
+  });
+  if (!opened.ok) return opened;
+  const payload = opened.payload!;
+
+  if (payload.originalPromptHash !== stableHash(input.brief.originalPrompt)) {
+    return { ok: false, reason: "prompt_changed" };
+  }
+  if (payload.briefHash !== stableHash(input.brief)) {
+    return { ok: false, reason: "brief_changed" };
+  }
+
+  // A plan confirmed under an older capability table or compiler is not a plan
+  // for what would be produced now, and quietly honouring it would mean the
+  // quote and the output disagree.
+  if (payload.capabilityVersion !== CAPABILITY_VERSION) {
+    return { ok: false, reason: "stale_capabilities" };
+  }
+  if (payload.compilerVersion !== COMPILER_VERSION) {
+    return { ok: false, reason: "stale_compiler" };
+  }
+
+  return { ok: true, payload };
+}
+
+/**
+ * Open a token: signature, expiry and owner, and nothing about a brief.
+ *
+ * ## Why this half exists separately
+ *
+ * `verifyPlanToken` answers "is this token ours *and* does it match the brief
+ * in hand", which is the right question when the client sends both. A
+ * connector confirmation sends neither a brief nor any settings, so there is
+ * nothing to compare against until the payload has been opened — the settings
+ * come *out* of it.
+ *
+ * The order still holds: signature first, then expiry, then owner. Nothing
+ * inside the payload is trusted before the HMAC has been checked, which is why
+ * the parse happens after the comparison rather than before it.
+ */
+export function readPlanToken(input: {
+  token: string;
+  userId: string;
+  nowMs: number;
+}): PlanVerification {
   const [body, signature] = input.token.split(".");
   if (!body || !signature) return { ok: false, reason: "malformed" };
 
@@ -273,25 +377,20 @@ export function verifyPlanToken(input: {
 
   if (input.nowMs > payload.expiresAtMs)
     return { ok: false, reason: "expired" };
-  if (payload.userId !== input.userId)
+  if (payload.userId !== input.userId) {
     return { ok: false, reason: "wrong_user" };
-
-  if (payload.originalPromptHash !== stableHash(input.brief.originalPrompt)) {
-    return { ok: false, reason: "prompt_changed" };
-  }
-  if (payload.briefHash !== stableHash(input.brief)) {
-    return { ok: false, reason: "brief_changed" };
-  }
-
-  // A plan confirmed under an older capability table or compiler is not a plan
-  // for what would be produced now, and quietly honouring it would mean the
-  // quote and the output disagree.
-  if (payload.capabilityVersion !== CAPABILITY_VERSION) {
-    return { ok: false, reason: "stale_capabilities" };
-  }
-  if (payload.compilerVersion !== COMPILER_VERSION) {
-    return { ok: false, reason: "stale_compiler" };
   }
 
   return { ok: true, payload };
+}
+
+/**
+ * The database key for a token, which is not the token.
+ *
+ * A signed token in a table is a credential at rest: anyone who can read the
+ * row can replay the confirmation. The hash answers the only question the
+ * table is for — has this been spent — and is worth nothing to a reader.
+ */
+export function quoteKeyFor(jti: string): string {
+  return createHash("sha256").update(`atheos:quote:${jti}`).digest("hex");
 }

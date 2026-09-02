@@ -51,6 +51,7 @@ import { VideoSettings } from "@/features/studio/components/video-settings";
 import { findModelIn } from "@/features/studio/data/models";
 import {
   canGenerate,
+  quoteAccessibleLabel,
   quoteLabel,
   useSequenceQuote,
 } from "@/features/studio/lib/use-sequence-quote";
@@ -497,7 +498,7 @@ function GenerateBar({
    * currently selected, or there is no number.
    */
   const isVideo = model.modality === "VIDEO";
-  const quoteState = useSequenceQuote(
+  const quoteInput =
     isVideo && params.prompt.trim()
       ? {
           publicModelId: model.id,
@@ -508,12 +509,28 @@ function GenerateBar({
             (r) => r.status === "ready",
           ),
         }
-      : null,
-  );
+      : null;
+
+  /**
+   * The local figure, offered as an estimate and never as a quote.
+   *
+   * `estimateCost` scales the catalogue's `creditCost` — the same number the
+   * server priced from — but a sequence is several clips, so for video it is a
+   * lower bound rather than a total. Showing it while the server answers keeps
+   * the button from going blank on every keystroke; calling it "estimated
+   * from" is what stops it being read as a price.
+   */
+  const quoteState = useSequenceQuote(quoteInput, isVideo ? cost : undefined);
 
   // Stills are priced from the catalogue, which is exact for a single output.
-  const label = isVideo ? quoteLabel(quoteState) : `Generate · ${cost} credits`;
-  const quoteBlocks = isVideo && !canGenerate(quoteState);
+  const label = isVideo
+    ? quoteLabel(quoteState, Date.now(), quoteInput)
+    : `Generate · ${cost} credits`;
+  const accessibleLabel = isVideo
+    ? quoteAccessibleLabel(quoteState, Date.now(), quoteInput)
+    : undefined;
+  const quoteBlocks =
+    isVideo && !canGenerate(quoteState, Date.now(), quoteInput);
 
   // A reference still uploading has no URL to send, so submitting now would
   // silently drop it and produce a text-only result the user did not ask for.
@@ -554,6 +571,10 @@ function GenerateBar({
         // be pressable against a price the server has not just confirmed.
         disabled={Boolean(blocked) || quoteBlocks}
         title={blocked ?? undefined}
+        // Read aloud instead of the visible label, which relies on formatting
+        // to distinguish an estimate from a price. `blocked` wins when set,
+        // because "write a prompt first" is the more useful thing to hear.
+        aria-label={blocked ?? accessibleLabel}
       >
         <Sparkles />
         {label}

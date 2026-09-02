@@ -1,10 +1,17 @@
-# Staged migration — connector idempotency
+# Migration B — connector quote and idempotency
 
-**Status: written, and rehearsed by generating its SQL. Not applied to any
-database, and not present in `prisma/schema.prisma`** — the model was added
-there only long enough to produce the script below, then reverted, so the
-committed tree has no schema drift and `prisma migrate status` stays clean.
-Applying it is a separate, explicit decision.
+**Status: written, generated from the schema, rehearsed against `atheos-test`,
+and committed as
+`prisma/migrations/20260901000000_connector_quote_and_idempotency`.**
+
+It is **purely additive** — two `CREATE TABLE`, three indexes, three foreign
+keys, no `ALTER` against an existing table and no row rewritten. The
+application that is live before it runs does not read either table, so applying
+it changes nothing that is already running.
+
+Whether it has reached Atheos Production is recorded in the release report for
+the sprint that applies it, not here: a status line in a document is exactly
+the thing that goes stale.
 
 ## What it is for
 
@@ -37,101 +44,66 @@ that represents a customer's work. Generations are kept forever; idempotency
 records are only interesting for as long as a client might retry, and having
 them expire is easier when they are not a column on something permanent.
 
-## The migration
+## The two tables
 
-```prisma
-/// One connector confirmation, remembered so a retry is answered rather than
-/// merely refused.
-///
-/// `requestHash` is what distinguishes a retry from a reuse: the same key with
-/// the same hash is the same call arriving twice and gets the same generation
-/// back; the same key with a different hash is a client bug and gets
-/// `idempotency_conflict`.
-model ConnectorIdempotency {
-  key    String
-  userId String
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+**`connector_quote`** records that a price was offered, and whether it has been
+taken up. It is keyed on `jtiHash` — a SHA-256 of the token's unique id — and
+holds no token, no prompt, no provider and no internal model id. A quote that
+is never confirmed therefore leaves no copy of what somebody wrote. The
+settings themselves travel inside the signed token, which is why
+`confirm_generation` needs nothing from the client but that token and a key.
 
-  /// Stable hash of the normalised request — public model id, settings,
-  /// outputs, prompt hash, quoted price. Never the prompt itself.
-  requestHash String
-
-  /// The generation this key produced, so a retry returns it rather than
-  /// creating another.
-  generationId String?
-  generation   Generation? @relation(fields: [generationId], references: [id], onDelete: SetNull)
-
-  createdAt DateTime @default(now())
-  /// Retention horizon. A key older than this is not worth remembering, and
-  /// keeping them forever turns a retry aid into an audit surface nobody asked
-  /// for.
-  expiresAt DateTime
-
-  /// Scoped per user, deliberately. Two customers may pick the same key —
-  /// "1", "retry" — and neither should be able to see or collide with the
-  /// other's, or to discover that a key is in use.
-  @@id([userId, key])
-  @@index([expiresAt])
-  @@map("connector_idempotency")
-}
-```
-
-`Generation` and `User` each gain the back-relation Prisma requires. No column
-on `Generation` changes, and no existing row is touched: this is additive.
-
-## Rehearsal
-
-The model was added to `prisma/schema.prisma`, validated, and diffed against
-the schema as committed:
-
-```bash
-npx prisma migrate diff --from-schema <committed> --to-schema <with-model> --script
-```
-
-No database was touched — `migrate diff` between two schema files needs none.
-The script it produced, verbatim:
+`consumedAt` is what makes a quote spendable exactly once, claimed with
 
 ```sql
--- CreateTable
-CREATE TABLE "connector_idempotency" (
-    "key" TEXT NOT NULL,
-    "userId" TEXT NOT NULL,
-    "requestHash" TEXT NOT NULL,
-    "generationId" TEXT,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "expiresAt" TIMESTAMP(3) NOT NULL,
-
-    CONSTRAINT "connector_idempotency_pkey" PRIMARY KEY ("userId","key")
-);
-
--- CreateIndex
-CREATE INDEX "connector_idempotency_expiresAt_idx" ON "connector_idempotency"("expiresAt");
-
--- AddForeignKey
-ALTER TABLE "connector_idempotency" ADD CONSTRAINT "connector_idempotency_userId_fkey"
-  FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "connector_idempotency" ADD CONSTRAINT "connector_idempotency_generationId_fkey"
-  FOREIGN KEY ("generationId") REFERENCES "generations"("id") ON DELETE SET NULL ON UPDATE CASCADE;
+UPDATE connector_quote SET "consumedAt" = now()
+ WHERE "jtiHash" = $1 AND "consumedAt" IS NULL
 ```
 
-One `CREATE TABLE`, one index, two foreign keys. **No `ALTER` against an
-existing table and no row rewritten** — which is the property that makes this
-safe to apply during traffic, and the reason it was worth generating the script
-rather than assuming.
+— one statement, so the check and the write cannot be interleaved.
 
-The schema was reverted immediately afterwards.
+**`connector_idempotency`** is the retry record described above. Both tables
+are defined in `prisma/schema.prisma`; the SQL is
+`prisma/migrations/20260901000000_connector_quote_and_idempotency/migration.sql`,
+generated by
+
+```bash
+npx prisma migrate diff --from-schema <committed> --to-schema <with-models> --script
+```
+
+and not hand-written. It is not reproduced here, because a copy in a document
+is a copy that drifts.
+
+`Generation` and `User` each gain the back-relation Prisma requires. No column
+on either changes and no existing row is touched.
 
 ## Applying it
 
-Not yet. It needs, in order:
+Order matters, and it is the opposite of the usual one:
 
-1. Sign-off on the table rather than the column.
-2. `npm run db:generate` and a green suite against the isolated test schema.
-3. `DIRECT_URL` — **not** `DATABASE_URL`. Migrations run through the pooler
-   work in development and deadlock in production; that is written down in
-   `CLAUDE.md` and is not a footnote.
+1. **Migration first, deploy second.** The tables are additive and the running
+   application ignores them, so applying the migration to a live Production is
+   safe. Pushing the _code_ first is not: Vercel deploys on push, and the new
+   `confirm_generation` reads tables that would not exist yet.
+2. `DIRECT_URL` — **not** `DATABASE_URL`. Migrations through the pooler work in
+   development and deadlock in production; that is in `CLAUDE.md` and is not a
+   footnote.
+3. If the migration fails, do not deploy the application. If the deploy fails
+   afterwards, the unused tables may stay — nothing reads them, and dropping
+   them while diagnosing turns one problem into two.
+
+## Rehearsed, not assumed
+
+`tests/db/connector-idempotency.rehearsal.test.ts` applies the committed
+migration to a disposable schema on `atheos-test` and watches the constraints
+fire: two concurrent inserts under one key leave exactly one row, and
+`UPDATE … WHERE "consumedAt" IS NULL` lets exactly one of two racing
+confirmations claim a quote.
+
+`tests/db/connector-confirm.test.ts` then runs the real `confirmGeneration`
+against the same schema — retry, conflict, race, spent quote, foreign quote,
+expired and altered tokens, a withdrawn model, a moved price, and an
+insufficient balance that must leave the quote unspent.
 
 ## What it does not do
 

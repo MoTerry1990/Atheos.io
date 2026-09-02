@@ -4,19 +4,23 @@ import { env } from "@/lib/env";
 import { isAdminClerkId } from "@/services/admin/auth";
 import type { Caller } from "@/services/ai/model-policy";
 import { resolveApiKey } from "@/services/api-keys";
+/**
+ * `submitGeneration` is deliberately absent from this file.
+ *
+ * It was imported here and called directly, which is how `generate_video`
+ * charged an account before anyone had seen a price. The route now prepares
+ * quotes and nothing else, and the missing import is the structural proof —
+ * a future edit that wants to spend has to add it back, visibly.
+ */
+import { confirmGeneration } from "@/services/connectors/confirm";
+import { prepareAndRecordGeneration } from "@/services/connectors/prepare";
+import { recordConnectorEvent } from "@/services/connectors/telemetry";
 import {
   connectorModels,
   defaultConnectorModel,
-  DurationError,
-  exactDuration,
-  resolveConnectorModel,
   type ConnectorModel,
 } from "@/services/connectors/catalogue";
-import {
-  GenerationError,
-  pollGeneration,
-  submitGeneration,
-} from "@/services/generation";
+import { GenerationError, pollGeneration } from "@/services/generation";
 
 /**
  * Atheos as a tool other assistants can call.
@@ -108,9 +112,10 @@ function toolsFor(models: ConnectorModel[]) {
     tools.push({
       name: "generate_image",
       description:
-        `Generate an image with ${image.name}. Returns a job id immediately; ` +
-        "call check_generation with it to get the finished image URL. Costs " +
-        `${image.credits} credits from the account the API key belongs to.`,
+        `DEPRECATED — use prepare_generation. Despite the name this no ` +
+        `longer generates: it returns a quote for ${image.name} and a token. ` +
+        "Show the person the credit cost, get their explicit agreement, then " +
+        "call confirm_generation. Nothing is charged until you do.",
       inputSchema: {
         type: "object",
         properties: {
@@ -141,10 +146,11 @@ function toolsFor(models: ConnectorModel[]) {
     tools.push({
       name: "generate_video",
       description:
-        `Generate a short video with ${video.name}. ${video.audioNote} ` +
-        "Returns a job id immediately; videos take one to several minutes, " +
-        `so call check_generation to poll. Costs ${video.credits} credits at ` +
-        `${Math.min(...video.durations)} seconds.`,
+        `DEPRECATED — use prepare_generation. Despite the name this no ` +
+        `longer generates: it returns a quote for ${video.name} and a token. ` +
+        `${video.audioNote} Show the person the credit cost, get their ` +
+        "explicit agreement, then call confirm_generation. Nothing is charged " +
+        "until you do.",
       inputSchema: {
         type: "object",
         properties: {
@@ -168,6 +174,75 @@ function toolsFor(models: ConnectorModel[]) {
   }
 
   tools.push(
+    {
+      name: "prepare_generation",
+      description:
+        "Quote a generation. Spends nothing, creates nothing and calls no " +
+        "provider — it returns the model, the exact settings, the credit cost " +
+        "and a short-lived token.\n\n" +
+        "The workflow is: (1) prepare_generation, (2) show the person the " +
+        "credit cost and what they will get, (3) wait for them to say yes, " +
+        "(4) confirm_generation with the token and an idempotencyKey, " +
+        "(5) check_generation to follow it.\n\n" +
+        "Never skip step 3. Confirming without asking spends someone else's " +
+        "credits on their behalf.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          prompt: { type: "string", description: "What to make." },
+          modelId: {
+            type: "string",
+            description:
+              "An Atheos model id from list_models. Omit for the default of " +
+              "the chosen modality.",
+          },
+          modality: {
+            type: "string",
+            enum: ["IMAGE", "VIDEO", "AUDIO"],
+            description: "Used to pick a default when modelId is omitted.",
+          },
+          durationSeconds: {
+            type: "number",
+            description:
+              "Clip length. Must be one the model accepts — see list_models. " +
+              "Any other value is refused rather than rounded.",
+          },
+          outputs: { type: "integer", minimum: 1 },
+          aspectRatio: { type: "string" },
+        },
+        required: ["prompt"],
+      },
+    },
+    {
+      name: "confirm_generation",
+      description:
+        "Run a generation that was quoted by prepare_generation, after the " +
+        "person has agreed to the price. This is the only tool that spends " +
+        "credits.\n\n" +
+        "Requires the token from the quote and an idempotencyKey you choose — " +
+        "reuse the same key if you retry, so a lost reply cannot become a " +
+        "second charge.\n\n" +
+        "Call this only after the person has seen the credit cost and said " +
+        "yes to it. Their original request is not that agreement: they asked " +
+        "for a picture, not for a specific number of credits, and they have " +
+        "not seen the number until you show it to them.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          token: {
+            type: "string",
+            description: "The token returned by prepare_generation.",
+          },
+          idempotencyKey: {
+            type: "string",
+            description:
+              "Your own id for this confirmation. The same key with the same " +
+              "quote returns the same generation instead of making another.",
+          },
+        },
+        required: ["token", "idempotencyKey"],
+      },
+    },
     {
       name: "check_generation",
       description:
@@ -208,6 +283,7 @@ async function callTool(
   name: string,
   args: Record<string, unknown>,
   caller: Caller,
+  userId: string,
 ) {
   switch (name) {
     case "list_models": {
@@ -224,78 +300,145 @@ async function callTool(
       return toolResult(JSON.stringify(connectorModels(caller), null, 2));
     }
 
+    case "confirm_generation": {
+      /**
+       * The only tool that can spend, and the only one that needs a person to
+       * have said yes.
+       *
+       * Three arguments reach the service and no more. There is no field here
+       * for a price, a model, a duration or a role — everything the generation
+       * will be is already inside the token, signed, and re-derived on the
+       * other side. An agent that wants to change a setting has to ask for a
+       * new quote and show the new price, which is the point.
+       *
+       * `caller` and `userId` come from the credential this request
+       * authenticated with. Neither is readable from the body.
+       */
+      const token = typeof args.token === "string" ? args.token : "";
+      const idempotencyKey =
+        typeof args.idempotencyKey === "string" ? args.idempotencyKey : "";
+
+      if (!token || !idempotencyKey) {
+        return toolResult(
+          "confirm_generation needs the token from prepare_generation and an " +
+            "idempotencyKey of your own. Nothing has been charged.",
+          true,
+        );
+      }
+
+      const confirmed = await confirmGeneration({
+        token,
+        idempotencyKey,
+        caller,
+        userId,
+      });
+
+      if (!confirmed.ok) {
+        // The service's wording, which is already safe to show anyone: it
+        // names no vendor, no licence and no other model.
+        return toolResult(
+          `${confirmed.message} No credits have been spent.`,
+          true,
+        );
+      }
+
+      return toolResult(
+        JSON.stringify(
+          {
+            generationId: confirmed.generationId,
+            credits: confirmed.credits,
+            status: "queued",
+            // True when this call returned an earlier confirmation rather than
+            // making one. An agent that retried after a lost reply needs to
+            // know it was not charged twice.
+            replayed: Boolean(confirmed.replayed),
+            nextStep:
+              "Poll check_generation with this generationId until it is done.",
+          },
+          null,
+          2,
+        ),
+      );
+    }
+
     case "check_generation": {
       const generation = await pollGeneration(String(args.generationId ?? ""));
 
       return toolResult(JSON.stringify(generation, null, 2));
     }
 
+    /**
+     * Deprecated, and no longer able to spend.
+     *
+     * These charged directly: a caller said "make a video" and credits left
+     * their account before anyone had seen a price. An agent relaying that to
+     * a person is spending their money on their behalf without showing them
+     * the bill.
+     *
+     * The names survive because a client is using them, and breaking a working
+     * integration to make a point is not a migration. What changed is what they
+     * do — they prepare and return a quote, exactly like `prepare_generation`,
+     * and the reply says so. Nothing here reserves, creates or submits.
+     */
     case "generate_image":
-    case "generate_video": {
-      const isVideo = name === "generate_video";
-      const modality = isVideo ? "VIDEO" : "IMAGE";
+    case "generate_video":
+    case "prepare_generation": {
+      const legacy = name !== "prepare_generation";
+      const modality = name === "generate_image" ? "IMAGE" : "VIDEO";
 
-      const model = defaultConnectorModel(modality, caller);
-      if (!model) {
+      const publicModelId =
+        typeof args.modelId === "string" && args.modelId
+          ? args.modelId
+          : (defaultConnectorModel(
+              name === "prepare_generation"
+                ? ((args.modality as "IMAGE" | "VIDEO" | "AUDIO") ?? "IMAGE")
+                : modality,
+              caller,
+            )?.id ?? "");
+
+      const result = await prepareAndRecordGeneration(
+        {
+          publicModelId,
+          prompt: String(args.prompt ?? ""),
+          durationSeconds:
+            typeof args.durationSeconds === "number"
+              ? args.durationSeconds
+              : undefined,
+          outputs: typeof args.outputs === "number" ? args.outputs : undefined,
+          aspectRatio:
+            typeof args.aspectRatio === "string" ? args.aspectRatio : undefined,
+        },
+        caller,
+        userId,
+      );
+
+      if (!result.ok || !result.prepared) {
         return toolResult(
-          `No ${modality.toLowerCase()} model is available on this account.`,
+          result.message ?? "That request is not available.",
           true,
         );
       }
 
-      const catalogueId = resolveConnectorModel(model.id, caller);
-      if (!catalogueId) {
-        return toolResult("That model is not available.", true);
-      }
-
-      /**
-       * An impossible duration is refused, never rounded.
-       *
-       * The pipeline's own `resolveDuration` snaps to the nearest allowed
-       * value, which is right for a slider bounded by the same list and wrong
-       * for an API whose caller is writing code against the answer.
-       */
-      let durationSeconds: number | undefined;
-      if (isVideo) {
-        try {
-          durationSeconds = exactDuration(
-            model,
-            typeof args.durationSeconds === "number"
-              ? args.durationSeconds
-              : undefined,
-          );
-        } catch (error) {
-          if (error instanceof DurationError) {
-            return toolResult(
-              `${model.name} does not support that clip length. ${error.message}`,
-              true,
-            );
-          }
-          throw error;
-        }
-      }
-
-      const generation = await submitGeneration({
-        operation: isVideo ? "text-to-video" : "text-to-image",
-        modelId: catalogueId,
-        prompt: String(args.prompt ?? ""),
-        aspectRatio:
-          typeof args.aspectRatio === "string" ? args.aspectRatio : undefined,
-        outputs: typeof args.outputs === "number" ? args.outputs : 1,
-        ...(isVideo ? { durationSeconds } : {}),
-      });
+      const { prepared } = result;
 
       return toolResult(
-        `Started. Generation id: ${generation.generationId}` +
-          "\n" +
-          // Named, because a model relaying "done!" for a placeholder would be
-          // telling the user something false about their own account.
-          (generation.usingMockProvider
-            ? "NOTE: no provider is configured on this deployment, so the " +
-              "output is a placeholder rather than a real generation.\n"
-            : "") +
-          `Call check_generation with this id — ` +
-          `${isVideo ? "videos usually take one to three minutes" : "images usually take a few seconds"}.`,
+        JSON.stringify(
+          {
+            ...prepared,
+            ...(legacy
+              ? {
+                  deprecated:
+                    `${name} no longer generates. It prepares a quote, and ` +
+                    "confirm_generation runs it. Use prepare_generation.",
+                }
+              : {}),
+            nextStep:
+              "Show the credit cost to the person, ask them to confirm, then " +
+              "call confirm_generation with this token and an idempotencyKey.",
+          },
+          null,
+          2,
+        ),
       );
     }
 
@@ -364,9 +507,21 @@ export async function POST(request: NextRequest) {
   if (method === "tools/call") {
     const name = String(params.name ?? "");
     const args = (params.arguments ?? {}) as Record<string, unknown>;
+    const startedAt = Date.now();
 
     try {
-      return result(id, await callTool(name, args, caller));
+      const outcome = await callTool(name, args, caller, user.id);
+
+      // Sanitised by construction: the event type has no field a prompt or a
+      // token could occupy.
+      recordConnectorEvent({
+        auth: "api_key",
+        operation: name,
+        status: outcome.isError ? "error" : "ok",
+        durationMs: Date.now() - startedAt,
+      });
+
+      return result(id, outcome);
     } catch (error) {
       // Domain failures — not enough credits, bad model, prompt rejected — are
       // returned as *tool* errors rather than protocol errors, so the model

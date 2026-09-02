@@ -111,6 +111,9 @@ model User {
   apiKeys            ApiKey[]
   sequences          Sequence[]
 
+  connectorQuotes      ConnectorQuote[]
+  connectorIdempotency ConnectorIdempotency[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -355,6 +358,11 @@ model Generation {
   parentId String?
   parent   Generation?  @relation("GenerationLineage", fields: [parentId], references: [id], onDelete: SetNull)
   children Generation[] @relation("GenerationLineage")
+
+  /// Retry records pointing here. Plural because a client may confirm the same
+  /// quote under one key and then retry it; `SetNull` so deleting a generation
+  /// does not take the record of the key with it.
+  connectorIdempotency ConnectorIdempotency[]
 
   prompt         String  @db.Text
   negativePrompt String? @db.Text
@@ -1261,4 +1269,100 @@ model SignupGrant {
 
   @@index([grantedAt])
   @@map("signup_grants")
+}
+
+// --------------------------------------------------------------------------
+// Connectors
+// --------------------------------------------------------------------------
+
+/// One price we quoted, so it can be spent exactly once.
+///
+/// ## Why the row exists at all
+///
+/// `confirm_generation` receives three things: who is calling, an opaque
+/// token, and an idempotency key. It receives no price, no model id and no
+/// settings — a client that can name any of those is a client that will name a
+/// cheaper one. Everything else has to be recoverable on this side.
+///
+/// The *content* of the quote is recovered from the token, which is signed:
+/// changing a byte of it fails the HMAC. What a signature cannot express is
+/// "this one has already been used", because the token is a value the holder
+/// can copy. That is what this row is for, and it is the reason a replayed
+/// confirmation is a database fact rather than an application check two
+/// requests can interleave with.
+///
+/// ## What is deliberately absent
+///
+/// The token, the prompt, the provider and the internal model id. `jtiHash` is
+/// a SHA-256 of the token's unique id, which is enough to answer "has this
+/// been spent" and useless to anyone who reads the table. The prompt travels
+/// inside the signed token and lands in `Generation` when the work is actually
+/// created — storing a copy here would mean keeping customers' words for every
+/// quote that was never confirmed.
+model ConnectorQuote {
+  /// SHA-256 of the token's `jti`. Never the token.
+  jtiHash String @id
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// Digest of the normalised request — public model id, settings, prompt,
+  /// quoted price. Compared against the digest re-derived from the token at
+  /// confirmation, and against the idempotency record's, so a key reused for a
+  /// different call is distinguishable from a retry.
+  requestHash String
+
+  /// The public id, e.g. `motion-1`. Never a provider path.
+  publicModelId String
+  quotedCredits Int
+
+  /// Which capability table and compiler priced it. A quote issued under an
+  /// older one describes work that would not be produced now.
+  capabilityVersion Int
+  compilerVersion   Int
+
+  createdAt  DateTime  @default(now())
+  expiresAt  DateTime
+  /// Set by `UPDATE ... WHERE "consumedAt" IS NULL`, so the check and the
+  /// write are one statement and a second confirmation cannot interleave.
+  consumedAt DateTime?
+
+  @@index([userId, createdAt])
+  @@index([expiresAt])
+  @@map("connector_quote")
+}
+
+/// One connector confirmation, remembered so a retry is answered rather than
+/// merely refused.
+///
+/// `requestHash` is what distinguishes a retry from a reuse: the same key with
+/// the same hash is the same call arriving twice and gets the same generation
+/// back; the same key with a different hash is a client bug and gets
+/// `idempotency_conflict`.
+model ConnectorIdempotency {
+  key    String
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// Stable hash of the normalised request. Never the prompt itself.
+  requestHash String
+
+  /// The generation this key produced, so a retry returns it rather than
+  /// creating another. Written in the same transaction as the generation, so a
+  /// committed row always has one.
+  generationId String?
+  generation   Generation? @relation(fields: [generationId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  /// Retention horizon. A key older than this is not worth remembering, and
+  /// keeping them forever turns a retry aid into an audit surface nobody asked
+  /// for.
+  expiresAt DateTime
+
+  /// Scoped per user, deliberately. Two customers may pick the same key —
+  /// "1", "retry" — and neither should be able to collide with the other's, or
+  /// to discover that a key is in use.
+  @@id([userId, key])
+  @@index([expiresAt])
+  @@map("connector_idempotency")
 }

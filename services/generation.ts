@@ -36,6 +36,7 @@ import {
   type GenerationOutput,
   type GenerationRequest,
   type ProviderError,
+  type ProviderModel,
 } from "@/services/ai/types";
 import {
   isStorageConfigured,
@@ -64,6 +65,7 @@ import {
 import type {
   AssetKind,
   GenerationOperation as DbOperation,
+  PlanTier,
 } from "@/lib/generated/prisma/enums";
 
 /**
@@ -309,6 +311,91 @@ export function reservationFailure(
 }
 
 /** Submit a generation. Returns the persisted job id. */
+/**
+ * Everything that can refuse a generation before a credit moves.
+ *
+ * Plan entitlement, the spending breaker, and the per-tier rate limits — in
+ * that order, and all three *before* any ledger write. A request that is going
+ * to be refused should be refused without one, because every avoidable
+ * financial mutation is one more chance for its reversal to be the thing that
+ * fails.
+ *
+ * Extracted so the connector path cannot quietly skip it. `confirmGeneration`
+ * spends the same credits against the same provider budget as the Studio does;
+ * a second entry point that did not consult the breaker would be a way to
+ * spend past it with an API key.
+ */
+export async function preflightGeneration(args: {
+  userId: string;
+  modelId: string;
+  model: ProviderModel;
+}): Promise<{ entitledTier: PlanTier; free: boolean }> {
+  const { userId, modelId, model } = args;
+
+  // ---- Plan, spending controls, abuse controls -------------------------
+  //
+  // All three run *before* any credit moves. A request that is going to be
+  // refused should be refused without a ledger write, because every avoidable
+  // financial mutation is one more chance for its reversal to be the thing
+  // that fails.
+  const subscription = await prisma.subscription.findUnique({
+    where: { userId },
+    select: { planTier: true, status: true },
+  });
+
+  // A subscription that is past due, unpaid or cancelled is not an entitlement.
+  // Reading `planTier` without reading `status` is how somebody keeps a paid
+  // tier's concurrency after their card stops working.
+  const entitledTier =
+    subscription && ["ACTIVE", "TRIALING"].includes(subscription.status)
+      ? subscription.planTier
+      : "FREE";
+
+  const plan = planConfigFor(entitledTier);
+  const free = isFreeTier(entitledTier);
+
+  if (!plan.eligibleModalities.includes(model.modality)) {
+    throw new GenerationError(
+      `${model.displayName} is not included in the ${plan.displayName} plan.`,
+      403,
+      "plan_ineligible",
+    );
+  }
+
+  const entry = costEntry(modelId);
+  const gate = await gateGeneration({
+    modelId: modelId,
+    provider: model.providerId,
+    isFree: free,
+    requestCostMicroUsd: entry ? worstCaseCostMicroUsd(entry) : null,
+  });
+
+  if (!gate.allowed) {
+    // 503 rather than 402: nothing is wrong with the request or the account.
+    // The service has declined to spend, which is a server-side condition.
+    throw new GenerationError(blockMessage(gate.reason!), 503, gate.reason!);
+  }
+
+  const limits = await checkGenerationLimits({
+    userId,
+    tier: entitledTier,
+    // Drives the per-modality daily cap. Free is ten images a day; video is
+    // capped at two and separately unreachable from that plan.
+    modality: model.modality,
+  });
+
+  if (!limits.allowed) {
+    throw new GenerationError(
+      limitMessage(limits),
+      429,
+      limits.reason!,
+      limits.retryAfterSeconds,
+    );
+  }
+
+  return { entitledTier, free };
+}
+
 export async function submitGeneration(input: SubmitInput) {
   const user = await requireApiUser();
 
@@ -494,66 +581,11 @@ export async function submitGeneration(input: SubmitInput) {
    */
   const cost = priceFor(input.modelId, outputs, durationSeconds);
 
-  // ---- Plan, spending controls, abuse controls -------------------------
-  //
-  // All three run *before* any credit moves. A request that is going to be
-  // refused should be refused without a ledger write, because every avoidable
-  // financial mutation is one more chance for its reversal to be the thing
-  // that fails.
-  const subscription = await prisma.subscription.findUnique({
-    where: { userId: user.id },
-    select: { planTier: true, status: true },
-  });
-
-  // A subscription that is past due, unpaid or cancelled is not an entitlement.
-  // Reading `planTier` without reading `status` is how somebody keeps a paid
-  // tier's concurrency after their card stops working.
-  const entitledTier =
-    subscription && ["ACTIVE", "TRIALING"].includes(subscription.status)
-      ? subscription.planTier
-      : "FREE";
-
-  const plan = planConfigFor(entitledTier);
-  const free = isFreeTier(entitledTier);
-
-  if (!plan.eligibleModalities.includes(model.modality)) {
-    throw new GenerationError(
-      `${model.displayName} is not included in the ${plan.displayName} plan.`,
-      403,
-      "plan_ineligible",
-    );
-  }
-
-  const entry = costEntry(input.modelId);
-  const gate = await gateGeneration({
-    modelId: input.modelId,
-    provider: model.providerId,
-    isFree: free,
-    requestCostMicroUsd: entry ? worstCaseCostMicroUsd(entry) : null,
-  });
-
-  if (!gate.allowed) {
-    // 503 rather than 402: nothing is wrong with the request or the account.
-    // The service has declined to spend, which is a server-side condition.
-    throw new GenerationError(blockMessage(gate.reason!), 503, gate.reason!);
-  }
-
-  const limits = await checkGenerationLimits({
+  const { entitledTier, free } = await preflightGeneration({
     userId: user.id,
-    tier: entitledTier,
-    // Drives the per-modality daily cap. Free is ten images a day; video is
-    // capped at two and separately unreachable from that plan.
-    modality: model.modality,
+    modelId: input.modelId,
+    model,
   });
-
-  if (!limits.allowed) {
-    throw new GenerationError(
-      limitMessage(limits),
-      429,
-      limits.reason!,
-      limits.retryAfterSeconds,
-    );
-  }
 
   // ---- Reserve and record together, or not at all ----------------------
   //
@@ -650,9 +682,63 @@ export async function submitGeneration(input: SubmitInput) {
       });
     });
 
-  // Provider call happens *outside* the transaction. Holding a database
-  // transaction open across a network call to a third party is how connection
-  // pools get exhausted by one slow vendor.
+  return dispatchToProvider({
+    generation,
+    model,
+    input,
+    userId: user.id,
+    outputs,
+    durationSeconds,
+    cost,
+    isFree: free,
+  });
+}
+
+/**
+ * Send a paid-for generation to its provider, and settle the money either way.
+ *
+ * ## Why this is its own function
+ *
+ * Two callers now reach it. `submitGeneration` is the Studio's path, where a
+ * session confirms a plan; `confirmGeneration` is the connector path, where an
+ * agent confirms a quote it was given in a previous call. What happens after
+ * the credits are reserved is identical, and it is the part where getting it
+ * wrong costs real money: capture divides refundable from billable, and a
+ * release that fires after acceptance hands back credits for GPU time we have
+ * already been invoiced for.
+ *
+ * That logic existed once and was about to exist twice. A refund policy
+ * enforced in two places is a refund policy enforced in one of them.
+ *
+ * The provider call is deliberately outside any transaction — holding one open
+ * across a network call to a third party is how connection pools get exhausted
+ * by one slow vendor.
+ */
+export async function dispatchToProvider(args: {
+  generation: { id: string };
+  model: ProviderModel;
+  input: SubmitInput;
+  userId: string;
+  outputs: number;
+  durationSeconds?: number;
+  cost: number;
+  isFree: boolean;
+}): Promise<{ generationId: string; usingMockProvider: boolean }> {
+  const { generation, model, input, userId, outputs, durationSeconds, cost } =
+    args;
+  const free = args.isFree;
+
+  const provider = providerForModel(input.modelId);
+  if (!provider) {
+    // Checked by both callers before anything was reserved. Reaching it here
+    // would mean the registry changed mid-request.
+    throw new GenerationError(
+      "No provider is configured for that model.",
+      503,
+      "provider_unavailable",
+    );
+  }
+
   try {
     const request: GenerationRequest = {
       operation: input.operation,
@@ -697,7 +783,7 @@ export async function submitGeneration(input: SubmitInput) {
     const estimate = estimateCost(model, outputs, { durationSeconds });
 
     await captureReservation({
-      userId: user.id,
+      userId,
       generationId: generation.id,
       amount: cost,
       providerCostMicroUsd: estimate.costMicroUsd,
@@ -708,7 +794,7 @@ export async function submitGeneration(input: SubmitInput) {
     // A synchronous provider (OpenAI) is already finished. Settle it now rather
     // than making the client poll for something we already have.
     if (job.state === "succeeded" && job.outputs?.length) {
-      await settleSuccess(generation.id, user.id, job.outputs, input);
+      await settleSuccess(generation.id, userId, job.outputs, input);
     }
 
     return {
@@ -754,7 +840,7 @@ export async function submitGeneration(input: SubmitInput) {
      * for.
      */
     await releaseReservation({
-      userId: user.id,
+      userId,
       generationId: generation.id,
       amount: cost,
       reason: providerFailure?.code ?? "provider_submit_failed",
