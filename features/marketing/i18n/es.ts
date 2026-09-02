@@ -120,9 +120,16 @@ export const ES: MarketingCopy = {
     eyebrow: "Hecho con Atheos",
     title: "Las ideas se vuelven imagen, movimiento y sonido.",
     description:
-      "Creaciones reales de los modelos del plan gratuito: imágenes fijas y clips cortos. Lleve cualquier prompt a su propio espacio de trabajo.",
+      "Creaciones reales de los modelos que ejecuta el producto: imágenes fijas y clips cortos, cada uno con el prompt que lo produjo. Lleve cualquiera a su propio espacio de trabajo.",
     tryThis: "Probar esto",
     play: "Reproducir vista previa",
+    filters: {
+      label: "Filtrar creaciones",
+      all: "Todo",
+      images: "Imágenes",
+      videos: "Vídeos",
+    },
+    count: "{count} creaciones",
   },
 
   trustedBy: { label: "Construido sobre infraestructura que ya conoce" },

@@ -1,50 +1,86 @@
 "use client";
 
 import { ArrowUpRight, Play } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { GeneratedImage } from "@/features/marketing/components/generated-image";
 import {
   Reveal,
   Section,
   SectionHeading,
 } from "@/features/marketing/components/section";
-import { MADE_WITH_ATHEOS } from "@/features/marketing/content";
+import {
+  GALLERY,
+  type GalleryItem,
+} from "@/features/marketing/gallery.generated";
 import { useCopy } from "@/features/marketing/i18n";
 import { cn } from "@/lib/utils";
 
 /**
- * The discovery block — real output, browsable, with the prompt attached.
+ * The portfolio — every finished creation, browsable, with its prompt.
  *
- * ## Only one video plays at a time, and only when it is on screen
+ * ## Why the whole thing is on the page
  *
- * Six autoplaying videos is six simultaneous decodes, and on a laptop it is
- * audible as the fan. Three rules keep it to one:
+ * It replaces six cards behind no filter at all. A carousel would have been
+ * less work and would have hidden most of it: the number of pieces *is* the
+ * claim this section makes, and a claim you have to click sideways twelve
+ * times to check is not one a visitor will check. So it is a scrolling grid,
+ * and everything in the manifest renders.
  *
- *   1. A video is only *mounted with a source* once it has been near the
- *      viewport. Before that the card is its poster and nothing else, so an
- *      offscreen card costs one image.
- *   2. Playing is driven by hover or focus, never by arrival on screen.
- *   3. Starting one pauses whichever was playing, tracked in a ref shared by
- *      every card in the section.
+ * ## Masonry, because the work is not one shape
  *
- * Leaving the viewport pauses too. A card that scrolls away mid-play is a
- * decode nobody is watching.
+ * The old grid forced every card to 4:5, which cropped a 16:9 landscape into
+ * a portrait and a 9:16 vertical into a letterbox — the gallery was
+ * misrepresenting its own output. CSS columns keep each card at its master's
+ * real aspect ratio. `break-inside-avoid` stops a card being split across a
+ * column boundary.
+ *
+ * The trade is reading order: columns flow top-to-bottom, so the DOM order and
+ * the visual order diverge in multi-column layouts. That is acceptable here
+ * because the cards are peers with no sequence between them — unlike, say, a
+ * list of steps.
+ *
+ * ## What the browser downloads, and when
+ *
+ * A poster at the size the card actually renders, and nothing else, until
+ * somebody asks for a video:
+ *
+ *   1. Posters are `loading="lazy"` with explicit `width`/`height`, so an
+ *      offscreen card costs nothing and an arriving one shifts nothing.
+ *   2. The first row is preloaded once the section is within 600px, so the
+ *      cards are painted before they are looked at rather than fading in grey.
+ *   3. A video's `<source>` is not rendered until that card has been
+ *      interacted with. Not "is near the viewport" — *interacted with*. Thirty
+ *      cards near the viewport would otherwise be thirty clips in flight.
+ *   4. Only one plays at a time, tracked in a ref shared by every card.
+ *
+ * The hero is the only autoplaying video on the site. Nothing here autoplays,
+ * on any viewport, ever.
  *
  * ## Hover is not available on a phone
  *
- * So the same control is a button. `onFocus` covers keyboard, `onClick`
- * covers touch, and the play affordance is visible rather than implied —
- * "hover to play" is not an instruction a touch user can follow.
+ * So the same control is a real button on every card. `onFocus` covers
+ * keyboard, `onClick` covers touch, and the play affordance is drawn rather
+ * than implied — "hover to play" is not an instruction a touch user can follow.
  *
  * ## Reduced motion means posters
  *
  * No video element is created at all. The prompt and the "Try this" action are
- * the point of the card; the motion is decoration on top of them.
+ * the point of a card; the motion is decoration on top of them.
  */
+type Filter = "all" | "image" | "video";
+
+/** How many posters are worth preloading: the first row on the widest layout. */
+const PRELOADED = 3;
+
 export function MadeWithAtheos() {
   const copy = useCopy();
+  const sectionRef = useRef<HTMLDivElement>(null);
+
+  const [filter, setFilter] = useState<Filter>("all");
+  const [motionAllowed, setMotionAllowed] = useState(false);
+  const [primed, setPrimed] = useState(false);
 
   /**
    * The video currently playing, shared across cards.
@@ -53,8 +89,6 @@ export function MadeWithAtheos() {
    * the pause is a direct DOM call on an element another card owns.
    */
   const playing = useRef<HTMLVideoElement | null>(null);
-
-  const [motionAllowed, setMotionAllowed] = useState(false);
 
   useEffect(() => {
     const query = window.matchMedia("(prefers-reduced-motion: reduce)");
@@ -66,16 +100,51 @@ export function MadeWithAtheos() {
     return () => query.removeEventListener("change", onChange);
   }, []);
 
+  /** Warm the first posters shortly before the section is reached. */
+  useEffect(() => {
+    const node = sectionRef.current;
+    if (!node) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry?.isIntersecting) setPrimed(true);
+      },
+      { rootMargin: "600px" },
+    );
+
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
   const claim = useCallback((video: HTMLVideoElement) => {
-    if (playing.current && playing.current !== video) {
-      playing.current.pause();
-    }
+    if (playing.current && playing.current !== video) playing.current.pause();
     playing.current = video;
   }, []);
 
   const release = useCallback((video: HTMLVideoElement) => {
     if (playing.current === video) playing.current = null;
   }, []);
+
+  const items = useMemo(
+    () =>
+      filter === "all" ? GALLERY : GALLERY.filter((it) => it.kind === filter),
+    [filter],
+  );
+
+  const counts = useMemo(
+    () => ({
+      all: GALLERY.length,
+      image: GALLERY.filter((it) => it.kind === "image").length,
+      video: GALLERY.filter((it) => it.kind === "video").length,
+    }),
+    [],
+  );
+
+  const filters: { value: Filter; label: string }[] = [
+    { value: "all", label: copy.made.filters.all },
+    { value: "image", label: copy.made.filters.images },
+    { value: "video", label: copy.made.filters.videos },
+  ];
 
   return (
     <Section id="made">
@@ -85,21 +154,65 @@ export function MadeWithAtheos() {
         description={copy.made.description}
       />
 
-      <Reveal delay={0.05} className="mt-12">
-        <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {MADE_WITH_ATHEOS.map((item) => (
-            <li key={item.poster}>
-              <MediaCard
-                item={item}
-                motionAllowed={motionAllowed}
-                onClaim={claim}
-                onRelease={release}
-                playLabel={copy.made.play}
-                tryLabel={copy.made.tryThis}
-              />
-            </li>
+      {/**
+       * A group of toggles, not tabs.
+       *
+       * `role="group"` with `aria-pressed` rather than a tablist: a tablist
+       * promises arrow-key navigation between tabs and a labelled panel per
+       * tab, and this is one grid that gets shorter. Announcing it as tabs
+       * would describe an interaction that does not exist.
+       */}
+      <div
+        role="group"
+        aria-label={copy.made.filters.label}
+        className="mt-8 flex flex-wrap items-center gap-2"
+      >
+        {filters.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            onClick={() => setFilter(option.value)}
+            aria-pressed={filter === option.value}
+            className={cn(
+              "min-h-11 rounded-full border px-4 text-sm font-medium transition-colors",
+              "focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:outline-none",
+              filter === option.value
+                ? "border-transparent bg-primary text-primary-foreground"
+                : "border-border bg-card text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {option.label}
+            <span className="ml-2 text-xs opacity-70">
+              {counts[option.value]}
+            </span>
+          </button>
+        ))}
+
+        {/* Announced when the filter changes, so a screen reader user learns
+            the grid got shorter without having to go and count it. */}
+        <p aria-live="polite" className="sr-only">
+          {copy.made.count.replace("{count}", String(items.length))}
+        </p>
+      </div>
+
+      <Reveal delay={0.05} className="mt-8">
+        <div
+          ref={sectionRef}
+          className="columns-1 gap-4 sm:columns-2 lg:columns-3 [&>*]:mb-4"
+        >
+          {items.map((item, index) => (
+            <MediaCard
+              key={item.id}
+              item={item}
+              motionAllowed={motionAllowed}
+              eager={primed && index < PRELOADED}
+              onClaim={claim}
+              onRelease={release}
+              playLabel={copy.made.play}
+              tryLabel={copy.made.tryThis}
+            />
           ))}
-        </ul>
+        </div>
       </Reveal>
     </Section>
   );
@@ -108,13 +221,15 @@ export function MadeWithAtheos() {
 function MediaCard({
   item,
   motionAllowed,
+  eager,
   onClaim,
   onRelease,
   playLabel,
   tryLabel,
 }: {
-  item: (typeof MADE_WITH_ATHEOS)[number];
+  item: GalleryItem;
   motionAllowed: boolean;
+  eager: boolean;
   onClaim: (video: HTMLVideoElement) => void;
   onRelease: (video: HTMLVideoElement) => void;
   playLabel: string;
@@ -124,49 +239,41 @@ function MediaCard({
   const videoRef = useRef<HTMLVideoElement>(null);
 
   /**
-   * Whether this card has ever been near the viewport.
+   * Whether this card has ever been asked for its video.
    *
    * Gates the `<source>`, not the `<video>`: an element with no source
-   * downloads nothing, so a card below the fold costs exactly its poster until
-   * the reader approaches it.
+   * downloads nothing. Once armed it stays armed, so a second hover does not
+   * re-request a file the browser already has.
    */
-  const [near, setNear] = useState(false);
+  const [armed, setArmed] = useState(false);
   const [active, setActive] = useState(false);
 
-  const isVideo = item.kind === "video";
+  const isVideo = item.kind === "video" && Boolean(item.src);
+  const playable = isVideo && motionAllowed;
 
+  /** Stop when the card leaves the viewport, whatever the pointer is doing. */
   useEffect(() => {
     const node = cardRef.current;
-    if (!node || !isVideo || !motionAllowed) return;
+    if (!node || !playable) return;
 
-    const observer = new IntersectionObserver(
-      ([entry]) => {
-        if (!entry) return;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry?.isIntersecting) return;
 
-        if (entry.isIntersecting) {
-          setNear(true);
-          return;
-        }
-
-        // Gone from view — stop, whatever the pointer is doing. A card that
-        // scrolled past while hovered would otherwise keep decoding.
-        const video = videoRef.current;
-        if (video) {
-          video.pause();
-          onRelease(video);
-        }
-        setActive(false);
-      },
-      // Starts loading a little before it arrives, so the first hover has
-      // something to play rather than a spinner.
-      { rootMargin: "200px" },
-    );
+      const video = videoRef.current;
+      if (video) {
+        video.pause();
+        onRelease(video);
+      }
+      setActive(false);
+    });
 
     observer.observe(node);
     return () => observer.disconnect();
-  }, [isVideo, motionAllowed, onRelease]);
+  }, [playable, onRelease]);
 
   function start() {
+    setArmed(true);
+
     const video = videoRef.current;
     if (!video) return;
 
@@ -186,33 +293,57 @@ function MediaCard({
     setActive(false);
   }
 
+  /**
+   * The source lands after the first interaction, so the very first hover has
+   * nothing to play yet. Playing once it can is what makes one hover enough.
+   */
+  useEffect(() => {
+    const video = videoRef.current;
+    if (armed && active && video && video.paused) {
+      void video.play().catch(() => undefined);
+    }
+  }, [armed, active]);
+
   return (
     <div
       ref={cardRef}
-      className="group relative overflow-hidden rounded-xl border border-border bg-card"
-      onMouseEnter={isVideo && motionAllowed ? start : undefined}
-      onMouseLeave={isVideo && motionAllowed ? stop : undefined}
+      className="group relative break-inside-avoid overflow-hidden rounded-xl border border-border bg-card"
+      onMouseEnter={playable ? start : undefined}
+      onMouseLeave={playable ? stop : undefined}
     >
-      {/* Aspect ratio on the container, not the media. The box is the right
-          size before anything loads, so nothing below it moves. */}
-      <div className="relative aspect-[4/5] w-full overflow-hidden bg-surface-sunken">
-        <GeneratedImage
+      {/**
+       * The master's real ratio, on the container.
+       *
+       * The box is the right size before the poster arrives, so nothing below
+       * it moves — and `bg-surface-sunken` rather than black means a card that
+       * has not painted yet reads as an empty frame rather than as a broken one.
+       */}
+      <div
+        className="relative w-full overflow-hidden bg-surface-sunken"
+        style={{ aspectRatio: `${item.width} / ${item.height}` }}
+      >
+        <Image
           src={item.poster}
-          prompt={item.prompt}
+          alt={`AI generation from the prompt: ${item.prompt}`}
+          width={item.width}
+          height={item.height}
           sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+          quality={90}
+          loading={eager ? "eager" : "lazy"}
+          priority={false}
           className={cn(
-            "transition-opacity duration-500",
+            "size-full object-cover transition-opacity duration-500",
             active ? "opacity-0" : "opacity-100",
           )}
         />
 
-        {isVideo && motionAllowed ? (
+        {playable ? (
           <video
             ref={videoRef}
             muted
             loop
             playsInline
-            // No `autoPlay`: playing is a decision made by hover, focus or tap.
+            // No `autoPlay`. Playing is a decision made by hover, focus or tap.
             preload="none"
             aria-hidden
             className={cn(
@@ -220,35 +351,24 @@ function MediaCard({
               active ? "opacity-100" : "opacity-0",
             )}
           >
-            {/* WebM first: VP9 lands these four clips 37–46% smaller than
-                H.264 (e.g. 563 KB against 1,048 KB), and the browser takes the
-                first source it can play, so ordering *is* the negotiation.
-                Safari falls through to the MP4.
-
-                Still gated on `near`: no `src` exists until the card is close
-                to the viewport, so four clips never load at once — the grid
-                would otherwise pull ~3 MB before anybody hovered anything. */}
-            {near ? (
-              <>
-                <source src={`${item.video}.webm`} type="video/webm" />
-                <source src={`${item.video}.mp4`} type="video/mp4" />
-              </>
-            ) : null}
+            {/* One source, and only once asked for. There is no WebM: on this
+                material every VP9 encode came out heavier than H.264, and the
+                browser takes the first source it can play — so a losing WebM
+                would be the one downloaded. */}
+            {armed ? <source src={item.src} type="video/mp4" /> : null}
           </video>
         ) : null}
 
-        {/* Touch and keyboard get a real control. "Hover to play" is not an
-            instruction somebody on a phone can follow. */}
-        {isVideo && motionAllowed ? (
+        {playable ? (
           <button
             type="button"
             onClick={() => (active ? stop() : start())}
             onFocus={start}
             onBlur={stop}
-            aria-label={playLabel}
+            aria-label={`${playLabel}: ${item.prompt}`}
             aria-pressed={active}
             className={cn(
-              "absolute top-3 right-3 flex size-9 items-center justify-center rounded-full",
+              "absolute top-3 right-3 flex size-10 items-center justify-center rounded-full",
               "bg-background/70 text-foreground backdrop-blur-sm transition-opacity",
               "focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:outline-none",
               active ? "opacity-0 group-hover:opacity-100" : "opacity-100",
@@ -260,30 +380,21 @@ function MediaCard({
       </div>
 
       <div className="space-y-3 p-4">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {/**
            * `bg-accent text-accent-foreground`, not `bg-primary/10 text-primary`.
            *
-           * The old pairing measured **4.22:1** in Lighthouse — `#ad46ff` on
-           * `#21152b` — against the 4.5:1 floor that 11px text has to clear.
-           * It was the only accessibility failure on the page and the reason
-           * the score sat at 97.
-           *
-           * `--accent` / `--accent-foreground` is the design system's existing
-           * pair for a tinted chip, and it is defined per theme, so this passes
-           * in both rather than in whichever one happened to get tested:
-           * 11.01:1 dark (brand-200 on brand-950), 6.60:1 light (brand-700 on
-           * brand-50). Hardcoding a lighter violet would have fixed dark mode
-           * and quietly broken light.
+           * The old pairing measured 4.22:1 in Lighthouse — `#ad46ff` on
+           * `#21152b` — against the 4.5:1 floor 11px text has to clear. The
+           * accent pair is defined per theme, so this passes in both rather
+           * than in whichever one happened to get tested.
            */}
           <span className="rounded-md bg-accent px-2 py-0.5 text-2xs font-medium tracking-wider text-accent-foreground uppercase">
             {item.kind}
           </span>
-          {/* Only when known. An invented model name on a card claiming to be
-              real output would undo the point of the section. */}
-          {item.model ? (
-            <span className="text-xs text-muted-foreground">{item.model}</span>
-          ) : null}
+          {/* The subject, never the model. Which vendor produced a piece is
+              not the visitor's business and is not ours to advertise. */}
+          <span className="text-xs text-muted-foreground">{item.category}</span>
         </div>
 
         <p className="line-clamp-2 text-sm text-muted-foreground">
@@ -295,14 +406,13 @@ function MediaCard({
             pricing, which is what these cards used to do. */}
         <Link
           href={`/sign-up?redirect_url=${encodeURIComponent(
-            `/studio?prompt=${encodeURIComponent(item.prompt)}&modality=${item.kind}`,
+            `/studio?prompt=${encodeURIComponent(item.prompt)}&modality=${item.modality}`,
           )}`}
           className={cn(
             "inline-flex items-center gap-1 text-sm font-medium text-primary",
             // The text is 22px tall. `min-h-11` with a negative inline margin
             // gives the thumb a 44px target without moving the text or adding
-            // a visible box — the link still reads as a link, and the card's
-            // spacing is unchanged.
+            // a visible box.
             "-mx-2 min-h-11 rounded-md px-2 py-2",
             "underline-offset-4 hover:underline",
             "focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:outline-none",

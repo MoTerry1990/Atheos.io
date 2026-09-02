@@ -95,6 +95,15 @@ export interface MarketingCopy {
     tryThis: string;
     /** Shown on a card whose media is still loading or paused. */
     play: string;
+    /** All / Images / Videos, and the group's accessible name. */
+    filters: {
+      label: string;
+      all: string;
+      images: string;
+      videos: string;
+    };
+    /** `{count}` is substituted with how many cards the filter leaves. */
+    count: string;
   };
 
   trustedBy: { label: string };

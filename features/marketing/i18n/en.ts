@@ -107,13 +107,21 @@ export const EN: MarketingCopy = {
     eyebrow: "Made with Atheos",
     title: "Ideas become images, motion and sound.",
     // "Real creations" is accurate — every card is verified output from
-    // scripts/generate-marketing-assets.ts, on the pinned model versions the
-    // product runs. It says images *and* clips rather than implying all six
-    // move, because two do.
+    // scripts/generate-gallery-assets.ts, on the pinned model versions the
+    // product runs, and each carries the prompt that produced it.
     description:
-      "Real creations from the models on the free plan — still images and short clips. Take any prompt into your own workspace.",
+      "Real creations from the models the product runs — still images and short clips, each with the prompt that made it. Take any of them into your own workspace.",
     tryThis: "Try this",
     play: "Play preview",
+    filters: {
+      label: "Filter creations",
+      all: "All",
+      images: "Images",
+      videos: "Videos",
+    },
+    // `{count}` is substituted; a live count is the honest way to say how much
+    // is on the page, and it changes when a filter is applied.
+    count: "{count} creations",
   },
 
   trustedBy: { label: "Built on infrastructure you already trust" },

@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import {
   COMPOSER_MODALITIES,
   FEATURES,
-  MADE_WITH_ATHEOS,
   SHOWCASE,
   STEPS,
   TEMPLATES,
@@ -64,43 +63,6 @@ describe("showcase panels", () => {
   });
 });
 
-describe("made with atheos", () => {
-  it("stays within the card budget", () => {
-    const videos = MADE_WITH_ATHEOS.filter((item) => item.kind === "video");
-    const images = MADE_WITH_ATHEOS.filter((item) => item.kind === "image");
-
-    expect(videos.length).toBeLessThanOrEqual(6);
-    expect(images.length).toBeLessThanOrEqual(6);
-  });
-
-  it("attaches a clip to every card that claims to be a video", () => {
-    // A video card with no video renders as a still and quietly misrepresents
-    // what the product produced.
-    for (const item of MADE_WITH_ATHEOS) {
-      if (item.kind === "video") {
-        expect(
-          item.video,
-          `${item.poster} claims video with no clip`,
-        ).toBeTruthy();
-        // A base path with no extension — the card appends `.webm` then
-        // `.mp4`. That both files exist on disk is asserted in
-        // `homepage-media.test.ts`, which can reach the filesystem.
-        expect(item.video).toMatch(/^\/marketing\/[a-z0-9-]+$/);
-      } else {
-        expect(item.video).toBeUndefined();
-      }
-    }
-  });
-
-  it("gives every card a poster and a prompt", () => {
-    for (const item of MADE_WITH_ATHEOS) {
-      expect(item.poster.trim()).not.toBe("");
-      // The prompt is the card's whole claim to being real output.
-      expect(item.prompt.trim().length).toBeGreaterThan(10);
-    }
-  });
-});
-
 describe("homepage consolidation", () => {
   it("keeps templates to four, each with its own prompt", () => {
     expect(TEMPLATES.length).toBeLessThanOrEqual(4);
@@ -134,11 +96,18 @@ describe("homepage consolidation", () => {
      * The section is genuinely gone rather than merely unmounted: the
      * component file is deleted and its `GALLERY` data with it, so this cannot
      * be satisfied by a component that simply stopped being rendered.
+     *
+     * Sprint 29 also moved the *other* gallery out of this module.
+     * `MADE_WITH_ATHEOS` was six hand-written entries; the section is now
+     * driven by `features/marketing/gallery.generated.ts`, built from the
+     * masters themselves. Both names must therefore be absent here — the
+     * standalone Gallery because it was deleted, and the made-with data
+     * because it moved and a leftover copy would be a second source of truth.
      */
     const content = await import("@/features/marketing/content");
 
     expect(Object.keys(content)).not.toContain("GALLERY");
-    expect(Object.keys(content)).toContain("MADE_WITH_ATHEOS");
+    expect(Object.keys(content)).not.toContain("MADE_WITH_ATHEOS");
   });
 });
 

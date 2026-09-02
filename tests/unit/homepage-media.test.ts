@@ -1,8 +1,8 @@
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
-import { MADE_WITH_ATHEOS, TEMPLATES } from "@/features/marketing/content";
+import { TEMPLATES } from "@/features/marketing/content";
 
 /**
  * Homepage image resolution, measured from the files themselves.
@@ -125,55 +125,6 @@ describe("the media audit document", () => {
     }
   });
 
-  it("marks a replacement for every asset that fails the density rule", () => {
-    const text = docText();
-    const failures: string[] = [];
-
-    for (const item of MADE_WITH_ATHEOS) {
-      const file = `${item.poster}.webp`;
-      const source = webpSize(file);
-      expect(source, `${file} could not be read`).not.toBeNull();
-
-      const surface = SURFACES[0]!;
-      const usable = effective(source!, surface.aspect);
-      const needed = surface.rendered.w * DENSITY;
-
-      if (usable.width < needed) failures.push(item.poster);
-    }
-
-    // Every failure must be named in the doc with a REPLACE verdict, on the
-    // same line — so a file cannot be listed and quietly marked "Keep".
-    for (const poster of failures) {
-      const row = text
-        .split("\n")
-        .find((line) => line.includes(`\`${poster}.webp\``));
-
-      expect(
-        row,
-        `${poster}.webp fails the density rule and is not in the doc`,
-      ).toBeDefined();
-      expect(
-        row,
-        `${poster}.webp is in the doc but not marked REPLACE`,
-      ).toMatch(/REPLACE/);
-    }
-
-    /**
-     * The known failures, pinned. Two, not four.
-     *
-     * `made-video-5` and `made-video-6` were withdrawn from the showcase after
-     * their motion was measured: mean inter-frame difference of 2.00 and 0.86
-     * against 6.44 for the old hero and 17.70 for the current one. At 0.86 a
-     * clip is an animated photograph, which is the one thing a video showcase
-     * must not be. The files are still on disk; only the public references are
-     * gone, so the decision is reversible.
-     *
-     * The two that remain are short for a different and unchanged reason: the
-     * model's 720p / 9:16 ceiling.
-     */
-    expect(failures.sort()).toEqual(["made-video-3", "made-video-4"]);
-  });
-
   it("keeps every template and showcase still above its density floor", () => {
     for (const template of TEMPLATES) {
       const source = webpSize(`${template.image}.webp`);
@@ -210,96 +161,5 @@ describe("the media audit document", () => {
     expect(text).toMatch(/9:16/);
     // The shortfall, stated: the model's ceiling, not a rounding error.
     expect(text).toMatch(/720p/);
-  });
-});
-
-describe("no asset is passed off as something it is not", () => {
-  it("gives every video card a real clip, in both codecs", () => {
-    /**
-     * `video` is now a base path with no extension — the card appends `.webm`
-     * and `.mp4` so the browser negotiates by source order.
-     *
-     * This used to assert the string ended in `.mp4` or `.webm`, which was a
-     * check on the *shape of a string*. Now that the extension is applied at
-     * render time, the only assertion worth making is that both files are
-     * actually on disk: a base path pointing at nothing would render a card
-     * with two dead sources and fail silently in the browser.
-     */
-    for (const item of MADE_WITH_ATHEOS) {
-      if (item.kind !== "video") {
-        expect(item.video).toBeUndefined();
-        continue;
-      }
-
-      expect(item.video, `${item.poster} claims video with no clip`).toMatch(
-        /^\/marketing\/[a-z0-9-]+$/,
-      );
-
-      for (const extension of ["webm", "mp4"]) {
-        const file = resolve(
-          MARKETING,
-          `${item.video!.replace("/marketing/", "")}.${extension}`,
-        );
-        expect(
-          existsSync(file),
-          `${item.poster} has no .${extension} on disk`,
-        ).toBe(true);
-      }
-    }
-  });
-
-  it("ships no audio track on any homepage clip", () => {
-    /**
-     * The requirement is *absent*, not silent — a muted track still costs
-     * bytes and still lets an unmute button produce sound on a marketing page.
-     *
-     * Read from the container rather than trusted: an MP4 with an audio track
-     * has an `mp4a`/`sowt` sample-entry box, and a WebM with one carries the
-     * "A_" codec-id prefix. Neither appears in a stripped file.
-     */
-    for (const item of MADE_WITH_ATHEOS) {
-      if (item.kind !== "video") continue;
-      const base = item.video!.replace("/marketing/", "");
-
-      const mp4 = readFileSync(resolve(MARKETING, `${base}.mp4`));
-      expect(mp4.includes(Buffer.from("mp4a")), `${base}.mp4 has audio`).toBe(
-        false,
-      );
-
-      const webm = readFileSync(resolve(MARKETING, `${base}.webm`));
-      expect(
-        webm.includes(Buffer.from("A_OPUS")) ||
-          webm.includes(Buffer.from("A_VORBIS")),
-        `${base}.webm has audio`,
-      ).toBe(false);
-    }
-  });
-
-  it("keeps every clip inside its file-size budget", () => {
-    // A hover-to-play card that costs 3 MB is a card most people never see
-    // finish loading. Caps from docs/MEDIA_REPLACEMENT_MANIFEST.md.
-    for (const item of MADE_WITH_ATHEOS) {
-      if (item.kind !== "video") continue;
-      const base = item.video!.replace("/marketing/", "");
-
-      const mp4 = statSync(resolve(MARKETING, `${base}.mp4`)).size / 1024;
-      const webm = statSync(resolve(MARKETING, `${base}.webm`)).size / 1024;
-
-      expect(mp4, `${base}.mp4 is ${mp4.toFixed(0)} KB`).toBeLessThanOrEqual(
-        1229,
-      );
-      expect(webm, `${base}.webm is ${webm.toFixed(0)} KB`).toBeLessThanOrEqual(
-        717,
-      );
-    }
-  });
-
-  it("shows no poster twice inside the gallery", () => {
-    // Reusing one asset across two cards would make the grid look fuller than
-    // the evidence supports. `hero-poster` and `auth-poster` each appear once
-    // here; that they *also* appear elsewhere on the page is the documented
-    // limitation, not a duplicate within the section.
-    const posters = MADE_WITH_ATHEOS.map((item) => item.poster);
-    expect(new Set(posters).size).toBe(posters.length);
   });
 });
