@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { isBillingConfigured } from "@/services/billing/plans";
 import { isStorageConfigured } from "@/services/storage/assets";
 import { isUsingMockProvider } from "@/services/ai/registry";
+import { quoteSigningReady } from "@/services/ai/plan-token";
 
 /**
  * Liveness and dependency health, for uptime monitors.
@@ -77,18 +78,44 @@ export async function GET() {
   // would turn a health check into a source of load and of third-party rate
   // limiting — a monitor polling every 30s would make thousands of vendor
   // calls a day to learn something a local check already knows.
+  /**
+   * Can a generation be quoted?
+   *
+   * Added after a release shipped in which it could not. Every connector
+   * quote is signed, an unsigned quote is refused rather than issued, and the
+   * only outward symptom was a generic tool error — so the deployment looked
+   * healthy while `prepare_generation` was returning a failure to every
+   * caller. Nothing here contacts anything: it is one bit derived from local
+   * configuration, which is all a monitor needs to notice.
+   *
+   * A **boolean**, never the reason. The reason names an environment variable
+   * and belongs on the authenticated admin status page.
+   */
+  const generationReady = quoteSigningReady();
+
   dependencies.push(
     { name: "auth", ok: Boolean(env.CLERK_SECRET_KEY), probed: false },
     { name: "billing", ok: isBillingConfigured(), probed: false },
     { name: "storage", ok: isStorageConfigured(), probed: false },
     { name: "ai", ok: !isUsingMockProvider(), probed: false },
+    { name: "generation", ok: generationReady, probed: false },
   );
 
   const healthy = databaseOk;
 
   return NextResponse.json(
     {
-      status: healthy ? "ok" : "unhealthy",
+      /**
+       * `degraded` is a third state, and it is still a 200.
+       *
+       * The rule above holds: only the database fails this endpoint, because
+       * a monitor that pages someone at 3am about a staged rollout gets muted.
+       * But "up and unable to quote" is not the same as "ok", and a monitor
+       * that only ever sees two values cannot alert on the difference. So the
+       * body distinguishes them and the status code does not.
+       */
+      status: !healthy ? "unhealthy" : generationReady ? "ok" : "degraded",
+      generationReady,
       dependencies,
       timestamp: new Date().toISOString(),
     },

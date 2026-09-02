@@ -9,6 +9,7 @@ import {
 } from "@/services/billing/plans";
 import { isUsingMockProvider, listModels } from "@/services/ai/registry";
 import { isStorageConfigured } from "@/services/storage/assets";
+import { creativePlanConfigProblems } from "@/services/ai/plan-token";
 
 /**
  * System status.
@@ -131,6 +132,33 @@ export async function getSystemStatus(): Promise<SystemStatus> {
     detail: mock
       ? `No provider credentials. Falling back to the labelled mock — ${models.length} model${models.length === 1 ? "" : "s"} offered, none of them real.`
       : `${models.length} model${models.length === 1 ? "" : "s"} available.`,
+    checked: false,
+  });
+
+  /**
+   * Quote signing.
+   *
+   * Every quote — the Studio's and the connector's — is HMAC-signed, and
+   * `signingKey()` refuses to sign rather than falling back to an empty key.
+   * Without the secret `prepare_generation` returns a generic tool failure and
+   * the video Generate button never leaves "Quote unavailable", while nothing
+   * else looks wrong. That is precisely the failure this check exists to make
+   * visible, and it went unnoticed through a release.
+   *
+   * `down` rather than `degraded`: no quote can be issued, so no connector
+   * generation can be started at all. The detail names the variable because
+   * this page is authenticated and the owner is the only person who can set
+   * it — `/api/health` gets the boolean and nothing else.
+   */
+  const signingProblems = creativePlanConfigProblems();
+  checks.push({
+    id: "quote-signing",
+    label: "Quote signing",
+    level: signingProblems.length === 0 ? "ok" : "down",
+    detail:
+      signingProblems.length === 0
+        ? "Quotes can be signed. Connector prepare and confirm are usable."
+        : `No generation can be quoted: ${signingProblems.join("; ")}. Set it in the deployment environment; it must stay stable across deploys, because changing it invalidates every outstanding quote.`,
     checked: false,
   });
 

@@ -153,6 +153,28 @@ export function creativePlanConfigProblems(): string[] {
   return problems;
 }
 
+/**
+ * Can this deployment sign a quote at all?
+ *
+ * ## Why a boolean and not the problems
+ *
+ * `creativePlanConfigProblems()` returns sentences that name an environment
+ * variable and say what is wrong with it. That is exactly right for the admin
+ * status page, which is authenticated and whose whole value is telling the
+ * owner what to set — and exactly wrong for anything a stranger can read.
+ * Published unauthenticated, "CREATIVE_PLAN_SIGNING_SECRET is not set" tells an
+ * attacker which lever is loose.
+ *
+ * So the public surface gets one bit. It is deliberately separate from
+ * `creativeDirectorReady()`, which also requires the feature flag: signing is
+ * what the **connector** needs, and the connector runs whether or not the
+ * Studio's Director is switched on. Conflating the two is the mistake that
+ * shipped a release reporting a flag as a missing secret.
+ */
+export function quoteSigningReady(): boolean {
+  return creativePlanConfigProblems().length === 0;
+}
+
 /** Whether the Director can run: flag on *and* signing configured. */
 export function creativeDirectorReady(): {
   enabled: boolean;
