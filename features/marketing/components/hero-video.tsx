@@ -190,138 +190,160 @@ export function HeroVideo({ className }: { className?: string }) {
   const showVideo = eligible === true && near;
 
   return (
-    <div
-      ref={containerRef}
-      aria-hidden
-      className={cn("pointer-events-none absolute inset-0 -z-10", className)}
-    >
-      <div className="hero-poster absolute inset-0 bg-cover bg-center" />
+    <>
+      <div
+        ref={containerRef}
+        aria-hidden
+        className={cn("pointer-events-none absolute inset-0 -z-10", className)}
+      >
+        <div className="hero-poster absolute inset-0 bg-cover bg-center" />
 
-      {showVideo ? (
-        <video
-          ref={videoRef}
-          // All three are preconditions for autoplay being permitted at all;
-          // `playsInline` additionally stops iOS taking the video fullscreen.
-          muted
-          loop
-          playsInline
-          autoPlay
-          // The poster has already painted. `none` keeps the loop from
-          // competing with it for bandwidth before it is needed.
-          preload="none"
-          onPlaying={() => setPlaying(true)}
-          className={cn(
-            "absolute inset-0 size-full object-cover transition-opacity duration-1000 ease-out",
-            playing ? "opacity-100" : "opacity-0",
-          )}
-        >
-          {/* One source. The previous hero shipped WebM first because it was
+        {showVideo ? (
+          <video
+            ref={videoRef}
+            // All three are preconditions for autoplay being permitted at all;
+            // `playsInline` additionally stops iOS taking the video fullscreen.
+            muted
+            loop
+            playsInline
+            autoPlay
+            // The poster has already painted. `none` keeps the loop from
+            // competing with it for bandwidth before it is needed.
+            preload="none"
+            onPlaying={() => setPlaying(true)}
+            className={cn(
+              "absolute inset-0 size-full object-cover transition-opacity duration-1000 ease-out",
+              playing ? "opacity-100" : "opacity-0",
+            )}
+          >
+            {/* One source. The previous hero shipped WebM first because it was
               genuinely smaller; on this clip every VP9 encode came out heavier
               than H.264, and the browser takes the first source it can play —
               so a losing WebM would be the one downloaded. See
               `hero-media.ts`. */}
-          <source src={HERO_MEDIA.mp4} type="video/mp4" />
-        </video>
-      ) : null}
+            <source src={HERO_MEDIA.mp4} type="video/mp4" />
+          </video>
+        ) : null}
 
-      {/**
-       * One scrim, not three.
-       *
-       * This was a flat `bg-background/70`, then a `from-background/60`
-       * gradient over it, then a brand tint at 60%. Compounded, the top of the
-       * frame was about 88% obscured and the hero read as a dark rectangle with
-       * a headline on it. The replacement is a single vertical gradient: light
-       * where the art is, heavy at the bottom where the section dissolves into
-       * the page. Colour contrast scores 100 with it in place.
-       */}
-      <div className="absolute inset-0 bg-gradient-to-b from-background/40 via-background/45 to-background" />
-      <div className="absolute inset-0 bg-gradient-brand-subtle opacity-30" />
+        {/**
+         * One scrim, not three.
+         *
+         * This was a flat `bg-background/70`, then a `from-background/60`
+         * gradient over it, then a brand tint at 60%. Compounded, the top of the
+         * frame was about 88% obscured and the hero read as a dark rectangle with
+         * a headline on it. The replacement is a single vertical gradient: light
+         * where the art is, heavy at the bottom where the section dissolves into
+         * the page. Colour contrast scores 100 with it in place.
+         */}
+        <div className="absolute inset-0 bg-gradient-to-b from-background/40 via-background/45 to-background" />
+        <div className="absolute inset-0 bg-gradient-brand-subtle opacity-30" />
+      </div>
 
       {/**
        * The controls, and the disclosure.
        *
-       * Grouped bottom-right inside the hero's own stacking context so they
-       * cannot cover the headline or either CTA. `pointer-events-auto`
-       * re-enables clicks the decorative wrapper turns off, and `aria-hidden`
-       * is explicitly cleared — the wrapper is decoration, this row is not.
+       * ## Why this row is a sibling of the decoration, not a child of it
        *
-       * Rendered only when a video is actually running. With reduced motion,
-       * Save-Data, a slow connection or a phone there is no video and no
-       * controls, because a Pause button over a still image is a lie.
+       * It used to be a child, carrying `aria-hidden={false}` and a comment
+       * saying the wrapper's `aria-hidden` was "explicitly cleared". It is not:
+       * `aria-hidden` on an ancestor removes the whole subtree from the
+       * accessibility tree and a descendant cannot opt back in. So the
+       * disclosure and both controls were visible and completely unannounced —
+       * and Testing Library's `getByRole` could not find them either, which is
+       * how it was caught.
+       *
+       * Positioned against the same containing block, so it still sits
+       * bottom-right of the hero and still cannot cover the headline or either
+       * CTA. It is not inside the `-z-10` layer, so it needs no
+       * `pointer-events-auto` to be clickable.
+       *
+       * ## What is conditional and what is not
+       *
+       * The *controls* appear only when a video is actually running: with
+       * reduced motion, Save-Data, a slow connection or a phone there is no
+       * video, and a Pause button over a still image is a lie.
+       *
+       * The *disclosure* is unconditional, and used to be conditional. Found
+       * on the deployed page: `showVideo` starts false so the server and client
+       * markup agree, so the server-rendered HTML carried no label at all — and
+       * every visitor who never reaches the video branch saw a generated still
+       * with nothing saying so. The poster is a frame of the same generated
+       * clip; it needs the same disclosure.
        */}
-      {showVideo ? (
-        <div
-          aria-hidden={false}
-          className="pointer-events-auto absolute right-4 bottom-4 flex flex-wrap items-center justify-end gap-2"
-        >
-          {/**
-           * The disclosure the transcode could not carry.
-           *
-           * The master's C2PA manifest does not survive re-encoding, so the
-           * claim moves from the metadata to the page. Deliberately short: a
-           * long warning over a hero reads as an apology.
-           */}
-          <span className="rounded-full border border-border/60 bg-background/70 px-3 py-1.5 text-2xs text-muted-foreground backdrop-blur-sm">
-            AI-generated video · Web-optimized preview{" "}
-            <Link
-              href="/content-details"
-              className="underline underline-offset-2 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:outline-none"
-            >
-              Content details
-            </Link>
-          </span>
+      <div className="absolute right-4 bottom-4 flex flex-wrap items-center justify-end gap-2">
+        {/**
+         * The disclosure the transcode could not carry.
+         *
+         * The master's C2PA manifest does not survive re-encoding, so the
+         * claim moves from the metadata to the page. Deliberately short: a
+         * long warning over a hero reads as an apology. The noun follows what
+         * is actually on screen, because calling a still a video is the small
+         * inaccuracy that makes the rest of the sentence worth doubting.
+         */}
+        <span className="rounded-full border border-border/60 bg-background/70 px-3 py-1.5 text-2xs text-muted-foreground backdrop-blur-sm">
+          AI-generated {showVideo ? "video" : "image"} · Web-optimized preview{" "}
+          <Link
+            href="/content-details"
+            className="underline underline-offset-2 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:outline-none"
+          >
+            Content details
+          </Link>
+        </span>
 
-          <button
-            type="button"
-            onClick={() => {
-              const video = videoRef.current;
-              if (!video) return;
-              if (video.paused) {
-                void video.play();
-              } else {
-                video.pause();
-                setPlaying(false);
+        {showVideo ? (
+          <>
+            <button
+              type="button"
+              onClick={() => {
+                const video = videoRef.current;
+                if (!video) return;
+                if (video.paused) {
+                  void video.play();
+                } else {
+                  video.pause();
+                  setPlaying(false);
+                }
+              }}
+              aria-label={
+                paused ? "Play background video" : "Pause background video"
               }
-            }}
-            aria-label={
-              paused ? "Play background video" : "Pause background video"
-            }
-            className={CONTROL}
-          >
-            {paused ? "Play" : "Pause"}
-          </button>
+              className={CONTROL}
+            >
+              {paused ? "Play" : "Pause"}
+            </button>
 
-          {/**
-           * Muted at all times until this is pressed.
-           *
-           * Browsers will not autoplay with sound and should not — but the
-           * clip has a real AAC track, so there is something to offer. The
-           * accessible name carries the *state*, not just the action, because
-           * "Hear audio" alone never tells a screen-reader user whether sound
-           * is currently on.
-           */}
-          <button
-            type="button"
-            onClick={() => {
-              const video = videoRef.current;
-              if (!video) return;
-              const next = !video.muted;
-              video.muted = next;
-              setMuted(next);
-              if (!next && video.paused) void video.play();
-            }}
-            aria-pressed={!muted}
-            aria-label={
-              muted
-                ? "Hear audio — currently muted"
-                : "Mute audio — currently on"
-            }
-            className={CONTROL}
-          >
-            {muted ? "Hear audio" : "Mute"}
-          </button>
-        </div>
-      ) : null}
-    </div>
+            {/**
+             * Muted at all times until this is pressed.
+             *
+             * Browsers will not autoplay with sound and should not — but the
+             * clip has a real AAC track, so there is something to offer. The
+             * accessible name carries the *state*, not just the action, because
+             * "Hear audio" alone never tells a screen-reader user whether sound
+             * is currently on.
+             */}
+            <button
+              type="button"
+              onClick={() => {
+                const video = videoRef.current;
+                if (!video) return;
+                const next = !video.muted;
+                video.muted = next;
+                setMuted(next);
+                if (!next && video.paused) void video.play();
+              }}
+              aria-pressed={!muted}
+              aria-label={
+                muted
+                  ? "Hear audio — currently muted"
+                  : "Mute audio — currently on"
+              }
+              className={CONTROL}
+            >
+              {muted ? "Hear audio" : "Mute"}
+            </button>
+          </>
+        ) : null}
+      </div>
+    </>
   );
 }

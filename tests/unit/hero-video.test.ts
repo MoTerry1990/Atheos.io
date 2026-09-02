@@ -388,9 +388,17 @@ describe("viewport gating and recovery", () => {
      */
     expect(code).toMatch(/Pause background video/);
     expect(code).toMatch(/Play background video/);
-    // The wrapper disables pointer events; the controls re-enable their own.
-    expect(code).toMatch(/pointer-events-auto/);
-    expect(code).toMatch(/aria-hidden=\{false\}/);
+
+    /**
+     * This used to require `pointer-events-auto` and `aria-hidden={false}` on
+     * the control row. Both were the symptoms of the row being a child of the
+     * decorative `aria-hidden` wrapper — and `aria-hidden` on an ancestor
+     * cannot be cleared by a descendant, so asserting `aria-hidden={false}`
+     * was asserting a no-op. The row is now a sibling of the decoration, so
+     * neither is needed, and `aria-hidden={false}` must *not* come back:
+     * writing it again would mean the row had been moved back inside.
+     */
+    expect(code).not.toMatch(/aria-hidden=\{false\}/);
   });
 
   it("offers audio, and never starts it by itself", () => {
@@ -425,9 +433,19 @@ describe("viewport gating and recovery", () => {
      * moves to the page. Short by design — a long warning over a hero reads as
      * an apology — with the detail one link away.
      */
-    expect(code).toMatch(/AI-generated video/);
+    expect(code).toMatch(/AI-generated /);
     expect(code).toMatch(/Web-optimized preview/);
     expect(code).toMatch(/\/content-details/);
+
+    /**
+     * The noun follows what is on screen — "video" when one is playing,
+     * "image" when only the poster is. A hard-coded "AI-generated video" was
+     * the previous text and it was wrong for every visitor who never gets a
+     * video, which is the same set of visitors the label was missing from
+     * entirely. Whether it actually renders in that state is asserted against
+     * a real DOM in `tests/components/hero-disclosure.test.tsx`.
+     */
+    expect(code).toMatch(/showVideo \? "video" : "image"/);
   });
 
   it("keeps the control clear of the headline and CTAs", () => {
