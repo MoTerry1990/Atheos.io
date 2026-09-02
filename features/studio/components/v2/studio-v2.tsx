@@ -62,6 +62,16 @@ type Modality = "image" | "video" | "audio";
  */
 type AudioChoice = "auto" | "native" | "silent";
 
+/**
+ * The id linking a blocked Generate to the sentence explaining why.
+ *
+ * A constant rather than `useId`, because two components in different parts of
+ * the tree have to agree on it: the alert renders inside `AudioControl` and the
+ * button it explains lives in `Composer`. A generated id would need threading
+ * through props for no benefit — there is exactly one of each on screen.
+ */
+const AUDIO_CONFLICT_ID = "studio-audio-conflict";
+
 const AUDIO_CHOICES: { id: AudioChoice; label: string; hint: string }[] = [
   { id: "auto", label: "Auto", hint: "Sound when the model makes it" },
   { id: "native", label: "Native audio", hint: "Requires a Cinematic model" },
@@ -132,12 +142,43 @@ export function StudioV2({
    * registry to a browser.
    */
   const nativeCapable = model?.audio === "native";
-  const audioConflict = audioIntent === "native" && model && !nativeCapable;
-  const nativeAlternative = available.find((entry) => entry.audio === "native");
+
+  /**
+   * Two conflicts, in opposite directions.
+   *
+   * **Native on a silent model** was already handled: Motion has no audio
+   * track and no prompt changes that.
+   *
+   * **Silent on an always-on model** is the new one. Cinematic Next generates
+   * sound with every output and its API documents no parameter to stop it, so
+   * a Silent control there would be a switch wired to nothing — the customer
+   * picks it, is quoted for it, and receives audio. Refusing is the honest
+   * answer, and stripping the track afterwards is not offered because
+   * re-encoding risks the SynthID and C2PA credentials the clip carries.
+   */
+  const audioConflict = Boolean(
+    model &&
+    ((audioIntent === "native" && !nativeCapable) ||
+      (audioIntent === "silent" && model.audioAlwaysOn)),
+  );
+
+  const silentConflict = Boolean(
+    model && audioIntent === "silent" && model.audioAlwaysOn,
+  );
+
+  /** A model that can actually deliver what the current choice asks for. */
+  const nativeAlternative = available.find((entry) =>
+    silentConflict
+      ? entry.id !== model?.id && !entry.audioAlwaysOn
+      : entry.audio === "native",
+  );
+
   const willHaveAudio =
     audioIntent === "native"
       ? Boolean(nativeCapable)
-      : audioIntent === "auto" && Boolean(nativeCapable);
+      : audioIntent === "silent"
+        ? Boolean(model?.audioAlwaysOn)
+        : audioIntent === "auto" && Boolean(nativeCapable);
 
   const selected = history.find((entry) => entry.id === selectedId) ?? null;
 
@@ -181,6 +222,7 @@ export function StudioV2({
               audioIntent={audioIntent}
               onAudioIntent={setAudioIntent}
               audioConflict={Boolean(audioConflict)}
+              silentConflict={silentConflict}
               nativeAlternative={nativeAlternative}
               willHaveAudio={willHaveAudio}
             />
@@ -386,7 +428,13 @@ function Canvas({
  *
  * The old rail rendered whole prompts, so three entries filled it and the
  * fourth was below the fold. A thumbnail says which one it is faster than a
- * paragraph does, and the prompt is one line, truncated.
+ * paragraph does, and the prompt is clamped to two lines.
+ *
+ * Two rather than one: a single truncated line of "A cinematic establishing
+ * shot of a coastal road at golden hour, camera tracking a vintage…" is the
+ * same opening words as every other cinematic prompt, so the entries become
+ * indistinguishable at exactly the moment somebody is trying to tell them
+ * apart. Two lines is enough to reach the subject.
  */
 function HistoryStrip({
   open,
@@ -434,9 +482,10 @@ function HistoryStrip({
                 )}
               >
                 <div className="mb-2 aspect-video w-full rounded-lg bg-surface-raised" />
-                {/* One line, truncated. A history rail is for recognising
-                    work, not for reading it. */}
-                <p className="truncate text-xs text-foreground">
+                {/* Two lines, then an ellipsis. A history rail is for
+                    recognising work, not for reading it — but one line of a
+                    long prompt is all preamble and identifies nothing. */}
+                <p className="line-clamp-2 text-xs text-foreground">
                   {entry.prompt || "Untitled"}
                 </p>
                 <p className="mt-0.5 truncate text-2xs text-muted-foreground">
@@ -462,6 +511,7 @@ function Composer({
   audioIntent,
   onAudioIntent,
   audioConflict,
+  silentConflict,
   nativeAlternative,
   willHaveAudio,
 }: {
@@ -474,6 +524,7 @@ function Composer({
   onModel: (id: string) => void;
   audioIntent: AudioChoice;
   onAudioIntent: (next: AudioChoice) => void;
+  silentConflict: boolean;
   audioConflict: boolean;
   nativeAlternative?: PublicStudioModel;
   willHaveAudio: boolean;
@@ -497,6 +548,7 @@ function Composer({
             value={audioIntent}
             onChange={onAudioIntent}
             conflict={audioConflict}
+            silentConflict={silentConflict}
             alternative={nativeAlternative}
             onSwitch={onModel}
             willHaveAudio={willHaveAudio}
@@ -547,7 +599,18 @@ function Composer({
             <>
               <Chip>{model.displayName}</Chip>
               <Chip>{model.creditCost} credits</Chip>
-              {model.durations.length > 0 ? (
+              {model.durationMode === "model_decided" ? (
+                /**
+                 * "Up to N seconds", never an exact figure.
+                 *
+                 * This model chooses its own length within a range and does
+                 * not honour an exact request. Rendering "10 seconds" would
+                 * put a number on screen that the output need not match, and
+                 * the customer is charged on the maximum precisely because we
+                 * cannot promise it.
+                 */
+                <Chip>Up to {model.durationRange?.max ?? 10} seconds</Chip>
+              ) : model.durations.length > 0 ? (
                 <Chip>{model.durations.join("s / ")}s</Chip>
               ) : null}
               {/* Audio status, at last. The old picker had no audio field at
@@ -575,7 +638,35 @@ function Composer({
             <Button variant="ghost" size="sm">
               Advanced
             </Button>
-            <Button size="sm" disabled={!prompt.trim()}>
+            <Button
+              size="sm"
+              /**
+               * Blocked on an audio conflict as well as an empty prompt.
+               *
+               * Both directions: native sound asked of a model that has no
+               * audio track, and silence asked of one that always produces
+               * sound. Leaving the button live and letting the server refuse
+               * would spend a round trip to say what the interface already
+               * knows — and on the silent case it would be worse than that,
+               * because the server would happily generate a clip with audio.
+               */
+              disabled={!prompt.trim() || audioConflict}
+              /**
+               * The reason travels with the control that is blocked.
+               *
+               * `aria-label` says *that* it is unavailable; this points at the
+               * sentence saying why, so a screen reader user reaches the
+               * explanation and the two ways out without hunting for them.
+               */
+              aria-describedby={audioConflict ? AUDIO_CONFLICT_ID : undefined}
+              aria-label={
+                audioConflict
+                  ? silentConflict
+                    ? "Generate is unavailable: this model always creates native audio"
+                    : "Generate is unavailable: this model produces no audio track"
+                  : undefined
+              }
+            >
               Generate
             </Button>
           </div>
@@ -779,7 +870,9 @@ function ModelPicker({
               {model.resolutions[0] ? (
                 <span>{model.resolutions[0]}</span>
               ) : null}
-              {model.durations.length > 0 ? (
+              {model.durationMode === "model_decided" ? (
+                <span>Up to {model.durationRange?.max ?? 10}s</span>
+              ) : model.durations.length > 0 ? (
                 <span>{Math.max(...model.durations)}s</span>
               ) : null}
               {model.takesReference ? <span>Image reference</span> : null}
@@ -814,6 +907,7 @@ function AudioControl({
   value,
   onChange,
   conflict,
+  silentConflict,
   alternative,
   onSwitch,
   willHaveAudio,
@@ -822,6 +916,8 @@ function AudioControl({
   value: AudioChoice;
   onChange: (next: AudioChoice) => void;
   conflict: boolean;
+  /** True when the conflict is Silent-on-an-always-on-model, not the reverse. */
+  silentConflict: boolean;
   alternative?: PublicStudioModel;
   onSwitch: (id: string) => void;
   willHaveAudio: boolean;
@@ -836,12 +932,23 @@ function AudioControl({
       >
         <span className="mr-1 text-[11px] text-muted-foreground">Audio</span>
 
+        {/**
+         * The accessible name leads with the label, then the hint.
+         *
+         * `title` alone was the accessible name, so a screen reader announced
+         * these as "Sound when the model makes it", "Requires a Cinematic
+         * model" and "No audio track" — the hints, with the actual choices
+         * nowhere. Found by reading the accessibility tree in a real browser;
+         * jsdom computes the name differently, so the component test had been
+         * passing on a name the browser does not produce.
+         */}
         {AUDIO_CHOICES.map((choice) => (
           <button
             key={choice.id}
             type="button"
             role="radio"
             aria-checked={value === choice.id}
+            aria-label={`${choice.label} — ${choice.hint}`}
             title={choice.hint}
             onClick={() => onChange(choice.id)}
             className={cn(
@@ -859,13 +966,53 @@ function AudioControl({
 
       {conflict ? (
         <p
+          id={AUDIO_CONFLICT_ID}
           role="alert"
+          /**
+           * `role="alert"` is an implicit `aria-live="assertive"`, but it is
+           * stated explicitly here because the element is *mounted* when the
+           * conflict appears rather than having its text changed. Some screen
+           * readers announce a newly inserted live region only when the
+           * politeness is on the element at insertion time.
+           */
+          aria-live="assertive"
           className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs"
         >
+          {/**
+           * A word, not only a colour.
+           *
+           * The amber border and tint carry the meaning for most people and
+           * carry nothing for someone who cannot distinguish them, or who is
+           * reading this in a high-contrast mode that flattens the palette.
+           */}
+          <span className="font-medium">Not available:</span>
           <span>
-            {modelName} produces no audio track, so it cannot deliver native
-            sound.
+            {silentConflict
+              ? "This model always creates native audio."
+              : `${modelName} produces no audio track, so it cannot deliver native sound.`}
           </span>
+
+          {/**
+           * On a silent conflict, the first offer is to change the *choice*,
+           * not the model.
+           *
+           * Switching model is the bigger change and a different price; most
+           * people who picked Silent on this model wanted this model. Their
+           * selection is never altered for them — both routes are offered and
+           * the conflict stays on screen until one is taken.
+           */}
+          {silentConflict
+            ? (["auto", "native"] as const).map((next) => (
+                <button
+                  key={next}
+                  type="button"
+                  onClick={() => onChange(next)}
+                  className="rounded-md bg-surface-raised px-2 py-1 font-medium focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                >
+                  Use {next === "auto" ? "Auto" : "Native audio"}
+                </button>
+              ))
+            : null}
           {alternative ? (
             <button
               type="button"

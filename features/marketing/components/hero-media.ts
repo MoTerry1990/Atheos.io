@@ -10,11 +10,33 @@
  * Hashing is what makes `immutable` caching honest: the URL only ever names one
  * byte sequence, so a year-long max-age can never serve a stale frame.
  */
+/**
+ * The coastal drive, 1920x1080 with a real audio track.
+ *
+ * ## No WebM, deliberately
+ *
+ * The previous hero shipped both, and WebM was genuinely the smaller file. On
+ * this clip it is not: sparkling water and foliage are close to the worst case
+ * for VP9, and every encode tried came out **heavier** than H.264 at
+ * comparable quality — 22 MB against 6.1 MB at the closest match. A WebM that
+ * loses to its own fallback is worse than no WebM at all, because the browser
+ * takes the first source it can play and would download the larger one.
+ *
+ * So there is one source. If a future encode changes that, add the field back
+ * and put it first — the ordering *is* the negotiation.
+ *
+ * Provenance, and what the transcode cost, are recorded in
+ * `docs/MEDIA-PROVENANCE.md`. The published file is a web derivative; the
+ * authenticated 44 MB master is kept intact and is not this.
+ */
 export const HERO_MEDIA = {
-  webm: "/marketing/hero.62e23be750.webm",
-  mp4: "/marketing/hero.fa3d529831.mp4",
-  poster: "/marketing/hero-poster.582572e3c0.webp",
-  posterMobile: "/marketing/hero-poster-mobile.702379bc80.webp",
+  mp4: "/marketing/hero.c7da9646fe.mp4",
+  poster: "/marketing/hero-poster.2fc1fb7043.webp",
+  posterMobile: "/marketing/hero-poster-mobile.40293fd880.webp",
+  /** Seconds. Shown on the showcase card rather than guessed at. */
+  durationSeconds: 8,
+  /** The source carries an AAC stereo track, so the label is earned. */
+  hasAudio: true,
 } as const;
 
 /** Below this width the hero is poster-only and no video element is created. */

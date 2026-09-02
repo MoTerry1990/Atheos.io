@@ -70,3 +70,13 @@ coverage
 
 .vercel
 .env*
+
+# Canonical provider masters for marketing derivatives.
+#
+# The 44 MB hero master is kept byte-for-byte so the published derivative can
+# always be traced back to it, and so the authenticated original survives even
+# though transcoding invalidates its C2PA manifest. It is deliberately not in
+# git: a repository is the wrong place for tens of megabytes of binary that
+# never changes. `docs/MEDIA-PROVENANCE.md` records its SHA-256, so a copy can
+# be verified as the same bytes wherever it is stored.
+/media-source/

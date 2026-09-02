@@ -114,8 +114,21 @@ describe("models the owner may evaluate but nobody may buy", () => {
     (policy) => policy.status === "OWNER_EVALUATION_ONLY_PENDING_TERMS",
   );
 
-  it("covers the three proprietary hosted video models", () => {
+  it("covers every proprietary hosted video model, and nothing else", () => {
+    /**
+     * An exhaustive list, deliberately. Adding a model to this status has to
+     * break this test, because the status is "the owner may evaluate it and no
+     * customer may buy it" — and a model that acquires that quietly is a model
+     * nobody audited.
+     *
+     * `google/omni-1.1-flash` joined on 2026-09-02. It is the only one reached
+     * directly rather than through a reseller, and the only one whose blocker
+     * is our own configuration rather than a third party's terms: Google's
+     * paid-tier data policy is acceptable, but no key exists to prove Atheos
+     * is on a billing-enabled project.
+     */
     expect(evaluation.map((p) => p.modelId).sort()).toEqual([
+      "google/omni-1.1-flash",
       "replicate/veo-3.1",
       "replicate/veo-3.1-fast",
       "replicate/video-pro",

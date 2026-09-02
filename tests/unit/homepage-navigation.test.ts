@@ -311,14 +311,20 @@ describe("the LCP asset is announced to the preload scanner", () => {
     expect(landing).toMatch(/rel="preload"/);
     expect(landing).toMatch(/as="image"/);
     /**
-     * Sprint 4.5.1 content-hashed the media filenames so they can carry an
-     * `immutable` cache header, so this matches the hash rather than a literal
-     * name that changes on every re-encode. Both candidates are asserted:
-     * preloading one density while the stylesheet picks the other would fetch
-     * two files to paint one image.
+     * This used to match the hashed filenames written out here literally.
+     * That was the weaker of the two possible checks and it let a real bug
+     * through: when the hero clip was replaced, these literals kept naming the
+     * *previous* poster, and the pattern still matched because the shape was
+     * right and only the hash was wrong.
+     *
+     * They are now interpolated from `HERO_MEDIA`, so the preload cannot name
+     * anything but the current poster. Both densities are still asserted —
+     * preloading one while the stylesheet picks the other fetches two files to
+     * paint one image. The equality with what the stylesheet requests is
+     * `tests/unit/hero-video.test.ts`, which can read both files.
      */
-    expect(landing).toMatch(/hero-poster-mobile\.[0-9a-f]{10}\.webp \d+w/);
-    expect(landing).toMatch(/hero-poster\.[0-9a-f]{10}\.webp \d+w/);
+    expect(landing).toMatch(/HERO_MEDIA\.posterMobile\} \d+w/);
+    expect(landing).toMatch(/HERO_MEDIA\.poster\} \d+w/);
   });
 
   it("preloads exactly one asset", () => {

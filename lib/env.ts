@@ -216,6 +216,28 @@ export const env = createEnv({
     R2_ACCESS_KEY_ID: z.string().min(1).optional(),
     R2_SECRET_ACCESS_KEY: z.string().min(1).optional(),
     R2_BUCKET_NAME: z.string().min(1).optional(),
+
+    /**
+     * A **second, private** R2 bucket, for originals that must never be served.
+     *
+     * The public bucket above is fronted by `NEXT_PUBLIC_R2_PUBLIC_URL`, so
+     * anything in it is reachable by anyone who learns the key. That is right
+     * for a customer's finished asset and wrong for a provider master: a 44 MB
+     * original with its content credentials intact is evidence, not content,
+     * and publishing it is not a thing we ever want to do by accident.
+     *
+     * Separate credentials rather than the same token widened, so the token
+     * that serves the website cannot read or write masters at all. Neither
+     * carries `NEXT_PUBLIC_`, and neither may: a private bucket with a public
+     * variable name is a private bucket for about one deploy.
+     *
+     * `R2_ACCOUNT_ID` is shared deliberately — it is already server-only and
+     * names the same Cloudflare account, so duplicating it would create two
+     * values that must agree and eventually will not.
+     */
+    R2_PRIVATE_BUCKET_NAME: z.string().min(1).optional(),
+    R2_PRIVATE_ACCESS_KEY_ID: z.string().min(1).optional(),
+    R2_PRIVATE_SECRET_ACCESS_KEY: z.string().min(1).optional(),
   },
 
   /**
@@ -294,6 +316,10 @@ export const env = createEnv({
     R2_ACCESS_KEY_ID: process.env.R2_ACCESS_KEY_ID,
     R2_SECRET_ACCESS_KEY: process.env.R2_SECRET_ACCESS_KEY,
     R2_BUCKET_NAME: process.env.R2_BUCKET_NAME,
+
+    R2_PRIVATE_BUCKET_NAME: process.env.R2_PRIVATE_BUCKET_NAME,
+    R2_PRIVATE_ACCESS_KEY_ID: process.env.R2_PRIVATE_ACCESS_KEY_ID,
+    R2_PRIVATE_SECRET_ACCESS_KEY: process.env.R2_PRIVATE_SECRET_ACCESS_KEY,
 
     NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
     NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY:

@@ -55,6 +55,8 @@ const MODELS: PublicStudioModel[] = [
     aspectRatios: ["1:1", "16:9", "9:16"],
     resolutions: ["1K", "2K"],
     typicalWait: { minSeconds: 7, maxSeconds: 19 },
+    durationMode: "exact",
+    audioAlwaysOn: false,
     availability: "available",
   },
   {
@@ -82,6 +84,8 @@ const MODELS: PublicStudioModel[] = [
     aspectRatios: ["16:9", "9:16"],
     resolutions: ["720p"],
     typicalWait: { minSeconds: 180, maxSeconds: 480 },
+    durationMode: "exact",
+    audioAlwaysOn: false,
     availability: "available",
   },
   {
@@ -108,6 +112,8 @@ const MODELS: PublicStudioModel[] = [
     aspectRatios: ["16:9", "9:16"],
     resolutions: ["1080p"],
     typicalWait: { minSeconds: 180, maxSeconds: 480 },
+    durationMode: "exact",
+    audioAlwaysOn: false,
     availability: "owner_beta",
   },
   {
@@ -134,6 +140,8 @@ const MODELS: PublicStudioModel[] = [
     aspectRatios: ["16:9", "9:16"],
     resolutions: ["1080p"],
     typicalWait: { minSeconds: 180, maxSeconds: 480 },
+    durationMode: "exact",
+    audioAlwaysOn: false,
     availability: "owner_beta",
   },
   {
@@ -160,6 +168,8 @@ const MODELS: PublicStudioModel[] = [
     aspectRatios: ["16:9", "9:16"],
     resolutions: ["1080p"],
     typicalWait: { minSeconds: 180, maxSeconds: 480 },
+    durationMode: "exact",
+    audioAlwaysOn: false,
     availability: "owner_beta",
   },
   {
@@ -194,7 +204,50 @@ const MODELS: PublicStudioModel[] = [
     aspectRatios: [],
     resolutions: [],
     typicalWait: { minSeconds: 24, maxSeconds: 64 },
+    durationMode: "exact",
+    audioAlwaysOn: false,
     availability: "available",
+  },
+  {
+    /**
+     * Cinematic Next, the owner-evaluation fixture.
+     *
+     * The only model here with `durationMode: "model_decided"` and
+     * `audioAlwaysOn: true`, which is the whole reason it is in this file: it
+     * is what makes the "Up to 10 seconds" chip and the Silent refusal
+     * renderable in a screenshot without a credential, a network call or a
+     * generation.
+     *
+     * `durations` is empty on purpose. A model that chooses its own length
+     * publishes no enum, and the studio must not invent one.
+     */
+    id: "cinematic-next",
+    displayName: "Cinematic Next",
+    modality: "VIDEO",
+    description: "Native synchronised audio, up to ten seconds.",
+    creditCost: 630,
+    typicalSeconds: 10,
+    capabilities: {
+      operations: ["text-to-video", "image-to-video"],
+      supportsImageInput: true,
+      supportsNegativePrompt: false,
+      supportsSeed: false,
+      maxOutputs: 1,
+      aspectRatios: ["16:9", "9:16"],
+      maxDurationSeconds: 10,
+    } as PublicStudioModel["capabilities"],
+    audio: "native",
+    audioNote: "Generates synchronised sound in the same pass, always.",
+    takesReference: true,
+    qualityTier: "premium",
+    durations: [],
+    durationMode: "model_decided",
+    durationRange: { min: 3, max: 10 },
+    audioAlwaysOn: true,
+    aspectRatios: ["16:9", "9:16"],
+    resolutions: ["720p"],
+    typicalWait: { minSeconds: 60, maxSeconds: 240 },
+    availability: "owner_beta",
   },
 ];
 

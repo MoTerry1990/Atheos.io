@@ -98,12 +98,20 @@ export function AuthShell({
             {copy.site.description}
           </p>
 
-          {/* The models actually wired up, named. Higgsfield runs a carousel of
-              these beside its form and it is the most informative thing on the
-              page — but every name here resolves to a model in
-              services/ai/providers/replicate.ts, not to a roadmap. */}
+          {/* The models actually wired up, in **Atheos names**.
+              
+              This said "FLUX", which is a vendor's model name on a public
+              page — the one thing the public-id layer in
+              `services/ai/public-ids.ts` exists to prevent, leaking through a
+              hand-written list that never went through it. Every name here
+              resolves to something real, and none of them names a supplier. */}
           <div className="mt-8 flex flex-wrap gap-x-6 gap-y-2 border-t border-border/60 pt-5">
-            {["FLUX", "Motion 1 · 720p", "Foley", "4K upscale"].map((name) => (
+            {[
+              "Atheos Image Fast",
+              "Motion 1 · 720p",
+              "Foley",
+              "Atheos Upscale",
+            ].map((name) => (
               <span key={name} className="text-xs text-muted-foreground">
                 {name}
               </span>

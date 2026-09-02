@@ -233,19 +233,25 @@ describe("the sound mix is honest about not existing", () => {
 });
 
 describe("the server refuses forged combinations", () => {
+  /**
+   * These used to pass `wantsNativeAudio: boolean`, which can express two
+   * states where there are three: `false` meant both "auto" and "silent", so
+   * the silent case had nowhere to be checked. The parameter is the intent
+   * now, and the last block below is the case the boolean could not reach.
+   */
   it("rejects Motion 1 with a native-audio promise", () => {
     /**
      * The composer is the one place an attacker controls completely, so the
      * client's routing is a convenience and this is the rule.
      */
     expect(
-      rejectImpossibleAudio({ modelId: MOTION_1, wantsNativeAudio: true }),
+      rejectImpossibleAudio({ modelId: MOTION_1, intent: "NATIVE_AUDIO" }),
     ).toMatch(/cannot produce native audio/);
   });
 
   it("rejects Motion Pro the same way", () => {
     expect(
-      rejectImpossibleAudio({ modelId: MOTION_PRO, wantsNativeAudio: true }),
+      rejectImpossibleAudio({ modelId: MOTION_PRO, intent: "NATIVE_AUDIO" }),
     ).toBeTruthy();
   });
 
@@ -253,14 +259,14 @@ describe("the server refuses forged combinations", () => {
     expect(
       rejectImpossibleAudio({
         modelId: CINEMATIC_FAST,
-        wantsNativeAudio: true,
+        intent: "NATIVE_AUDIO",
       }),
     ).toBeNull();
   });
 
-  it("allows any model when no audio was promised", () => {
+  it("allows any model on auto", () => {
     expect(
-      rejectImpossibleAudio({ modelId: MOTION_1, wantsNativeAudio: false }),
+      rejectImpossibleAudio({ modelId: MOTION_1, intent: "AUTO" }),
     ).toBeNull();
   });
 
@@ -269,8 +275,53 @@ describe("the server refuses forged combinations", () => {
     expect(
       rejectImpossibleAudio({
         modelId: "replicate/made-up",
-        wantsNativeAudio: true,
+        intent: "NATIVE_AUDIO",
       }),
     ).toBeTruthy();
+  });
+});
+
+describe("silence is refused where it cannot be delivered", () => {
+  const OMNI = "google/omni-1.1-flash";
+
+  it("rejects Cinematic Next with a silent request", () => {
+    /**
+     * The direction the boolean could not express, and the one the interface
+     * alone was guarding. A forged request skipping the composer entirely has
+     * to be refused here — the API documents no parameter to disable audio, so
+     * honouring it is impossible and pretending to is worse: quoted for
+     * silence, delivered with sound.
+     */
+    expect(rejectImpossibleAudio({ modelId: OMNI, intent: "SILENT" })).toMatch(
+      /always creates native audio/,
+    );
+  });
+
+  it("allows it on auto and on native", () => {
+    for (const intent of ["AUTO", "NATIVE_AUDIO"] as const) {
+      expect(
+        rejectImpossibleAudio({ modelId: OMNI, intent }),
+        intent,
+      ).toBeNull();
+    }
+  });
+
+  it("still allows silence on a model that can actually deliver it", () => {
+    // Motion has no audio track at all, so silence is what it does.
+    expect(
+      rejectImpossibleAudio({ modelId: MOTION_1, intent: "SILENT" }),
+    ).toBeNull();
+  });
+
+  it("names no vendor, endpoint or policy in the refusal", () => {
+    const message = rejectImpossibleAudio({
+      modelId: OMNI,
+      intent: "SILENT",
+    })!;
+
+    expect(message).toBe("Cinematic Next always creates native audio.");
+    expect(message).not.toMatch(
+      /google|gemini|omni|vertex|generativelanguage|policy|licen/i,
+    );
   });
 });

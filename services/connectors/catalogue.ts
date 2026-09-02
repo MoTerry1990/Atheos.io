@@ -197,7 +197,43 @@ export function exactDuration(
   model: ConnectorModel,
   requested: number | undefined,
 ): number | undefined {
-  if (model.durations.length === 0) return undefined;
+  /**
+   * A model with no enum decides its own length.
+   *
+   * Returning `undefined` is right — there is no duration to send and the
+   * price is fixed on the maximum. But a caller who *asked* for a specific
+   * length must be told it cannot be honoured, rather than having the value
+   * quietly dropped: silently discarding a request is the same class of defect
+   * as silently rounding one, and this codebase refuses the second everywhere
+   * else.
+   *
+   * The interface never sends one for these models — it renders "Up to N
+   * seconds" and no picker — so this is reached by a forged request or an
+   * integrator working from the wrong assumption. Both deserve the same
+   * answer.
+   */
+  if (model.durations.length === 0) {
+    /**
+     * Only a **video** model refuses here.
+     *
+     * Two different situations share "no duration enum". A video model with no
+     * enum chooses its own length, and a caller who asked for a specific one
+     * must be told it cannot be honoured — dropping the value silently is the
+     * same defect as silently rounding it.
+     *
+     * An *image* model has no duration because duration is meaningless for a
+     * still. A client that sends a stray `durationSeconds` alongside an image
+     * request has not asked for anything impossible; it has sent a field that
+     * does not apply. Refusing that would break working integrations over a
+     * value nobody meant, which is exactly what the first version of this
+     * check did — `tests/unit/prepare-generation.test.ts` caught it.
+     */
+    if (requested !== undefined && model.modality === "VIDEO") {
+      throw new DurationError([]);
+    }
+    return undefined;
+  }
+
   if (requested === undefined) return Math.min(...model.durations);
 
   if (!model.durations.includes(requested)) {

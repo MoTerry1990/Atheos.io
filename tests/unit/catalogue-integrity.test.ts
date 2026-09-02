@@ -44,7 +44,36 @@ import type { ProviderModel } from "@/services/ai/types";
  * schema has no field for. One-directional containment is the real rule.
  */
 
-const FLAGS = ["ENABLE_VEO_31", "ENABLE_SMART_IMAGE"] as const;
+const FLAGS = [
+  "ENABLE_VEO_31",
+  "ENABLE_SMART_IMAGE",
+  "ENABLE_GOOGLE_OMNI",
+] as const;
+
+/**
+ * Flags that also need a credential before they change anything.
+ *
+ * `ENABLE_GOOGLE_OMNI` alone offers nothing: the adapter requires a key too,
+ * so a placeholder is set alongside it. Without this the "widest" catalogue
+ * would silently exclude Omni and every invariant below would pass by not
+ * looking — which is the blind spot this whole file exists to remove.
+ *
+ * The value is structurally valid and is not a credential.
+ */
+const FLAG_CREDENTIALS: Partial<
+  Record<(typeof FLAGS)[number], [string, string]>
+> = {
+  ENABLE_GOOGLE_OMNI: ["GOOGLE_AI_API_KEY", "test-placeholder-not-a-key"],
+};
+
+function applyCredentials(combo: Record<string, string | undefined>) {
+  for (const [flag, pair] of Object.entries(FLAG_CREDENTIALS)) {
+    if (!pair) continue;
+    const [name, value] = pair;
+    if (combo[flag] === undefined) delete process.env[name];
+    else process.env[name] = value;
+  }
+}
 
 /** Every on/off combination of the flags that change the model set. */
 function combinations(): Record<string, string | undefined>[] {
@@ -69,6 +98,12 @@ afterEach(() => {
     if (original[flag] === undefined) delete process.env[flag];
     else process.env[flag] = original[flag];
   }
+  for (const pair of Object.values(FLAG_CREDENTIALS)) {
+    if (!pair) continue;
+    const [name] = pair;
+    if (original[name] === undefined) delete process.env[name];
+    else process.env[name] = original[name];
+  }
 });
 
 /**
@@ -82,11 +117,12 @@ afterEach(() => {
 async function servedModels(): Promise<ProviderModel[]> {
   vi.resetModules();
 
-  const [replicate, openai, google, mock] = await Promise.all([
+  const [replicate, openai, google, mock, googleOmni] = await Promise.all([
     import("@/services/ai/providers/replicate"),
     import("@/services/ai/providers/openai"),
     import("@/services/ai/providers/google"),
     import("@/services/ai/providers/mock"),
+    import("@/services/ai/providers/google-omni"),
   ]);
 
   return [
@@ -94,6 +130,7 @@ async function servedModels(): Promise<ProviderModel[]> {
     ...openai.openaiProvider.listModels(),
     ...google.googleProvider.listModels(),
     ...mock.mockProvider.listModels(),
+    ...googleOmni.googleOmniProvider.listModels(),
   ];
 }
 
@@ -109,6 +146,7 @@ describe("catalogue integrity across every feature-flag combination", () => {
           if (combo[flag] === undefined) delete process.env[flag];
           else process.env[flag] = combo[flag];
         }
+        applyCredentials(combo);
 
         const served = await servedModelIds();
         const missing = served.filter((id) => !costEntry(id));
@@ -124,6 +162,7 @@ describe("catalogue integrity across every feature-flag combination", () => {
           if (combo[flag] === undefined) delete process.env[flag];
           else process.env[flag] = combo[flag];
         }
+        applyCredentials(combo);
 
         /**
          * Assessed with `assessPrice`, the same function `model-costs.test.ts`
@@ -170,6 +209,10 @@ describe("nothing references a model no adapter can serve", () => {
    */
   async function widestServedSet(): Promise<Set<string>> {
     for (const flag of FLAGS) process.env[flag] = "1";
+    // Flags that also need a credential get one, or "widest" would quietly
+    // exclude the adapter they gate and the invariants would pass by not
+    // looking.
+    applyCredentials(Object.fromEntries(FLAGS.map((f) => [f, "1"])));
     return new Set(await servedModelIds());
   }
 

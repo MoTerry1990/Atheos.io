@@ -67,6 +67,25 @@ export interface PublicStudioModel {
   qualityTier: "draft" | "standard" | "premium";
   /** Clip lengths in seconds. Empty for stills. */
   durations: readonly number[];
+  /**
+   * How this model treats a requested length.
+   *
+   * `exact` means `durations` enumerates what it accepts and anything else is
+   * refused. `model_decided` means the model chooses within a range and will
+   * not honour an exact request — publishing an enum for one of those would
+   * put a length on a quote that the output need not match.
+   */
+  durationMode: "exact" | "model_decided";
+  /** Set only when `durationMode` is `model_decided`. Inclusive seconds. */
+  durationRange?: { min: number; max: number };
+  /**
+   * True when the model always produces sound and offers no way to stop it.
+   *
+   * Distinct from `audio === "native"`, which says it *can* produce sound. A
+   * Silent control on a model that is always-on would be a switch wired to
+   * nothing: the customer picks it, is quoted for it, and gets audio.
+   */
+  audioAlwaysOn: boolean;
   aspectRatios: readonly string[];
   /** Output sizes a customer may choose, in customer terms. */
   resolutions: readonly string[];
@@ -157,6 +176,40 @@ function typicalWaitOf(model: StudioModel): PublicStudioModel["typicalWait"] {
   };
 }
 
+/**
+ * Whether a model accepts exact lengths, and what range it works in.
+ *
+ * The range comes from `maxDurationSeconds` and a floor of 3 for the one model
+ * that has no enum. Kept next to the DTO rather than imported from the adapter
+ * because `features/` must not reach into a provider module — the studio reads
+ * capabilities, never vendors.
+ */
+function durationCapabilityOf(
+  modelId: string,
+  durations: readonly number[] | undefined,
+): {
+  durationMode: "exact" | "model_decided";
+  durationRange?: { min: number; max: number };
+} {
+  if (durations && durations.length > 0) return { durationMode: "exact" };
+
+  const range = MODEL_DECIDED_RANGES[modelId];
+  if (!range) return { durationMode: "exact" };
+
+  return { durationMode: "model_decided", durationRange: range };
+}
+
+/**
+ * Video models whose length is theirs to choose.
+ *
+ * One entry today. A map rather than a boolean so the range travels with it —
+ * "up to 10 seconds" is the only honest thing the studio can render, and it
+ * needs the number.
+ */
+const MODEL_DECIDED_RANGES: Record<string, { min: number; max: number }> = {
+  "google/omni-1.1-flash": { min: 3, max: 10 },
+};
+
 export function toPublicModel(model: StudioModel): PublicStudioModel {
   const { audio, audioNote } = audioCapabilityOf(model.id, model.modality);
   const capabilities = model.capabilities as StudioModel["capabilities"] & {
@@ -179,6 +232,15 @@ export function toPublicModel(model: StudioModel): PublicStudioModel {
     takesReference: Boolean(model.capabilities.supportsImageInput),
     qualityTier: qualityTierOf(model),
     durations: capabilities.durations ?? [],
+    /**
+     * A model with no duration enum decides for itself.
+     *
+     * Derived rather than declared per model: the absence of `durations` on a
+     * video model *is* the statement that it has no fixed lengths, and
+     * deriving it here means a new model of that kind cannot forget to say so.
+     */
+    ...durationCapabilityOf(model.id, capabilities.durations),
+    audioAlwaysOn: Boolean(AUDIO_CAPABILITIES[model.id]?.audioAlwaysOn),
     aspectRatios: capabilities.aspectRatios ?? [],
     resolutions: capabilities.imageResolutions ?? [],
     typicalWait: typicalWaitOf(model),

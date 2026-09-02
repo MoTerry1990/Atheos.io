@@ -113,6 +113,82 @@ be carried across the remux before Veo is exposed publicly.**
 - <https://ai.google.dev/gemini-api/terms>
 - <https://replicate.com/terms>
 
+### Cinematic Next — `gemini-omni-1.1-flash` → owner evaluation
+
+Google's own recommended default for video generation, reached **directly**
+through the Gemini API rather than through a reseller. Verified against
+official documentation on **2026-09-02**, after Google's 2026-08-27 update
+resolved an ambiguity this record previously carried.
+
+**The stable id is `gemini-omni-1.1-flash`.** The documentation now
+distinguishes it from the preview alias `gemini-omni-flash-preview`, and only
+the stable id may be integrated: an approval for a preview endpoint cannot
+extend to whatever replaces it. An earlier note in
+`services/ai/sequence-candidates.server.ts` asserted the preview alias as _the_
+id and called the model unreachable; both statements were wrong and have been
+corrected rather than left as a comment nobody re-read.
+
+Documented capability, quoted rather than inferred: input text, image and video
+(up to 10s for editing and extension); output video; **3–10 seconds** at 360p,
+720p, 1080p or 4K; **24 FPS**. The SDK documents aspect ratios 16:9 and 9:16.
+
+**Duration is not contractual, and Atheos must not pretend it is.** The
+documentation describes 3–10 second outputs; it does not promise that a
+requested length is honoured exactly, and timecodes inside a prompt steer a
+model rather than binding it. `@google/genai`'s `VideoResponseFormat` does
+carry an optional `duration`, which is worth recording precisely because it is
+tempting — a field being present is not evidence that the output matches it.
+
+So the capability is recorded as `durationMode: "model_decided"` over
+`durationRange { min: 3, max: 10 }`, no enum of exact lengths is published,
+`exactDuration` is not applied to this model, and the studio says **"Up to 10
+seconds"**. The price is fixed at the 10-second maximum (policy A): quoting
+happens before the length is known, and the alternative — reserve the maximum
+and capture the measured cost — needs partial release in the ledger and
+duration parsing from the MP4, neither of which is proven here.
+
+**Only 720p is sellable.** Google publishes ~$0.10 per second specifically for
+720p output. 1080p and 4K are documented outputs whose token consumption the
+pricing read does not establish, so they are kept as internal capabilities
+pending pricing and are not offered. Input tokens ($1.50/1M) are covered by a
+documented buffer in the cost entry rather than ignored.
+
+**Audio cannot be turned off.** The request schema documents no `generateAudio`,
+`generate_audio` or equivalent, and the model "natively generates audio with
+every video output". That is a capability statement, not a preference: Atheos
+must not invent a parameter to satisfy a Silent control, and must not claim the
+model can produce a silent clip. See `docs/AUDIO-POLICY.md`.
+
+**Data use, which is the reason this is owner-only rather than public.** On the
+paid tier Google states that prompts and responses are not used to improve its
+products, and the Terms say the same for Paid Services accessed through a Cloud
+project with billing enabled — with temporary retention for security, legal
+compliance and abuse prevention. That is acceptable. What is not yet proven is
+that _Atheos_ is on such a project: no `GOOGLE_AI_API_KEY` exists in any
+environment, so the billing state cannot be demonstrated, and a free-tier key
+would place customers' prompts under the free-tier policy. The adapter is
+therefore built fail-closed and kept out of the live catalogue.
+
+Four obligations that survive all of the above:
+
+1. A Cloud project with **billing enabled**. Never the free tier for customer
+   prompts.
+2. The Terms state an API Client may not be **directed to, or likely to be used
+   by, people under 18**.
+3. The API may only be offered in **available regions**.
+4. Google claims no ownership of generated output, and Atheos and its users
+   remain responsible for lawful use.
+
+SynthID and C2PA content credentials are enabled by default and must survive
+storage untouched — the same obligation already recorded for Veo above, and
+proven by the byte-identity test in `tests/unit/output-preservation.test.ts`.
+
+- <https://ai.google.dev/gemini-api/docs/models/gemini-omni-flash>
+- <https://ai.google.dev/gemini-api/docs/pricing>
+- <https://ai.google.dev/gemini-api/terms>
+- <https://ai.google.dev/gemini-api/docs/available-regions>
+- <https://cloud.google.com/blog/products/ai-machine-learning/nano-banana-2-lite-and-gemini-omni-flash-available>
+
 ### FLUX.1 [dev] — endpoint-scoped
 
 Commercial output use is granted through the Replicate endpoint; the

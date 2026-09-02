@@ -2,6 +2,7 @@ import "server-only";
 
 import { creditsFor } from "@/services/ai/pricing";
 import { googleProvider } from "@/services/ai/providers/google";
+import { googleOmniProvider } from "@/services/ai/providers/google-omni";
 import { mockProvider } from "@/services/ai/providers/mock";
 import { openaiProvider } from "@/services/ai/providers/openai";
 import { replicateProvider } from "@/services/ai/providers/replicate";
@@ -40,6 +41,16 @@ const REAL_PROVIDERS: AIProvider[] = [
   replicateProvider,
   openaiProvider,
   googleProvider,
+  /**
+   * Unconfigured today, and that is the point.
+   *
+   * `isConfigured()` is false without both a key and `ENABLE_GOOGLE_OMNI`, so
+   * this contributes no models and changes nothing — including
+   * `isUsingMockProvider()`, which asks whether *any* real provider is
+   * configured. A missing Google credential hides one model rather than
+   * degrading the platform.
+   */
+  googleOmniProvider,
 ];
 
 function configuredProviders(): AIProvider[] {

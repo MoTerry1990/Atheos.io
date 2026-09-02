@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 import {
@@ -39,6 +40,10 @@ import { cn } from "@/lib/utils";
  * different markup on the server than on the client, which is a hydration
  * error. Null means "not yet decided", and no video element exists until it is.
  */
+/** Shared chrome for the hero's own controls. Small, legible, never over the CTA. */
+const CONTROL =
+  "rounded-full border border-border/60 bg-background/70 px-3 py-1.5 text-xs font-medium text-foreground backdrop-blur-sm transition-colors hover:bg-background/85 focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:outline-none";
+
 export function HeroVideo({ className }: { className?: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -46,7 +51,6 @@ export function HeroVideo({ className }: { className?: string }) {
   const [eligible, setEligible] = useState<boolean | null>(null);
   const [near, setNear] = useState(false);
   const [playing, setPlaying] = useState(false);
-  const [autoplayBlocked, setAutoplayBlocked] = useState(false);
 
   /** Decide eligibility once mounted, and re-decide if the environment changes. */
   useEffect(() => {
@@ -97,14 +101,19 @@ export function HeroVideo({ className }: { className?: string }) {
     let cancelled = false;
 
     const attempt = () => {
-      void video
-        .play()
-        .then(() => {
-          if (!cancelled) setAutoplayBlocked(false);
-        })
-        .catch(() => {
-          if (!cancelled) setAutoplayBlocked(true);
-        });
+      /**
+       * The rejection is swallowed on purpose.
+       *
+       * A refused autoplay is an ordinary outcome — a browser policy, not an
+       * error — and there is nothing to record: the Pause/Play control is
+       * always on screen now, and the `play`/`pause` listeners keep its label
+       * correct whatever the browser decided. What must not happen is an
+       * unhandled rejection in the console of every visitor whose browser
+       * blocks it.
+       */
+      void video.play().catch(() => {
+        if (cancelled) return;
+      });
     };
 
     attempt();
@@ -129,6 +138,54 @@ export function HeroVideo({ className }: { className?: string }) {
     const video = videoRef.current;
     if (video && !near) video.pause();
   }, [near]);
+
+  /**
+   * Follow the element rather than assume the last click won.
+   *
+   * The video is paused by the observer when it scrolls away and by the
+   * browser when the tab is hidden, neither of which goes through the button.
+   * Without these the control would offer "Pause" for something already
+   * stopped. Muting on the way out is what stops sound following somebody to
+   * another tab after they turned it on.
+   */
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    const sync = () => {
+      setPaused(video.paused);
+      setMuted(video.muted);
+    };
+    const onHidden = () => {
+      if (document.hidden) {
+        video.pause();
+        video.muted = true;
+      }
+      sync();
+    };
+
+    video.addEventListener("play", sync);
+    video.addEventListener("pause", sync);
+    video.addEventListener("volumechange", sync);
+    document.addEventListener("visibilitychange", onHidden);
+
+    return () => {
+      video.removeEventListener("play", sync);
+      video.removeEventListener("pause", sync);
+      video.removeEventListener("volumechange", sync);
+      document.removeEventListener("visibilitychange", onHidden);
+    };
+  }, [eligible, near]);
+
+  /**
+   * Muted and paused are tracked here rather than read off the element.
+   *
+   * A `<video>`'s own `muted` and `paused` are not React state, so the label
+   * on a button that reads them would not re-render when they change — the
+   * control would say "Hear audio" after the sound was already on.
+   */
+  const [muted, setMuted] = useState(true);
+  const [paused, setPaused] = useState(false);
 
   const showVideo = eligible === true && near;
 
@@ -158,11 +215,11 @@ export function HeroVideo({ className }: { className?: string }) {
             playing ? "opacity-100" : "opacity-0",
           )}
         >
-          {/* WebM first, and it is genuinely the smaller file — 1,255 KB
-              against 1,656 KB. The browser takes the first source it can play
-              and downloads only that one, so ordering *is* the negotiation and
-              nobody fetches both. */}
-          <source src={HERO_MEDIA.webm} type="video/webm" />
+          {/* One source. The previous hero shipped WebM first because it was
+              genuinely smaller; on this clip every VP9 encode came out heavier
+              than H.264, and the browser takes the first source it can play —
+              so a losing WebM would be the one downloaded. See
+              `hero-media.ts`. */}
           <source src={HERO_MEDIA.mp4} type="video/mp4" />
         </video>
       ) : null}
@@ -181,24 +238,89 @@ export function HeroVideo({ className }: { className?: string }) {
       <div className="absolute inset-0 bg-gradient-brand-subtle opacity-30" />
 
       {/**
-       * The fallback control, shown only when autoplay was actually refused.
+       * The controls, and the disclosure.
        *
-       * Bottom-right and inside the hero's own stacking context, so it cannot
-       * cover the headline or either CTA. `pointer-events-auto` re-enables
-       * clicks that the decorative wrapper turns off, and `aria-hidden` is
-       * explicitly cleared — this one element *is* for the user.
+       * Grouped bottom-right inside the hero's own stacking context so they
+       * cannot cover the headline or either CTA. `pointer-events-auto`
+       * re-enables clicks the decorative wrapper turns off, and `aria-hidden`
+       * is explicitly cleared — the wrapper is decoration, this row is not.
+       *
+       * Rendered only when a video is actually running. With reduced motion,
+       * Save-Data, a slow connection or a phone there is no video and no
+       * controls, because a Pause button over a still image is a lie.
        */}
-      {autoplayBlocked && showVideo ? (
-        <button
-          type="button"
+      {showVideo ? (
+        <div
           aria-hidden={false}
-          onClick={() => {
-            void videoRef.current?.play().then(() => setAutoplayBlocked(false));
-          }}
-          className="pointer-events-auto absolute right-4 bottom-4 rounded-full border border-border/60 bg-background/70 px-3 py-2 text-xs font-medium text-foreground backdrop-blur-sm transition-colors focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:outline-none"
+          className="pointer-events-auto absolute right-4 bottom-4 flex flex-wrap items-center justify-end gap-2"
         >
-          Play animation
-        </button>
+          {/**
+           * The disclosure the transcode could not carry.
+           *
+           * The master's C2PA manifest does not survive re-encoding, so the
+           * claim moves from the metadata to the page. Deliberately short: a
+           * long warning over a hero reads as an apology.
+           */}
+          <span className="rounded-full border border-border/60 bg-background/70 px-3 py-1.5 text-2xs text-muted-foreground backdrop-blur-sm">
+            AI-generated video · Web-optimized preview{" "}
+            <Link
+              href="/content-details"
+              className="underline underline-offset-2 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60 focus-visible:outline-none"
+            >
+              Content details
+            </Link>
+          </span>
+
+          <button
+            type="button"
+            onClick={() => {
+              const video = videoRef.current;
+              if (!video) return;
+              if (video.paused) {
+                void video.play();
+              } else {
+                video.pause();
+                setPlaying(false);
+              }
+            }}
+            aria-label={
+              paused ? "Play background video" : "Pause background video"
+            }
+            className={CONTROL}
+          >
+            {paused ? "Play" : "Pause"}
+          </button>
+
+          {/**
+           * Muted at all times until this is pressed.
+           *
+           * Browsers will not autoplay with sound and should not — but the
+           * clip has a real AAC track, so there is something to offer. The
+           * accessible name carries the *state*, not just the action, because
+           * "Hear audio" alone never tells a screen-reader user whether sound
+           * is currently on.
+           */}
+          <button
+            type="button"
+            onClick={() => {
+              const video = videoRef.current;
+              if (!video) return;
+              const next = !video.muted;
+              video.muted = next;
+              setMuted(next);
+              if (!next && video.paused) void video.play();
+            }}
+            aria-pressed={!muted}
+            aria-label={
+              muted
+                ? "Hear audio — currently muted"
+                : "Mute audio — currently on"
+            }
+            className={CONTROL}
+          >
+            {muted ? "Hear audio" : "Mute"}
+          </button>
+        </div>
       ) : null}
     </div>
   );

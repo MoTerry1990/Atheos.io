@@ -1,3 +1,7 @@
+import {
+  dialoguePreservationClause,
+  nameProtectionClause,
+} from "@/services/ai/language-policy";
 import type { AudioDirectorPlan } from "@/services/ai/audio-director";
 import type { VideoDirectorPlan } from "@/services/ai/video-director";
 
@@ -226,6 +230,23 @@ export function compileDirectedPrompt(input: {
   /** The clip length actually being requested from the provider. */
   durationSeconds: number;
   audio?: AudioDirectorPlan;
+  /**
+   * What moves, from the brief. Optional so a brief written before
+   * 2026-09-02 still compiles — those have no motion fields and are read back
+   * to render history.
+   */
+  motion?: { subject: string; environment: string };
+  /**
+   * The prompt as the customer wrote it, for the language clauses.
+   *
+   * Passed rather than reconstructed: the technical direction below is
+   * compiled in English because that is the only language the model's
+   * behaviour is documented for, and the customer's own words — a quoted line
+   * of dialogue, a brand name — have to survive that untranslated.
+   */
+  originalPrompt?: string;
+  /** From the brief. False means no speech was asked for, so none is preserved. */
+  dialogueRequested?: boolean;
   /** False for models with no `negative_prompt` input. */
   supportsNegativePrompt?: boolean;
 }): DirectedPrompt {
@@ -286,12 +307,64 @@ export function compileDirectedPrompt(input: {
 
     sections.push(MULTI_SHOT_EXCLUSIONS.map((rule) => `- ${rule}`).join("\n"));
   } else {
+    /**
+     * "Single continuous shot" and "no scene cuts", named explicitly.
+     *
+     * Without them a model handed a beat timeline reads it as a shot list and
+     * returns a montage — several different images in sequence, which is the
+     * failure mode opposite to the frozen frame and just as wrong for a clip
+     * that is meant to be one take.
+     */
     sections.push(
-      `One unbroken ${input.durationSeconds}-second shot: ${beats[0]?.description ?? "as described"}.`,
+      `One unbroken ${input.durationSeconds}-second single continuous shot: ` +
+        `${beats[0]?.description ?? "as described"}. No scene cuts, no montage, ` +
+        `no change of location or subject.`,
+    );
+  }
+
+  /**
+   * Motion, tied to the timeline rather than appended as adjectives.
+   *
+   * Placed after the shot list and before continuity, because it describes
+   * what happens *inside* those shots. Phrased as four ordered claims — start,
+   * during, surroundings, end — because that is what makes a model render
+   * change over time instead of a held pose. "Cinematic" would sit here
+   * harmlessly and do nothing, which is why `hasObservableMotion` refuses to
+   * accept it as evidence.
+   */
+  if (input.motion) {
+    const last = beats[beats.length - 1];
+    sections.push(
+      [
+        `MOVEMENT — this must be visible for the whole ${input.durationSeconds} seconds, not in one moment.`,
+        `From 0.0s the subject is already in motion: ${input.motion.subject}.`,
+        `Across the take the subject's position in frame changes continuously, and by ${(last?.end ?? input.durationSeconds).toFixed(1)}s it has ended up somewhere it was not at the start.`,
+        `The surroundings move independently of the subject: ${input.motion.environment}.`,
+        "No frozen pose, no still frame with only a camera move over it, and no animated photograph.",
+      ].join(" "),
     );
   }
 
   sections.push(continuityBlock(plan, beats.length > 1).join(" "));
+
+  /**
+   * The customer's own words, kept in the customer's own language.
+   *
+   * Emitted after the direction and before the audio block, so the model reads
+   * the line as part of what it is producing rather than as another stage
+   * note. Both clauses return null when they have nothing to say, so a plain
+   * English prompt with no dialogue gets no extra sections at all.
+   */
+  if (input.originalPrompt) {
+    const dialogue = dialoguePreservationClause({
+      prompt: input.originalPrompt,
+      dialogueRequested: Boolean(input.dialogueRequested),
+    });
+    if (dialogue) sections.push(dialogue);
+
+    const names = nameProtectionClause(input.originalPrompt);
+    if (names) sections.push(names);
+  }
 
   const wantsAudio = Boolean(input.audio && input.audio.source !== "muted");
   if (wantsAudio && input.audio) {

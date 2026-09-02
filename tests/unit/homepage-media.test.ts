@@ -158,15 +158,20 @@ describe("the media audit document", () => {
       ).toMatch(/REPLACE/);
     }
 
-    // The known failures, pinned. `hero-poster` and `auth-poster` were here
-    // until Sprint 4.4 replaced them; the four clip posters are what is short
-    // now, and for a different reason (the model's 720p / 9:16 ceiling).
-    expect(failures.sort()).toEqual([
-      "made-video-3",
-      "made-video-4",
-      "made-video-5",
-      "made-video-6",
-    ]);
+    /**
+     * The known failures, pinned. Two, not four.
+     *
+     * `made-video-5` and `made-video-6` were withdrawn from the showcase after
+     * their motion was measured: mean inter-frame difference of 2.00 and 0.86
+     * against 6.44 for the old hero and 17.70 for the current one. At 0.86 a
+     * clip is an animated photograph, which is the one thing a video showcase
+     * must not be. The files are still on disk; only the public references are
+     * gone, so the decision is reversible.
+     *
+     * The two that remain are short for a different and unchanged reason: the
+     * model's 720p / 9:16 ceiling.
+     */
+    expect(failures.sort()).toEqual(["made-video-3", "made-video-4"]);
   });
 
   it("keeps every template and showcase still above its density floor", () => {

@@ -34,6 +34,7 @@ const PUBLIC_IDS: Record<string, string> = {
   "replicate/veo-3.1-fast": "cinematic-fast",
   "replicate/veo-3.1": "cinematic",
   "replicate/veo-3.1-lite": "cinematic-lite",
+  "google/omni-1.1-flash": "cinematic-next",
   "replicate/music": "score",
   "replicate/sfx": "foley",
 };
@@ -60,6 +61,7 @@ const PUBLIC_NAMES: Record<string, string> = {
   "replicate/veo-3.1-fast": "Cinematic Fast",
   "replicate/veo-3.1": "Cinematic",
   "replicate/veo-3.1-lite": "Cinematic Lite",
+  "google/omni-1.1-flash": "Cinematic Next",
   "replicate/music": "Score",
   "replicate/sfx": "Foley",
 };

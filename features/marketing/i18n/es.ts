@@ -173,10 +173,6 @@ export const ES: MarketingCopy = {
       title: "Sus archivos, en nuestro almacenamiento",
       body: "El material generado se copia a nuestro almacenamiento de inmediato. Los enlaces de los proveedores caducan, y una biblioteca llena de enlaces muertos una semana después no es una biblioteca.",
     },
-    {
-      title: "Diseñado para pasar horas dentro",
-      body: "Oscuro por defecto, cómodo con el teclado y rápido. Es una herramienta para sesiones largas, no una demo que se ve bien en una captura.",
-    },
   ],
 
   steps: [
@@ -195,16 +191,6 @@ export const ES: MarketingCopy = {
   ],
 
   templates: [
-    {
-      title: "Producto en set",
-      category: "Comercial",
-      body: "Luz de estudio, fondo continuo, reflejos controlados.",
-    },
-    {
-      title: "Fotograma cinematográfico",
-      category: "Cine",
-      body: "Encuadre anamórfico, luz práctica, poca profundidad de campo.",
-    },
     {
       title: "Retrato editorial",
       category: "Fotografía",

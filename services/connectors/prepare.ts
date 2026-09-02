@@ -3,6 +3,10 @@ import "server-only";
 import { createHash } from "node:crypto";
 
 import type { Caller } from "@/services/ai/model-policy";
+import {
+  rejectImpossibleAudio,
+  type AudioIntent,
+} from "@/services/ai/audio-routing";
 import { prisma } from "@/lib/prisma";
 import {
   issuePlanToken,
@@ -50,6 +54,14 @@ export interface PrepareRequest {
   outputs?: number;
   aspectRatio?: string;
   negativePrompt?: string;
+  /**
+   * What the caller wants to happen to sound.
+   *
+   * Defaults to `AUTO`, which is "whatever the model does" and can never
+   * conflict. The other two are promises, and a promise a model cannot keep is
+   * refused here rather than discovered after the credits are gone.
+   */
+  audio?: AudioIntent;
 }
 
 export type PrepareFailure =
@@ -220,6 +232,30 @@ export function prepareGeneration(
       ok: false,
       reason: "model_setting_unavailable",
       message: `Choose one of: ${model.aspectRatios.join(", ")}.`,
+    };
+  }
+
+  /**
+   * Audio, checked on the server and not only in the composer.
+   *
+   * Placed with the other settings and *before* `priceFor`, because an
+   * impossible combination must be refused without a price ever being quoted
+   * — a quote is an offer, and offering silence from a model that cannot be
+   * silent is an offer we would have to withdraw after taking the money.
+   *
+   * `rejectImpossibleAudio` had existed for a while as "the server-side rule"
+   * and was called by nothing. This is the call.
+   */
+  const audioProblem = rejectImpossibleAudio({
+    modelId: internalId,
+    intent: request.audio ?? "AUTO",
+  });
+
+  if (audioProblem) {
+    return {
+      ok: false,
+      reason: "model_setting_unavailable",
+      message: audioProblem,
     };
   }
 

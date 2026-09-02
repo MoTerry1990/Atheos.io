@@ -203,7 +203,21 @@ describe("5. continuous mode remains available and demands no cuts", () => {
   });
 
   it("asks for one unbroken take", () => {
-    expect(single.prompt).toContain("One unbroken 8-second shot");
+    /**
+     * The wording grew stronger, and the assertion with it.
+     *
+     * "One unbroken 8-second shot" left the model room to read the beat
+     * timeline as a shot list and return a montage — several different images
+     * in sequence, which is the opposite failure to the frozen frame and just
+     * as wrong for a take that is meant to be continuous. The instruction now
+     * names it three ways, and this checks all three rather than the old
+     * prefix.
+     */
+    expect(single.prompt).toContain(
+      "One unbroken 8-second single continuous shot",
+    );
+    expect(single.prompt).toMatch(/No scene cuts/i);
+    expect(single.prompt).toMatch(/no montage/i);
   });
 
   it("contains no edit instruction at all", () => {

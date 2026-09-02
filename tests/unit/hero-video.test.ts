@@ -39,51 +39,59 @@ const code = hero
 const file = (url: string) => url.replace("/marketing/", "");
 const kb = (name: string) => statSync(resolve(MARKETING, name)).size / 1024;
 
-const WEBM = file(HERO_MEDIA.webm);
 const MP4 = file(HERO_MEDIA.mp4);
 const POSTER = file(HERO_MEDIA.poster);
 const POSTER_MOBILE = file(HERO_MEDIA.posterMobile);
 
 describe("hero media ships within budget", () => {
-  it("has all four assets", () => {
-    for (const file of [WEBM, MP4, POSTER, POSTER_MOBILE]) {
+  it("has every asset it names", () => {
+    for (const file of [MP4, POSTER, POSTER_MOBILE]) {
       expect(existsSync(resolve(MARKETING, file)), file).toBe(true);
     }
   });
 
   it("keeps each asset inside its size budget", () => {
-    // Budgets from the sprint brief. A regression here is somebody re-encoding
-    // at a higher bitrate without noticing what it costs a phone.
-    expect(kb(WEBM), "webm").toBeLessThanOrEqual(1.5 * 1024);
-    expect(kb(MP4), "mp4").toBeLessThanOrEqual(2 * 1024);
+    /**
+     * The video budget was **2 MB and is now 7**, which is a real regression
+     * in weight and is recorded rather than quietly widened.
+     *
+     * The previous hero was 1080p of comparatively flat content. This one is
+     * sparkling water and foliage at 1920x1080 — close to the worst case for
+     * any codec. Measured against the master: CRF 24 is 18.4 MB, CRF 27 is
+     * 11.1 MB, CRF 30 is 6.1 MB, and a *shorter* cut at higher quality came
+     * out heavier still (7.6 MB for five seconds), because the seconds worth
+     * keeping are the expensive ones.
+     *
+     * 6.1 MB is therefore the floor for this clip at full duration and
+     * resolution, not a number somebody failed to optimise. It is affordable
+     * only because the poster is the LCP element and `preload="none"` keeps
+     * the video off the critical path — if either of those changes, this
+     * budget is wrong again.
+     */
+    expect(kb(MP4), "mp4").toBeLessThanOrEqual(7 * 1024);
     expect(kb(POSTER), "poster").toBeLessThanOrEqual(300);
     expect(kb(POSTER_MOBILE), "mobile poster").toBeLessThanOrEqual(180);
   });
 
-  it("prefers the smaller codec first", () => {
-    // Only matters if WebM is actually the smaller file; ordering it first
-    // while it is larger would be a pessimisation dressed as an optimisation.
-    expect(kb(WEBM)).toBeLessThan(kb(MP4));
-  });
-
-  it("ships no audio track in either container", () => {
+  it("ships the audio track the hero now offers", () => {
     /**
-     * Absent, not muted. A muted track still costs bytes and still lets an
-     * unmute control produce sound on a marketing page.
+     * **This reverses an earlier decision, deliberately.**
      *
-     * MP4 carries an `mp4a` sample-entry box when it has AAC; WebM carries a
-     * codec id beginning `A_`. Neither appears in a stripped file. The 4K
-     * source *does* have AAC, so this is a live check, not a formality.
+     * The rule used to be that the hero carried *no* audio track at all —
+     * "absent, not muted", on the reasoning that a muted track still costs
+     * bytes and still lets an unmute control produce sound on a marketing
+     * page. That was correct while there was no unmute control and nothing
+     * worth hearing.
+     *
+     * There is now both: the source has a real AAC stereo track, and the hero
+     * offers a "Hear audio" button. Shipping a silent file behind a button
+     * that promises sound would be the worse failure.
+     *
+     * `mp4a` is the AAC sample-entry box. Its presence is what earns the
+     * "Native audio" label on the showcase card.
      */
     const mp4 = readFileSync(resolve(MARKETING, MP4));
-    expect(mp4.includes(Buffer.from("mp4a")), "mp4 has audio").toBe(false);
-
-    const webm = readFileSync(resolve(MARKETING, WEBM));
-    expect(
-      webm.includes(Buffer.from("A_OPUS")) ||
-        webm.includes(Buffer.from("A_VORBIS")),
-      "webm has audio",
-    ).toBe(false);
+    expect(mp4.includes(Buffer.from("mp4a")), "mp4 carries AAC").toBe(true);
   });
 
   it("ships real WebP posters", () => {
@@ -107,10 +115,13 @@ describe("hero media ships within budget", () => {
     ]) {
       expect(existsSync(resolve(MARKETING, stray)), stray).toBe(false);
     }
-    // Nothing in the shipped media directory is anywhere near master size.
-    for (const name of [WEBM, MP4]) {
-      expect(kb(name), name).toBeLessThan(10 * 1024);
-    }
+    /**
+     * The current master is 44 MB and lives in `media-source/`, which is
+     * gitignored. Nothing in the *shipped* directory may approach it — the
+     * published hero is 6.1 MB, so 10 MB still leaves the check meaningful
+     * while allowing the encode this clip actually needs.
+     */
+    expect(kb(MP4), MP4).toBeLessThan(10 * 1024);
   });
 });
 
@@ -131,14 +142,16 @@ describe("hero video element behaviour", () => {
     expect(code).toMatch(/preload="none"/);
   });
 
-  it("offers WebM before MP4", () => {
-    const webm = code.indexOf("HERO_MEDIA.webm");
-    const mp4 = code.indexOf("HERO_MEDIA.mp4");
-    expect(webm).toBeGreaterThan(-1);
-    expect(mp4).toBeGreaterThan(-1);
-    // The browser takes the first source it can play and fetches only that
-    // one, so ordering is the whole negotiation.
-    expect(webm).toBeLessThan(mp4);
+  it("ships one source, because the alternative encode lost", () => {
+    /**
+     * WebM used to come first and was genuinely smaller. On this clip every
+     * VP9 encode came out heavier than H.264 at comparable quality — 22 MB
+     * against 6.1 MB at the closest match. The browser takes the first source
+     * it can play, so shipping a losing WebM would guarantee the larger
+     * download.
+     */
+    expect(code).toMatch(/HERO_MEDIA\.mp4/);
+    expect(code).not.toMatch(/HERO_MEDIA\.webm/);
   });
 
   it("is hidden from assistive technology", () => {
@@ -232,8 +245,63 @@ describe("English and Spanish share one asset", () => {
     }
   });
 
+  it("paints the poster of the video it is actually playing", () => {
+    /**
+     * The gap this closes, which was live until it was found.
+     *
+     * The poster is a CSS background and an LCP preload, so neither goes
+     * through `HERO_MEDIA`. When the hero clip was replaced, `hero-media.ts`
+     * was updated and those two were not — the page preloaded and painted a
+     * still from the *previous* video, then cut to the new one. Every existing
+     * test passed: the video assertions match only `hero.<hash>.mp4`, and the
+     * unhashed-name rule rejects a bare filename, not a hashed wrong one.
+     *
+     * So the check is on the poster names specifically, and it is a whole-file
+     * sweep rather than a list of the two places that were wrong.
+     */
+    const posters = new Set([HERO_MEDIA.poster, HERO_MEDIA.posterMobile]);
+
+    for (const path of [
+      "styles/globals.css",
+      "features/marketing/components/landing.tsx",
+      "features/marketing/components/hero-video.tsx",
+      "features/marketing/components/hero.tsx",
+    ]) {
+      const source = readFileSync(resolve(ROOT, path), "utf8");
+      const referenced =
+        source.match(/\/marketing\/hero-poster[a-z-]*\.[0-9a-f]{10}\.webp/g) ??
+        [];
+
+      for (const url of referenced) {
+        expect(
+          posters.has(url as (typeof HERO_MEDIA)["poster"]),
+          `${path} paints ${url}, which is not the current hero poster`,
+        ).toBe(true);
+      }
+    }
+  });
+
+  it("preloads exactly what the stylesheet will request", () => {
+    // Two files for one painted image is the failure mode a mismatched
+    // preload produces, and it is invisible unless the URLs are compared.
+    const css = readFileSync(resolve(ROOT, "styles/globals.css"), "utf8");
+    const landing = readFileSync(
+      resolve(ROOT, "features/marketing/components/landing.tsx"),
+      "utf8",
+    );
+
+    expect(css).toContain(HERO_MEDIA.poster);
+    expect(css).toContain(HERO_MEDIA.posterMobile);
+    // Built from `HERO_MEDIA`, not written out, so it cannot drift at all.
+    expect(landing).toMatch(/imageSrcSet=\{`\$\{HERO_MEDIA\.posterMobile\}/);
+    expect(landing).toMatch(/\$\{HERO_MEDIA\.poster\} 1920w`\}/);
+  });
+
   it("has every referenced file on disk", () => {
+    // `HERO_MEDIA` also carries duration and an audio flag now, so only the
+    // string values name files.
     for (const url of Object.values(HERO_MEDIA)) {
+      if (typeof url !== "string") continue;
       expect(existsSync(resolve(MARKETING, file(url))), url).toBe(true);
     }
   });
@@ -311,12 +379,55 @@ describe("viewport gating and recovery", () => {
     expect(code).toMatch(/if \(video && !near\) video\.pause\(\)/);
   });
 
-  it("offers an accessible control when autoplay is refused", () => {
-    expect(code).toMatch(/autoplayBlocked/);
-    expect(code).toMatch(/Play animation/);
-    // The wrapper disables pointer events; the control re-enables its own.
+  it("offers persistent playback controls, not only a fallback", () => {
+    /**
+     * This used to assert a single "Play animation" button shown *only* when
+     * autoplay had been refused. The hero now offers Pause/Play at all times,
+     * because a background video a visitor cannot stop is a background video
+     * some visitors cannot use.
+     */
+    expect(code).toMatch(/Pause background video/);
+    expect(code).toMatch(/Play background video/);
+    // The wrapper disables pointer events; the controls re-enable their own.
     expect(code).toMatch(/pointer-events-auto/);
     expect(code).toMatch(/aria-hidden=\{false\}/);
+  });
+
+  it("offers audio, and never starts it by itself", () => {
+    /**
+     * The clip has a real AAC track now. Three things have to hold at once:
+     * the element is `muted` in markup so autoplay is permitted, the only way
+     * to unmute is a press, and the control's accessible name says which state
+     * it is currently in — "Hear audio" alone never tells a screen-reader user
+     * whether sound is already on.
+     */
+    expect(code).toMatch(/\bmuted\b/);
+    expect(code).toMatch(/Hear audio — currently muted/);
+    expect(code).toMatch(/Mute audio — currently on/);
+    expect(code).toMatch(/aria-pressed=\{!muted\}/);
+
+    // Nothing may unmute outside a click handler.
+    const autoUnmute = /muted\s*=\s*false(?![^;]*onClick)/.test(
+      code.replace(/onClick=\{[\s\S]*?\}\}/g, ""),
+    );
+    expect(autoUnmute, "unmutes without a press").toBe(false);
+  });
+
+  it("stops sound and playback when the tab is hidden", () => {
+    // Audio must not follow somebody to another tab after they turned it on.
+    expect(code).toMatch(/visibilitychange/);
+    expect(code).toMatch(/document\.hidden/);
+  });
+
+  it("carries the disclosure the transcode could not", () => {
+    /**
+     * The master's C2PA manifest does not survive re-encoding, so the claim
+     * moves to the page. Short by design — a long warning over a hero reads as
+     * an apology — with the detail one link away.
+     */
+    expect(code).toMatch(/AI-generated video/);
+    expect(code).toMatch(/Web-optimized preview/);
+    expect(code).toMatch(/\/content-details/);
   });
 
   it("keeps the control clear of the headline and CTAs", () => {

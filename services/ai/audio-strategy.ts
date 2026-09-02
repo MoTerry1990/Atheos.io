@@ -64,6 +64,31 @@ export const AUDIO_CAPABILITIES: Record<string, AudioCapableModel> = {
     strategies: ["ATHEOS_SOUND_DESIGN", "SILENT"],
     note: "This model generates no audio. The finished video is silent.",
   },
+  "google/omni-1.1-flash": {
+    id: "google/omni-1.1-flash",
+    label: "Cinematic Next",
+    /**
+     * `NATIVE` only. **No `SILENT`.**
+     *
+     * The documented request schema has no `generateAudio`, `generate_audio`
+     * or equivalent, and Google states the model "natively generates audio
+     * with every video output". Listing `SILENT` here would put a control on
+     * screen wired to a parameter that does not exist — the customer picks
+     * Silent, is quoted for it, and receives a clip with sound.
+     *
+     * That is the same failure the file header describes, in the opposite
+     * direction: Atheos once promised sound it could not produce, and this
+     * would promise silence it cannot produce. Neither is acceptable, and the
+     * fix is not to invent a field and hope.
+     *
+     * If a silent deliverable is ever wanted from this model it has to be an
+     * explicit, separately quoted post step that strips the audio track — not
+     * a checkbox pretending the model can do it.
+     */
+    strategies: ["NATIVE"],
+    audioAlwaysOn: true,
+    note: "The video model generates synchronised sound in the same pass, and it cannot be turned off.",
+  },
   "replicate/veo-3.1-fast": {
     id: "replicate/veo-3.1-fast",
     label: "Cinematic Fast",

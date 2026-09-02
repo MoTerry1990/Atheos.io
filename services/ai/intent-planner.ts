@@ -8,6 +8,7 @@ import {
   type Objective,
   type ReferenceUse,
 } from "@/services/ai/creative-brief";
+import { inferSceneMotion } from "@/services/ai/motion-inference";
 
 /**
  * Turn a short prompt into a brief — deterministically first.
@@ -211,6 +212,12 @@ export function planFromPrompt(input: PlannerInput): CreativeBrief {
     ? explicit(false, "you asked for no dialogue")
     : fallback(false, "speech is not added unless asked for");
 
+  /**
+   * What moves. Derived from the same text as everything else, before the
+   * brief is assembled, so both fields are present from the first version.
+   */
+  const motion = inferSceneMotion(text);
+
   // --- References ----------------------------------------------------------
   const references =
     refCount > 0
@@ -240,6 +247,45 @@ export function planFromPrompt(input: PlannerInput): CreativeBrief {
         : fallback([], "no reference to match"),
     environment: fallback("", "taken from the prompt as written"),
     action: fallback("", "taken from the prompt as written"),
+    /**
+     * Motion, inferred rather than left blank.
+     *
+     * `action` is a noun phrase and a noun phrase is satisfied by a still.
+     * These two say what actually happens over the take, so the compiler has
+     * something to turn into beats. Marked `inferred`, never `explicit` — the
+     * user did not ask for spray, and the plan panel shows them what was added
+     * and lets them edit it.
+     */
+    motionIntent: motion.intent,
+    /**
+     * `explicit` when the user asked for movement themselves, `inferred` when
+     * we added it, and **absent entirely** when they asked for a held frame.
+     *
+     * The third case is the one that matters: an empty string marked
+     * `inferred` would still read as "we decided there is no motion", and the
+     * compiler would have something to render. Omitting the fields, with
+     * `motionIntent: "explicit_static"` alongside, says the user decided.
+     */
+    ...(motion.intent === "explicit_static"
+      ? {}
+      : {
+          subjectMotion:
+            motion.intent === "explicit_dynamic"
+              ? explicit(motion.subject, "you asked for movement")
+              : inferred(
+                  motion.subject,
+                  0.6,
+                  `added so the clip moves rather than reading as a still (${motion.archetype})`,
+                ),
+          environmentMotion:
+            motion.intent === "explicit_dynamic"
+              ? explicit(motion.environment, "you asked for movement")
+              : inferred(
+                  motion.environment,
+                  0.6,
+                  "added so the surroundings are not a frozen backdrop",
+                ),
+        }),
     visualStyle:
       objective === "commercial"
         ? inferred(

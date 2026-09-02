@@ -25,35 +25,29 @@ import "server-only";
  * answer, which is a question asked on our side of the wire.
  */
 /**
- * Gemini Omni Flash — Google's own recommended default, and not reachable here.
+ * Gemini Omni Flash — no longer a candidate. It is integrated.
  *
- * `ai.google.dev/gemini-api/docs/video` (read 2026-08-22) says plainly: "Use
- * Gemini Omni Flash as your default model for video generation", citing
- * coherence, character consistency and multi-turn conversational editing. Its
- * id is `gemini-omni-flash-preview` and it bills as tokens — $17.50 per 1M
- * output tokens at 5,792 tokens per second of 720p video, about **$0.10 per
- * second**.
+ * This note used to say the model was unreachable and to give its id as
+ * `gemini-omni-flash-preview`. Both were wrong, and the second was the more
+ * dangerous kind of wrong: an id asserted from a page that did not contain it,
+ * sitting in a comment that read like a verified fact. Google's 2026-08-27
+ * documentation update distinguishes the **stable** `gemini-omni-1.1-flash`
+ * from the preview alias, and only the stable one may be integrated.
  *
- * Two things stop it being the recommendation today, and neither is quality:
+ * The model now has a real registry entry, a policy entry scoped to that exact
+ * version, and a server-only adapter. Its licence evidence — including the
+ * documented absence of any parameter that could silence its audio — is in
+ * `docs/LICENCE-EVIDENCE.md`.
  *
- *   1. **It is not on the provider.** Every Atheos video runs through the Replicate
- *      adapter; this needs a direct `generativelanguage.googleapis.com` client.
- *   2. **There is no key.** `GOOGLE_AI_API_KEY` is declared in `lib/env.ts` and
- *      absent from every environment, which is also why `providers/google.ts`
- *      has never executed a single request.
- *
- * The docs do not state its durations, resolutions or aspect ratios, so those
- * are unknown rather than assumed — which is itself a reason not to quote it.
+ * Kept as a pointer rather than deleted, because "why is this not in
+ * SEQUENCE_CANDIDATES any more" is a question worth answering in the file
+ * where it was.
  */
 export const GEMINI_OMNI_FLASH_NOTE = {
-  modelId: "gemini-omni-flash-preview",
+  modelId: "gemini-omni-1.1-flash",
   reachableVia: "google-direct" as const,
-  approxPerSecondMicroUsd: 100_000,
-  blockers: [
-    "not available on Replicate — needs a direct Google API adapter",
-    "GOOGLE_AI_API_KEY is not set in any environment",
-    "durations, resolutions and aspect ratios are not stated in the documentation",
-  ],
+  status: "integrated, owner evaluation only" as const,
+  see: "services/ai/providers/google-omni.ts",
 } as const;
 
 /**

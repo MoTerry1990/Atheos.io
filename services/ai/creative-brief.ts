@@ -26,6 +26,8 @@
  * the confirmation panel can show what was assumed and let it be changed.
  */
 
+import type { MotionIntent } from "@/services/ai/motion-inference";
+
 export const CREATIVE_BRIEF_VERSION = 1;
 
 /** Where a value came from. Shown to the user, never collapsed away. */
@@ -97,6 +99,34 @@ export interface CreativeBrief {
   subjectIdentity: Sourced<string[]>;
   environment: Sourced<string>;
   action: Sourced<string>;
+
+  /**
+   * What the subject physically does across the take, as ordered events.
+   *
+   * **Optional for compatibility, required in practice for new video briefs.**
+   * Briefs written before 2026-09-02 have no such field, and they are still
+   * read back to render history and to reuse settings — so the type allows
+   * their absence and every consumer treats it as "not specified" rather than
+   * throwing. `resolveMotion` fills it for anything new.
+   *
+   * The reason it exists: `action` is a noun phrase ("surfing a wave") and a
+   * noun phrase is satisfied by a photograph. This is the field that says the
+   * board travels, the body re-balances, and the ride resolves.
+   */
+  subjectMotion?: Sourced<string>;
+  /** What the surroundings do independently of the subject. Same contract. */
+  environmentMotion?: Sourced<string>;
+  /**
+   * Where the motion decision came from.
+   *
+   * `explicit_static` means the user asked for a held frame and the two fields
+   * above are empty on purpose — an absent value and a deliberate stillness
+   * are different states, and only this field can tell them apart.
+   *
+   * Video only. An image has no duration to move across and an audio brief has
+   * no frame, so neither needs any of the three.
+   */
+  motionIntent?: MotionIntent;
   visualStyle: Sourced<string>;
   realism: Sourced<"photorealistic" | "stylised" | "animated">;
   colorAndLighting: Sourced<string>;

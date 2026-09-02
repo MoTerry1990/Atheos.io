@@ -1095,16 +1095,22 @@
  * times — written inline the fallbacks silently became stacked background
  * layers instead of a fallback chain.
  *
- * 1x is 1376x768 / 40 KB, 2x is 2752x1536 / 90 KB. The element is full-bleed,
- * so a phone would otherwise pay desktop-retina bytes for a 375px-wide box.
+ * Desktop is 1920x1080 / 211 KB, mobile 960x1200 / 113 KB. The element is
+ * full-bleed, so a phone would otherwise pay desktop bytes for a 375px box.
+ *
+ * These two URLs must stay equal to `HERO_MEDIA.poster` and
+ * `HERO_MEDIA.posterMobile`. They were not, once: the hero video was replaced
+ * and this rule was left pointing at the previous clip's frame, so the page
+ * painted a still from one video and then cut to a different one.
+ * `tests/unit/hero-video.test.ts` now fails if they drift apart again.
  */
 .hero-poster {
   /* Fallback first, for anything without image-set(). */
-  background-image: url("/marketing/hero-poster.582572e3c0.webp");
+  background-image: url("/marketing/hero-poster.2fc1fb7043.webp");
   background-image: -webkit-image-set(
-    url("/marketing/hero-poster.582572e3c0.webp") 1x
+    url("/marketing/hero-poster.2fc1fb7043.webp") 1x
   );
-  background-image: image-set(url("/marketing/hero-poster.582572e3c0.webp") 1x);
+  background-image: image-set(url("/marketing/hero-poster.2fc1fb7043.webp") 1x);
   background-position: center;
 }
 
@@ -1118,9 +1124,9 @@
  */
 @media (max-width: 639px) {
   .hero-poster {
-    background-image: url("/marketing/hero-poster-mobile.702379bc80.webp");
+    background-image: url("/marketing/hero-poster-mobile.40293fd880.webp");
     background-image: image-set(
-      url("/marketing/hero-poster-mobile.702379bc80.webp") 1x
+      url("/marketing/hero-poster-mobile.40293fd880.webp") 1x
     );
   }
 }

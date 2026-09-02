@@ -291,6 +291,61 @@ export const MODEL_POLICIES: readonly ModelPolicy[] = [
       "Owner evaluation only, pending written commercial-SaaS confirmation. Not sold, not listed, not reachable by any customer.",
   },
   {
+    modelId: "google/omni-1.1-flash",
+    hostedEndpoint: "google:generativelanguage:gemini-omni-1.1-flash",
+    /**
+     * The **stable** id, not the preview alias.
+     *
+     * Google publishes both `gemini-omni-1.1-flash` and
+     * `gemini-omni-flash-preview`. This record covers the first only. An
+     * approval is granted for the endpoint that was read, and extending it to
+     * an alias — or to whatever succeeds it — is how a licence audit becomes
+     * decorative. A successor needs its own entry.
+     */
+    auditedVersion: "gemini-omni-1.1-flash",
+    publicId: "cinematic-next",
+    publicName: "Cinematic Next",
+    status: "OWNER_EVALUATION_ONLY_PENDING_TERMS",
+    permittedAudience: "owner",
+    permittedProvider: "google-omni",
+    commercialOutput: "permitted-for-owner-evaluation",
+    licence:
+      "Proprietary (Google), reached directly through the Gemini API under its Terms of Service.",
+    attribution:
+      "Output carries SynthID watermarking and C2PA content credentials, enabled by default. These must survive storage and delivery intact.",
+    trademark:
+      "Do not imply endorsement by Google, and do not present the model as built by Atheos.",
+    acceptableUse:
+      "Google's generative-AI prohibited-use policy applies. The Terms also state an API Client may not be directed to, or likely to be used by, people under 18, and the API may only be offered in available regions.",
+    evidenceUrls: [
+      "https://ai.google.dev/gemini-api/docs/models/gemini-omni-flash",
+      "https://ai.google.dev/gemini-api/docs/pricing",
+      "https://ai.google.dev/gemini-api/terms",
+      "https://ai.google.dev/gemini-api/docs/available-regions",
+    ],
+    verifiedOn: "2026-09-02",
+    /**
+     * Owner-only, and the reason is not quality.
+     *
+     * Google claims no ownership of generated output and, on the paid tier,
+     * states that prompts and responses are not used to improve its products —
+     * with temporary retention for security, legal compliance and abuse
+     * prevention. That is an acceptable position for a SaaS.
+     *
+     * What is not yet demonstrable is that *Atheos* is on such a tier. No
+     * `GOOGLE_AI_API_KEY` exists in any environment, so the billing state of
+     * the Cloud project cannot be proven, and a free-tier key would place
+     * customers' prompts under the free-tier policy — where content *is* used
+     * to improve Google's products. Until a billing-enabled project is proven,
+     * the owner may evaluate and nobody else may run it.
+     *
+     * Availability and price are not evidence of authorisation. Neither is the
+     * absence of a prohibition.
+     */
+    notes:
+      "Direct Gemini API integration, stable endpoint. Owner evaluation only until a billing-enabled Cloud project is proven; a free-tier key would place customer prompts under the free-tier data policy.",
+  },
+  {
     modelId: "replicate/veo-3.1-fast",
     hostedEndpoint: "replicate:google/veo-3.1-fast",
     auditedVersion: "ba987ace",

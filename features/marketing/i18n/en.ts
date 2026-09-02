@@ -164,10 +164,6 @@ export const EN: MarketingCopy = {
       title: "Your assets, your storage",
       body: "Generated media is copied into our storage immediately. Vendor URLs expire; a library full of dead links a week later is not a library.",
     },
-    {
-      title: "Designed to be lived in",
-      body: "Dark by default, keyboard-friendly, and fast. This is a tool for long sessions, not a demo that looks good in a screenshot.",
-    },
   ],
 
   steps: [
@@ -186,16 +182,6 @@ export const EN: MarketingCopy = {
   ],
 
   templates: [
-    {
-      title: "Product on set",
-      category: "Commercial",
-      body: "Studio lighting, seamless backdrop, controlled reflections.",
-    },
-    {
-      title: "Cinematic still",
-      category: "Film",
-      body: "Anamorphic framing, practical light, shallow depth of field.",
-    },
     {
       title: "Editorial portrait",
       category: "Photography",

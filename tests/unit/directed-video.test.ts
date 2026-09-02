@@ -176,7 +176,12 @@ describe("compiling the plan into one directed prompt", () => {
       durationSeconds: 8,
     });
     expect(single.beats).toHaveLength(1);
-    expect(single.prompt).toMatch(/One unbroken 8-second shot/);
+    // Wording strengthened: see `directed-shot-list.test.ts`. A single take is
+    // now asked for as a single take, by name, and cuts are forbidden by name.
+    expect(single.prompt).toMatch(
+      /One unbroken 8-second single continuous shot/,
+    );
+    expect(single.prompt).toMatch(/No scene cuts, no montage/i);
     expect(single.prompt).not.toMatch(/deliberate camera positions/);
   });
 });
@@ -270,21 +275,26 @@ describe("the tier claims match the schemas they came from", () => {
     }
   });
 
-  it("keeps Gemini Omni Flash out of the catalogue and says why", () => {
+  it("points at the integrated Omni adapter by its stable id", () => {
     /**
-     * Google's docs recommend it as the default video model. It is not in
-     * `VIDEO_TIERS` because it is not on Replicate and there is no
-     * GOOGLE_AI_API_KEY — reasons of access, not of quality.
+     * This test used to assert that Omni Flash was *unreachable*, quoting
+     * blockers that said "not available on Replicate" and "GOOGLE_AI_API_KEY
+     * is not set". Both were true when written and neither is the point any
+     * more: the model has a direct adapter now, pinned to the stable id.
+     *
+     * What is still worth pinning is that the note names the **stable** id and
+     * not the preview alias. An approval is granted for the endpoint that was
+     * audited, and `gemini-omni-flash-preview` is a moving target that was
+     * once asserted here as fact from a page that did not contain it.
      */
+    expect(GEMINI_OMNI_FLASH_NOTE.modelId).toBe("gemini-omni-1.1-flash");
+    expect(GEMINI_OMNI_FLASH_NOTE.modelId).not.toMatch(/preview/);
+    expect(GEMINI_OMNI_FLASH_NOTE.reachableVia).toBe("google-direct");
+
+    // Still absent from the sequence tiers: it is owner-evaluation only and
+    // the sequence builder is a public surface.
     expect(VIDEO_TIERS.map((t) => t.facts.id)).not.toContain(
       GEMINI_OMNI_FLASH_NOTE.modelId,
-    );
-    expect(GEMINI_OMNI_FLASH_NOTE.reachableVia).toBe("google-direct");
-    expect(GEMINI_OMNI_FLASH_NOTE.blockers.join(" ")).toMatch(
-      /not available on Replicate/,
-    );
-    expect(GEMINI_OMNI_FLASH_NOTE.blockers.join(" ")).toMatch(
-      /GOOGLE_AI_API_KEY/,
     );
   });
 });

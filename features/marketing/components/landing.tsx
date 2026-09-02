@@ -3,6 +3,7 @@ import { Faq } from "@/features/marketing/components/faq";
 import { Features } from "@/features/marketing/components/features";
 import { MadeWithAtheos } from "@/features/marketing/components/made-with-atheos";
 import { Hero } from "@/features/marketing/components/hero";
+import { HERO_MEDIA } from "@/features/marketing/components/hero-media";
 import { HomeComposer } from "@/features/marketing/components/home-composer";
 import { HowItWorks } from "@/features/marketing/components/how-it-works";
 import { Pricing } from "@/features/marketing/components/pricing";
@@ -65,17 +66,21 @@ export function Landing({ locale }: { locale: Locale }) {
        * React 19 hoists this into `<head>`. It lives in `Landing` rather than
        * the marketing layout on purpose: the layout also wraps `/pricing`,
        * `/privacy` and the legal pages, none of which render a hero, and
-       * preloading a 13 KB image those pages never paint is a straight waste.
-       * Here it is scoped to exactly the two routes with a hero, `/` and `/es`.
+       * preloading an image those pages never paint is a straight waste. Here
+       * it is scoped to exactly the two routes with a hero, `/` and `/es`.
        */}
       <link
         rel="preload"
         as="image"
-        // Density descriptors matching the `image-set()` in `.hero-poster`, so
-        // the preload fetches the file the CSS will actually use. A plain
-        // `href` here would preload one density and the stylesheet would then
-        // request the other — two downloads for one painted image.
-        imageSrcSet="/marketing/hero-poster-mobile.702379bc80.webp 640w, /marketing/hero-poster.582572e3c0.webp 1920w"
+        // Width descriptors matching the breakpoint in `.hero-poster`, so the
+        // preload fetches the file the CSS will actually use. A plain `href`
+        // here would preload one and the stylesheet would then request the
+        // other — two downloads for one painted image.
+        //
+        // Built from `HERO_MEDIA` rather than written out, because these were
+        // once hard-coded and kept pointing at the previous hero's poster
+        // after the video was replaced.
+        imageSrcSet={`${HERO_MEDIA.posterMobile} 640w, ${HERO_MEDIA.poster} 1920w`}
         imageSizes="100vw"
         type="image/webp"
         fetchPriority="high"

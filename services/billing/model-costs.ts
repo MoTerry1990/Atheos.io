@@ -440,6 +440,82 @@ export const MODEL_COSTS: readonly ModelCostEntry[] = [
    * the ones that bill.
    */
   {
+    /**
+     * Cinematic Next — Google's video model, direct.
+     *
+     * ## $0.10/s, and only for 720p
+     *
+     * Google publishes that figure specifically for 720p output, and it is
+     * independently derivable from the token rate: $17.50 per 1M output tokens
+     * at 5,792 tokens per second of 720p = $0.1014/s. Two routes to one number
+     * is the closest thing to a reconciled invoice line that exists before the
+     * first real run.
+     *
+     * 1080p and 4K are documented outputs whose token consumption the pricing
+     * page does not establish. They are **not** priced here and not sold — an
+     * invented rate for an upscaled output is exactly the kind of made-up
+     * number this table exists to keep out.
+     *
+     * ## Priced on the maximum, because the length is the model's decision
+     *
+     * This model has no duration enum: it produces 3–10 seconds and does not
+     * commit to an exact requested length. A quote is issued before the length
+     * is known, so the honest options are to charge the stated maximum, or to
+     * reserve the maximum and capture the measured cost afterwards. The second
+     * needs partial release in the ledger and duration parsing from the MP4;
+     * neither is proven, so this is the first.
+     *
+     * `perSecondMicroUsd` is therefore multiplied by the **maximum** 10
+     * seconds rather than by a base duration, and the studio says "Up to 10
+     * seconds" rather than naming a length it cannot promise.
+     *
+     * ## Input tokens
+     *
+     * Billed separately at $1.50/1M. A prompt is a few hundred tokens against
+     * a video costing a dollar, so rather than model it the worst case is
+     * absorbed by a documented buffer: the credit price below is computed on
+     * $1.05/clip, which is $1.00 of output plus 5% — comfortably more than any
+     * plausible prompt, and stated so nobody later assumes input was free.
+     */
+    modelId: "google/omni-1.1-flash",
+    provider: "google-omni",
+    modality: "VIDEO",
+    perOutputMicroUsd: 0,
+    perSecondMicroUsd: 100_000,
+    billingUnit: "per_second",
+    assumptions: {
+      maxDurationSeconds: 10,
+      resolution: "720p only — 1080p and 4K are unpriced and not sold",
+      note: "Duration is model-decided across 3-10s, so the price is fixed on the 10s maximum. Includes a 5% buffer for input tokens. Audio is always generated and cannot be disabled, so there is no cheaper silent rate.",
+    },
+    /**
+     * 10s x $0.10 x 1.05 buffer = $1.05 worst case. x3.0 video floor = $3.15,
+     * / $0.005 per credit = 630.
+     *
+     * Charged in full whatever length comes back, which is what "Up to 10
+     * seconds" means. It can only ever be generous relative to what the
+     * customer was told.
+     */
+    creditCost: 630,
+    /**
+     * Off, because no adapter can currently serve it.
+     *
+     * `tests/unit/catalogue-integrity.test.ts` holds the invariant that every
+     * priced *and enabled* row must be servable, so an enabled row nothing can
+     * run is a catalogue promising work it cannot do. The adapter needs both
+     * `GOOGLE_AI_API_KEY` and `ENABLE_GOOGLE_OMNI` and has neither.
+     *
+     * Same convention `flux-2-pro` uses: audited, priced, deliberately not
+     * sold — kept rather than deleted so the reason stays next to the cost.
+     */
+    enabled: false,
+    freeTierEligible: false,
+    minimumMarginMultiple: 3,
+    verification: "estimated",
+    checked:
+      "2026-09-02 (Google published pricing page; cross-checked against the token rate)",
+  },
+  {
     modelId: "replicate/veo-3.1-fast",
     provider: "replicate",
     modality: "VIDEO",

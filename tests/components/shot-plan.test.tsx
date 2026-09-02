@@ -286,7 +286,7 @@ describe("the panel never presents a local figure as an exact quote", () => {
      * The exact wording is the whole safeguard, so a regression to
      * "720 credits" has to fail rather than merely read differently.
      *
-     * `` matters: without it the engine can start the match mid-number —
+     * `\b` matters: without it the engine can start the match mid-number —
      * "80 credits" inside "from 180 credits" — where the lookbehind sees "1"
      * rather than "from " and lets it through. The first version of this test
      * failed for that reason and not because the panel was wrong.
@@ -294,6 +294,6 @@ describe("the panel never presents a local figure as an exact quote", () => {
     renderPanel({ facts: MOTION_PRO });
 
     const text = document.body.textContent ?? "";
-    expect(text).not.toMatch(/(?<!from )\d+ credits/);
+    expect(text).not.toMatch(/(?<!from )\b\d+ credits/);
   });
 });

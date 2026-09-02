@@ -293,20 +293,53 @@ export function routeAudio(input: {
 }
 
 /**
- * Server-side check that a model and an audio promise agree.
+ * Server-side check that a model and an audio choice agree.
  *
  * The client's routing is a convenience; this is the rule. A forged request
  * naming Motion 1 with native audio has to be refused here, because the
- * composer is the one place an attacker controls completely.
+ * composer is the one place an attacker controls completely — and so does a
+ * forged request naming Cinematic Next with silence.
+ *
+ * ## Why the parameter stopped being a boolean
+ *
+ * It was `wantsNativeAudio: boolean`, which can express two states and there
+ * are three. `false` meant both "auto, whatever the model does" and "silent,
+ * definitely no sound" — so the second case had nowhere to be checked and the
+ * function returned null for it. That is how a model which *always* produces
+ * audio could be asked for silence and pass.
+ *
+ * Worse, nothing called this at all. It was written as the server-side rule
+ * and then never wired in, so the only enforcement of either direction was the
+ * interface. `prepareGeneration` and `quoteSequenceForCaller` both call it now,
+ * before a price is computed and long before anything is reserved.
  */
 export function rejectImpossibleAudio(input: {
   modelId: string;
-  wantsNativeAudio: boolean;
+  intent: AudioIntent;
 }): string | null {
-  if (!input.wantsNativeAudio) return null;
+  const capability = AUDIO_CAPABILITIES[input.modelId];
 
-  if (!producesNativeAudio(input.modelId)) {
+  /**
+   * Native sound asked of a model that has no audio track.
+   *
+   * `ATHEOS_SOUND_MIX` is not caught here: that is Atheos adding a soundscape
+   * afterwards, which is a different promise and is allowed to say so.
+   */
+  if (input.intent === "NATIVE_AUDIO" && !producesNativeAudio(input.modelId)) {
     return `${label(input.modelId)} cannot produce native audio.`;
+  }
+
+  /**
+   * Silence asked of a model that always produces sound.
+   *
+   * The API documents no parameter to disable it, so honouring the request is
+   * impossible and pretending to is worse than refusing: the customer would be
+   * quoted for a silent clip and delivered one with audio. Stripping the track
+   * afterwards is deliberately not offered — re-encoding risks the SynthID
+   * watermark and the C2PA credentials the output carries.
+   */
+  if (input.intent === "SILENT" && capability?.audioAlwaysOn) {
+    return `${label(input.modelId)} always creates native audio.`;
   }
 
   return null;

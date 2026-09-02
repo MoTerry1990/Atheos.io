@@ -313,7 +313,7 @@ const nextConfig: NextConfig = {
        *
        * `immutable` is only honest when the URL names exactly one byte
        * sequence. These filenames carry a SHA-256 prefix
-       * (`hero.62e23be750.webm`), so a re-encode produces a different URL and
+       * (`hero.c7da9646fe.mp4`), so a re-encode produces a different URL and
        * a cached copy can never be stale. The unhashed names this replaced
        * could not take this header for exactly that reason — they were served
        * `max-age=0, must-revalidate`, which meant a conditional request for a

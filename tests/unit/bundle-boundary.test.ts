@@ -305,3 +305,65 @@ describe("the public module has no path to the private one", () => {
     }
   });
 });
+
+describe("no AI provider reaches the browser", () => {
+  /**
+   * "No Google in the bundle" is the wrong rule, and stating it that way would
+   * fail on things that must stay.
+   *
+   * Clerk ships a "Sign in with Google" button and a One Tap component, and
+   * Next ships a `Googlebot` regex for bot detection. All three are legitimate
+   * and none of them is the video provider. A test that banned the string
+   * outright would either fail forever or be silenced — and a silenced test
+   * protects nothing.
+   *
+   * So the rule is about **provider identity for generation**: the endpoint,
+   * the model ids, the SDK, and the vendor names that the public-id layer
+   * exists to keep out of the browser.
+   */
+  const PROVIDER_IDENTIFIERS = [
+    "generativelanguage.googleapis.com",
+    "gemini-omni",
+    "gemini-omni-1.1-flash",
+    "gemini-omni-flash-preview",
+    "@google/genai",
+    "GoogleGenAI",
+    "google/omni",
+    "predictLongRunning",
+    "FLUX",
+    "flux-schnell",
+    "replicate.com",
+    "wan-video",
+    "bytedance",
+    "musicgen",
+  ];
+
+  it("names no provider, model or endpoint anywhere a browser can read", () => {
+    const offenders: string[] = [];
+
+    for (const file of existsSync(STATIC) ? walk(STATIC) : []) {
+      const source = readFileSync(file, "utf8");
+      for (const needle of PROVIDER_IDENTIFIERS) {
+        if (source.includes(needle)) {
+          offenders.push(`${file.split("static")[1]} — ${needle}`);
+        }
+      }
+    }
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("still allows the sign-in button that legitimately says Google", () => {
+    /**
+     * Asserted so the rule above cannot quietly be tightened into one that
+     * breaks authentication. If this ever finds nothing, either Clerk changed
+     * or somebody removed OAuth — both worth noticing.
+     */
+    const files = existsSync(STATIC) ? walk(STATIC) : [];
+    const hasOauth = files.some((file) =>
+      readFileSync(file, "utf8").includes("oauth_google"),
+    );
+
+    expect(hasOauth).toBe(true);
+  });
+});

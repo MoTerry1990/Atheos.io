@@ -121,8 +121,43 @@ const ARCHETYPES: readonly AudioArchetype[] = [
   },
   {
     id: "ocean",
-    cues: ["ocean", "sea", "beach", "shore", "coast", "waves", "harbour"],
-    sound: "waves, water movement, wind off the water and gulls at a distance",
+    /**
+     * "wave" and "surf" were missing, and the omission was invisible.
+     *
+     * The list held `waves` plural, and matching is word-boundary, so the
+     * benchmark prompt "a surfer on a wave" fell through to the generic
+     * ambience clause — a beach scene with no sea in it. Nothing failed
+     * loudly; the clip simply came back sounding like nowhere.
+     *
+     * Singular and plural forms of both, plus the words a person actually
+     * writes about surfing.
+     */
+    cues: [
+      "ocean",
+      "sea",
+      "beach",
+      "shore",
+      "coast",
+      "wave",
+      "waves",
+      "surf",
+      "surfer",
+      "surfing",
+      "surfboard",
+      "swell",
+      "tide",
+      "breakers",
+      "harbour",
+    ],
+    /**
+     * The sea is the subject of the sound, not a background wash.
+     *
+     * Ordered loudest first, and named as foreground, because the failure
+     * being corrected is a beach clip whose waves are barely audible under
+     * nothing in particular.
+     */
+    sound:
+      "breaking waves and rushing foam in the foreground at a clearly audible level, water sluicing off the board, wind off the water, and gulls distant behind them",
     music: false,
   },
   {
