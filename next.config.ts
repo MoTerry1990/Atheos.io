@@ -330,6 +330,27 @@ const nextConfig: NextConfig = {
       },
 
       /**
+       * The gallery's posters and clips, on the same terms.
+       *
+       * `scripts/build-gallery-media.mjs` names every file after the SHA-256
+       * of the master it came from, for exactly the reason above — and then
+       * they were served `max-age=0, must-revalidate` anyway, because the rule
+       * that grants the year only matched names beginning with `hero`.
+       * Measured in production before this: 42 hashed files, every one
+       * revalidating on every visit.
+       */
+      {
+        source:
+          "/marketing/gallery/:name([a-z0-9-]+\.[0-9a-f]{10}\.(?:mp4|webp))",
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=31536000, immutable",
+          },
+        ],
+      },
+
+      /**
        * Caching, by route class.
        *
        * Next already sets sensible defaults per rendering mode; these cover the

@@ -164,6 +164,35 @@ describe("every file it names exists", () => {
     }
   });
 
+  it("earns the immutable year its filenames were built for", () => {
+    /**
+     * Every gallery file is named after the SHA-256 of its master, which is
+     * the only thing that makes `immutable` honest — a re-encode produces a
+     * different URL, so a cached copy can never be stale.
+     *
+     * The header rule that grants the year matched `hero*` only, so all 42
+     * hashed files were served `max-age=0, must-revalidate` in production and
+     * revalidated on every visit. The hashing was doing nothing.
+     */
+    const config = source("next.config.ts");
+    expect(config).toMatch(/marketing\/gallery\/:name/);
+
+    const rule = config.slice(config.indexOf("/marketing/gallery/:name"));
+    expect(rule.slice(0, 400)).toMatch(/max-age=31536000, immutable/);
+
+    // And the names have to keep the shape the rule matches.
+    for (const item of GALLERY) {
+      expect(item.poster, item.id).toMatch(
+        /^\/marketing\/gallery\/[a-z0-9-]+\.[0-9a-f]{10}\.webp$/,
+      );
+      if (item.src) {
+        expect(item.src, item.id).toMatch(
+          /^\/marketing\/gallery\/[a-z0-9-]+\.[0-9a-f]{10}\.mp4$/,
+        );
+      }
+    }
+  });
+
   it("serves the poster at a size a retina card can use", () => {
     // `next/image` can only resize *down*. Handing it a 640 for a card that
     // paints 400 CSS px on a 2x screen means a permanently soft gallery.
