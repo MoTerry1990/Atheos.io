@@ -38,7 +38,6 @@ export const metadata: Metadata = {
   keywords: [
     "AI image generation",
     "AI video generation",
-    "AI audio generation",
     "multi-provider AI platform",
     "creative AI tools",
     "AI creative workspace",

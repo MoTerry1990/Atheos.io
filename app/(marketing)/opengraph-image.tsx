@@ -106,8 +106,8 @@ export default function OpenGraphImage() {
           maxWidth: 860,
         }}
       >
-        Image, video and audio generation across multiple AI providers — one
-        library, one credit balance.
+        Image and video generation across multiple AI models — one library, one
+        credit balance.
       </div>
 
       <div

@@ -33,7 +33,7 @@ export const metadata: Metadata = {
     template: "%s · Atheos",
   },
   description:
-    "Generate images, video, audio and creative assets across multiple AI providers from one interface.",
+    "Generate images and video across multiple AI models from one interface.",
   applicationName: "Atheos",
   robots: {
     // Sprint 0 has nothing worth indexing, and an unfinished product sitting in

@@ -44,7 +44,7 @@ export const EN: MarketingCopy = {
   site: {
     tagline: "One interface. Every AI model.",
     description:
-      "Generate images, video, audio and creative assets across multiple AI providers from a single, beautifully designed workspace.",
+      "Generate images and video across multiple AI models from a single, beautifully designed workspace.",
   },
 
   /**
@@ -71,7 +71,7 @@ export const EN: MarketingCopy = {
     announcement: "Create without limits",
     headline: ["One creative studio.", "Every AI model."],
     subheadline:
-      "Generate images, videos and audio from one beautifully simple workspace.",
+      "Generate images and video from one beautifully simple workspace.",
     primaryCta: {
       label: "Start creating",
       href: "/sign-up?redirect_url=%2Fstudio",
@@ -103,7 +103,7 @@ export const EN: MarketingCopy = {
 
   made: {
     eyebrow: "Made with Atheos",
-    title: "Ideas become images, motion and sound.",
+    title: "Ideas become images and motion.",
     // "Real creations" is accurate — every card is verified output from
     // scripts/generate-gallery-assets.ts, on the pinned model versions the
     // product runs, and each carries the prompt that produced it.
@@ -150,7 +150,7 @@ export const EN: MarketingCopy = {
   features: [
     {
       title: "One library for everything",
-      body: "Images, video and audio land in the same place, searchable and taggable, whichever model produced them. Your work is not scattered across six vendor dashboards.",
+      body: "Images and video land in the same place, searchable and taggable, whichever model produced them. Your work is not scattered across six vendor dashboards.",
     },
     {
       title: "One credit balance",

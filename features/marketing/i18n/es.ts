@@ -64,7 +64,7 @@ export const ES: MarketingCopy = {
   site: {
     tagline: "Una sola interfaz. Todos los modelos de IA.",
     description:
-      "Genere imágenes, video, audio y material creativo con varios proveedores de IA desde un mismo espacio de trabajo, cuidado hasta el último detalle.",
+      "Genere imágenes y video con varios modelos de IA desde un mismo espacio de trabajo, cuidado hasta el último detalle.",
   },
 
   nav: [
@@ -84,7 +84,7 @@ export const ES: MarketingCopy = {
     announcement: "Cree sin límites",
     headline: ["Un estudio creativo.", "Todos los modelos de IA."],
     subheadline:
-      "Genere imágenes, video y audio desde un espacio de trabajo simple y bien hecho.",
+      "Genere imágenes y video desde un espacio de trabajo simple y bien hecho.",
     primaryCta: {
       label: "Empiece a crear",
       href: "/sign-up?redirect_url=%2Fstudio",
@@ -116,7 +116,7 @@ export const ES: MarketingCopy = {
 
   made: {
     eyebrow: "Hecho con Atheos",
-    title: "Las ideas se vuelven imagen, movimiento y sonido.",
+    title: "Las ideas se vuelven imagen y movimiento.",
     description:
       "Creaciones reales de los modelos que ejecuta el producto: imágenes fijas y clips cortos, cada uno con el prompt que lo produjo. Lleve cualquiera a su propio espacio de trabajo.",
     tryThis: "Probar esto",
@@ -158,7 +158,7 @@ export const ES: MarketingCopy = {
   features: [
     {
       title: "Una biblioteca para todo",
-      body: "Imágenes, video y audio llegan al mismo lugar, con búsqueda y etiquetas, sin importar qué modelo los produjo. Su trabajo no queda repartido entre seis paneles de proveedores.",
+      body: "Imágenes y video llegan al mismo lugar, con búsqueda y etiquetas, sin importar qué modelo los produjo. Su trabajo no queda repartido entre seis paneles de proveedores.",
     },
     {
       title: "Un solo saldo de créditos",

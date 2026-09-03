@@ -3,6 +3,8 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { SHOWCASE } from "@/features/marketing/content";
+import { EN } from "@/features/marketing/i18n/en";
+import { ES } from "@/features/marketing/i18n/es";
 import { publicModels } from "@/features/marketing/lib/public-models";
 import {
   isOfferedToOwner,
@@ -107,6 +109,42 @@ describe("the public marketing surface makes no audio claim", () => {
   it("has no showcase tab and no showcase provenance entry", () => {
     expect(SHOWCASE.map((tab) => tab.id)).not.toContain("audio");
     expect(Object.keys(SHOWCASE_SOURCE_MODELS)).not.toContain("audio");
+  });
+
+  it("mentions audio in either language only to say there is none", () => {
+    /**
+     * The showcase tab was the loud part. The quiet part was everywhere else:
+     * the hero subheadline, the library feature card, the section title, the
+     * site description, the SEO keywords and the Open Graph image all listed
+     * audio among the things Atheos generates, and all of them survived the
+     * first pass at removing the tab.
+     *
+     * So the rule is not "never say audio" — the honest disclosure has to say
+     * it. The rule is that every sentence mentioning audio must also carry a
+     * negation, which a re-added capability claim cannot satisfy.
+     */
+    const strings = (value: unknown): string[] => {
+      if (typeof value === "string") return [value];
+      if (Array.isArray(value)) return value.flatMap(strings);
+      if (value && typeof value === "object") {
+        return Object.values(value).flatMap(strings);
+      }
+      return [];
+    };
+
+    const MENTIONS = /\b(audio|sound|sonido|música|music)\b/i;
+    const DENIES =
+      /\b(not offered|not available|no native|silent|no se ofrece|no disponible|sin audio|nunca)\b/i;
+
+    for (const [name, copy] of [
+      ["en", EN],
+      ["es", ES],
+    ] as const) {
+      for (const line of strings(copy)) {
+        if (!MENTIONS.test(line)) continue;
+        expect(DENIES.test(line), `${name} claims audio: ${line}`).toBe(true);
+      }
+    }
   });
 
   it("ships no audio file in the public directory at all", () => {
