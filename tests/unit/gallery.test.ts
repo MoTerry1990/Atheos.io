@@ -34,12 +34,22 @@ const source = (relative: string) =>
 
 const gallery = source("features/marketing/components/made-with-atheos.tsx");
 
-/** Source with comments stripped — the file documents what it no longer does. */
-const code = gallery
-  .replace(/\/\*[\s\S]*?\*\//g, "")
-  .split("\n")
-  .filter((line) => !line.trim().startsWith("//"))
-  .join("\n");
+/**
+ * A file with its comments removed.
+ *
+ * Every "must not appear" assertion has to read this rather than the raw text,
+ * because these files document which assets were withdrawn and why. Matching
+ * the prose would fail a correct file and, worse, could be "fixed" by deleting
+ * the explanation.
+ */
+const stripComments = (text: string) =>
+  text
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .split("\n")
+    .filter((line) => !line.trim().startsWith("//"))
+    .join("\n");
+
+const code = stripComments(gallery);
 
 const images = GALLERY.filter((item) => item.kind === "image");
 const videos = GALLERY.filter((item) => item.kind === "video");
@@ -203,9 +213,55 @@ describe("every file it names exists", () => {
 });
 
 describe("the retired assets are gone from the page", () => {
+  it("appears in no resolved asset path", async () => {
+    /**
+     * The check that would have caught it, and the one that did not.
+     *
+     * The source sweep below passed while `showcase-image.webp` was still
+     * being served, because `ai-showcase.tsx` built the name at render time
+     * as `showcase-${panel.id}`. A literal search cannot see a name that is
+     * assembled from two halves, and it reported an all-clear on a file the
+     * sprint had been asked to withdraw.
+     *
+     * So this reads the *values* the modules export rather than the text of
+     * the files. Every asset the homepage names now has to be named, not
+     * derived — which is why `ShowcaseTab` carries an explicit `image`.
+     */
+    const content = await import("@/features/marketing/content");
+    const resolved = [
+      ...content.SHOWCASE.map((tab) => tab.image),
+      ...content.TEMPLATES.map((template) => template.image),
+      ...content.FEATURES.map((feature) => feature.image ?? ""),
+      ...GALLERY.flatMap((item) => [item.poster, item.src ?? ""]),
+    ];
+
+    for (const asset of RETIRED) {
+      const hit = resolved.find((value) => value.includes(asset));
+      expect(hit, `${asset} is still rendered, as ${hit}`).toBeUndefined();
+    }
+  });
+
+  it("names every homepage asset rather than deriving it", () => {
+    // A template-literal `src` is how the last one hid. If a name is composed
+    // from a variable, no test can prove which file ships.
+    for (const file of [
+      "features/marketing/components/ai-showcase.tsx",
+      "features/marketing/components/templates.tsx",
+      "features/marketing/components/features.tsx",
+    ]) {
+      expect(source(file), `${file} composes an asset name`).not.toMatch(
+        /src=\{`[^`]*\$\{/,
+      );
+    }
+  });
+
   it("appears in no homepage source", () => {
+    // Comments stripped: these files document which assets were withdrawn and
+    // why, so matching the prose would fail a correct file and, worse, could
+    // be "fixed" by deleting the explanation.
     for (const file of HOMEPAGE_SOURCES) {
-      const text = source(file);
+      const text = stripComments(source(file));
+
       for (const asset of RETIRED) {
         expect(text, `${file} still references ${asset}`).not.toContain(asset);
       }

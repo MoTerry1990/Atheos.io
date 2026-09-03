@@ -79,12 +79,31 @@ export interface ShowcaseTab {
   icon: LucideIcon;
   /** Drives the procedural artwork rendered alongside. */
   hue: number;
+  /**
+   * The generation shown beside the copy, named rather than derived.
+   *
+   * This used to be built at render time as `showcase-${panel.id}`. A composed
+   * filename is invisible to every grep and to the test that was supposed to
+   * prove a withdrawn asset had stopped rendering — `showcase-image` was on
+   * the withdrawal list, the test searched the source for that literal, the
+   * literal was never there, and the file kept being served. Naming it is what
+   * makes it checkable.
+   */
+  image: string;
 }
 
 export const SHOWCASE: readonly ShowcaseTab[] = [
-  { id: "image", icon: ImageIcon, hue: 303 },
-  { id: "video", icon: Video, hue: 237 },
-  { id: "audio", icon: Music, hue: 162 },
+  {
+    id: "image",
+    icon: ImageIcon,
+    hue: 303,
+    // `showcase-image.webp` was withdrawn. This is the same still the gallery
+    // carries as "hotel-corridor" — 2752x1536 native, well clear of the
+    // 1152px this panel needs after the crop.
+    image: "gallery/hotel-corridor-1280.f19b9ea967",
+  },
+  { id: "video", icon: Video, hue: 237, image: "showcase-video" },
+  { id: "audio", icon: Music, hue: 162, image: "showcase-audio" },
 ] as const;
 
 /* -------------------------------------------------------------------------- */

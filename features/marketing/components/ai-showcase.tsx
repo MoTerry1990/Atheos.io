@@ -215,7 +215,7 @@ export function AIShowcase() {
           <div className="order-first lg:order-last">
             <div className="relative aspect-[4/3] w-full overflow-hidden rounded-xl ring-1 ring-white/10">
               <GeneratedImage
-                src={`showcase-${panel.id}`}
+                src={panel.image}
                 prompt={panelCopy?.headline ?? ""}
                 sizes="(max-width: 1024px) 100vw, 50vw"
               />
