@@ -226,17 +226,22 @@ export function HeroVideo({ className }: { className?: string }) {
         ) : null}
 
         {/**
-         * One scrim, not three.
+         * One scrim, and it has no colour in it.
          *
-         * This was a flat `bg-background/70`, then a `from-background/60`
-         * gradient over it, then a brand tint at 60%. Compounded, the top of the
-         * frame was about 88% obscured and the hero read as a dark rectangle with
-         * a headline on it. The replacement is a single vertical gradient: light
-         * where the art is, heavy at the bottom where the section dissolves into
-         * the page. Colour contrast scores 100 with it in place.
+         * This was a `from-background/40` wash *plus* a violet-to-blue brand
+         * tint at 30%, with `AnimatedBackground`'s violet and cyan radials
+         * painted over both. The footage is a red car on a blue sea; it
+         * arrived on the page mauve on one side and cyan on the other, which
+         * is a strange thing for a page whose job is to show what the models
+         * actually produce.
+         *
+         * `.hero-scrim` is pure black at varying alpha — transparent across
+         * the sky, weighted where the headline and buttons sit, resolving to
+         * the page background at the very bottom so the section still
+         * dissolves into what follows. The rule and the reasoning are in
+         * `styles/globals.css`.
          */}
-        <div className="absolute inset-0 bg-gradient-to-b from-background/40 via-background/45 to-background" />
-        <div className="absolute inset-0 bg-gradient-brand-subtle opacity-30" />
+        <div className="hero-scrim absolute inset-0" />
       </div>
 
       {/**

@@ -245,6 +245,68 @@ describe("English and Spanish share one asset", () => {
     }
   });
 
+  it("puts nothing coloured over the footage", () => {
+    /**
+     * The hero exists to show what the product produces, and it was tinting
+     * the evidence: a `bg-gradient-brand-subtle` wash at 30% inside the video
+     * layer, plus `AnimatedBackground` rendered *deliberately* on top of it —
+     * a violet radial at 15% and a cyan one at 90%, with three blurred colour
+     * orbs. A red car on a blue sea arrived mauve on the left and cyan on the
+     * right.
+     *
+     * Every mechanism that could reintroduce it is checked, not just the two
+     * that were there: a `filter` or a `mix-blend-mode` would tint the frame
+     * just as effectively and would not look like a gradient in review.
+     */
+    for (const banned of [
+      /gradient-brand/,
+      /bg-aurora/,
+      /AnimatedBackground/,
+      /mix-blend/,
+      /\bfilter:/,
+      /saturate|hue-rotate|sepia/,
+    ]) {
+      expect(code, `${banned} is back over the hero video`).not.toMatch(banned);
+      expect(
+        hero.replace(/\/\*[\s\S]*?\*\//g, ""),
+        `${banned} is back in the hero section`,
+      ).not.toMatch(banned);
+    }
+  });
+
+  it("scrims with black alone, and not evenly", () => {
+    /**
+     * The replacement has to stay a *gradient*. A flat `bg-black/40` would
+     * satisfy "no colour" and still be the uniformly dark layer the old one
+     * was — the brief's actual complaint was two separate things, a tint and
+     * a wash, and fixing only the tint would leave the footage muddy.
+     */
+    const css = readFileSync(resolve(ROOT, "styles/globals.css"), "utf8");
+    const rule = css.slice(
+      css.indexOf(".hero-scrim"),
+      css.indexOf(".hero-poster"),
+    );
+
+    expect(code).toMatch(/hero-scrim/);
+    expect(rule).toMatch(/linear-gradient/);
+    // Pure black at varying alpha. Any colour function with real chroma here
+    // would be a tint by another name.
+    expect(rule).not.toMatch(/oklch\(\s*0?\.\d+\s+0\.[1-9]/);
+    expect(rule).not.toMatch(/var\(--color-brand|var\(--color-info/);
+
+    // Transparent at the top, so the sky and water are the model's colours.
+    expect(rule).toMatch(/rgb\(0 0 0 \/ 0\) 0%/);
+
+    // And genuinely graded: at least four stops, rising.
+    const alphas = [...rule.matchAll(/rgb\(0 0 0 \/ ([\d.]+)\)/g)].map((m) =>
+      Number(m[1]),
+    );
+    expect(alphas.length).toBeGreaterThanOrEqual(4);
+    expect(alphas).toEqual([...alphas].sort((a, b) => a - b));
+    // Nothing heavy enough to crush the frame it sits on.
+    expect(Math.max(...alphas)).toBeLessThanOrEqual(0.5);
+  });
+
   it("paints the poster of the video it is actually playing", () => {
     /**
      * The gap this closes, which was live until it was found.

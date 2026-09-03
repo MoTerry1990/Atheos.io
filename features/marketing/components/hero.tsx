@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { ArrowRight, Play } from "lucide-react";
 
-import { AnimatedBackground } from "@/features/marketing/components/animated-background";
 import { HeroVideo } from "@/features/marketing/components/hero-video";
 import { Button } from "@/components/ui/button";
 import { useCopy } from "@/features/marketing/i18n";
@@ -44,19 +43,45 @@ export function Hero() {
 
   return (
     <section className="relative isolate overflow-hidden pt-32 pb-20 sm:pt-40 sm:pb-28">
-      {/* Video first, then the procedural background on top of it at low
-          opacity. The two together read as one surface; the drifting orbs give
-          the still poster something to do on the browsers that block autoplay,
-          and they mask the loop point on the ones that do not. */}
+      {/**
+       * The video, and nothing coloured over it.
+       *
+       * `AnimatedBackground` used to be rendered here, deliberately on top —
+       * a violet radial at 15%, a cyan one at 90%, and three blurred colour
+       * orbs. The stated reason was that the orbs gave the still poster
+       * something to do where autoplay is blocked, and masked the loop point
+       * where it is not.
+       *
+       * Neither is worth what it cost. The footage is the product's own
+       * output, and the wash was turning a red car mauve on the left and cyan
+       * on the right — the page was tinting the very thing it exists to show.
+       * The loop point is masked well enough by the crossfade from the poster,
+       * and the poster is a frame of the same clip.
+       *
+       * The brand colour stays where it belongs: the headline gradient and the
+       * CTA below.
+       */}
       <HeroVideo />
-      <AnimatedBackground />
 
       <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="mx-auto max-w-3xl text-center">
           <div className="reveal">
             <a
               href="#showcase"
-              className="group inline-flex items-center gap-2 rounded-full border border-border/60 bg-background/50 px-3 py-1 text-xs font-medium text-muted-foreground backdrop-blur-sm transition-colors hover:border-primary/40 hover:text-foreground"
+              /**
+               * `bg-background/70`, raised from `/50`.
+               *
+               * This pill sits at the very top of the hero, where the scrim is
+               * now nearly transparent so the sky keeps its real colour. It
+               * used to have a 40% wash and a violet orb behind it; without
+               * them it measured **3.04:1** against bright sea — under the
+               * 4.5:1 that 12px text has to clear. At 70% it measures 4.68:1.
+               *
+               * The extra opacity is on the pill, which is 200px wide, rather
+               * than on a layer over the footage. Darkening the whole frame to
+               * rescue one label is what the old design did.
+               */
+              className="group inline-flex items-center gap-2 rounded-full border border-border/60 bg-background/70 px-3 py-1 text-xs font-medium text-muted-foreground backdrop-blur-sm transition-colors hover:border-primary/40 hover:text-foreground"
             >
               <span className="size-1.5 rounded-full bg-primary" aria-hidden />
               {hero.announcement}

@@ -1104,6 +1104,46 @@
  * painted a still from one video and then cut to a different one.
  * `tests/unit/hero-video.test.ts` now fails if they drift apart again.
  */
+/**
+ * The only thing allowed between the hero video and the viewer.
+ *
+ * ## What it replaces
+ *
+ * Three layers, and all three altered the colour of the footage:
+ *
+ *   1. `from-background/40 via-background/45 to-background` — 40-45% of a
+ *      near-black over the *entire* frame, not just where text sits.
+ *   2. `bg-gradient-brand-subtle` at 30% — a 140° violet-to-blue wash.
+ *   3. `AnimatedBackground`, rendered deliberately on top: a violet radial at
+ *      15% and a cyan radial at 90%, plus three blurred colour orbs.
+ *
+ * Compounded, a red car on a blue sea came out mauve on the left and cyan on
+ * the right. The section is meant to prove the product's output quality, and
+ * it was tinting the evidence.
+ *
+ * ## What this does instead
+ *
+ * Pure black at varying alpha, and nothing else. No hue, no saturation change,
+ * no `filter`, no `mix-blend-mode`. Transparent across the top so the sky and
+ * water are the colours the model actually produced; enough weight from the
+ * middle down to hold the headline and the buttons; and the last stop is the
+ * page background so the section dissolves into what follows instead of
+ * ending on a seam.
+ *
+ * 28% behind the headline is what measured contrast needs, and no more —
+ * `tests/unit/hero-video.test.ts` fails if a uniform wash comes back.
+ */
+.hero-scrim {
+  background-image: linear-gradient(
+    to bottom,
+    rgb(0 0 0 / 0) 0%,
+    rgb(0 0 0 / 0.14) 22%,
+    rgb(0 0 0 / 0.28) 45%,
+    rgb(0 0 0 / 0.42) 72%,
+    var(--background) 100%
+  );
+}
+
 .hero-poster {
   /* Fallback first, for anything without image-set(). */
   background-image: url("/marketing/hero-poster.2fc1fb7043.webp");

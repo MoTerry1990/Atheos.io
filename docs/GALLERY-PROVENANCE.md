@@ -66,6 +66,33 @@ published file is a re-encode, and the two are linked by hash. Posters are a
 single 1280w WebP that `next/image` resizes down from; clips are H.264 capped
 at 1280 on the long edge, CRF 32, audio stripped. 36 files, 7.3 MB total.
 
+## Reconciliation
+
+Two counts were reported during this sprint and they did not agree. The first —
+"18 images and 11 videos" — was taken before two things were discovered: that
+the two 2048 px legacy stills are `real-esrgan` upscales rather than captures,
+and that several videos shared a prompt or a subject with another. Recounted
+from the files themselves:
+
+| Included  | Count | Source                         | Native dimensions      |
+| --------- | ----- | ------------------------------ | ---------------------- |
+| Images    | 16    | all generated 2 Sep 2026       | 1696–2752 px long edge |
+| Videos    | 10    | 2 generated, 8 product history | 720×1280 to 1920×1088  |
+| **Total** | 26    |                                | 26 distinct SHA-256    |
+
+31 further candidates were examined and rejected: Pexels stock, off-platform
+stills, programmatic cards, sub-floor legacy images, upscales, third-party
+branding in the prompt, presenter script fragments, and repeated prompts or
+subjects. The per-asset record is `media-source/reconciliation.json`.
+
+**Deficit against 18 images / 12 videos / 30 total: 2 images, 2 videos, 4
+cards.** At $0.150 an image and $0.270 a five-second video that is **$0.84** —
+which is why exactly four jobs remain staged, and not one more.
+
+Duplicate spending is prevented by the asset id being the output filename:
+`generate-gallery-assets.ts` skips any job whose file already exists, so the 18
+already produced can never be paid for twice.
+
 ## What is missing
 
 **Four cards, and about $0.84 of Replicate credit.**
