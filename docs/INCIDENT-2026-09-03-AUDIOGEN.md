@@ -132,6 +132,28 @@ Deliberately **not** deleted, per the incident brief:
   from the working tree so it cannot be re-run, and preserved in git history at
   commit `9e28f04`.
 
+### Old deployments removed
+
+Vercel keeps every production build reachable at its own immutable URL, so
+deleting a file from `public/` does not withdraw the copies already published.
+Twenty deployment URLs were checked directly. Two still served the prohibited
+files with HTTP 200:
+
+| Deployment         | Age at check | `ambience.…m4a` | `neural-core.…mp4` |
+| ------------------ | ------------ | --------------- | ------------------ |
+| `atheos-h4vma0qjo` | 14 h         | 200             | 200                |
+| `atheos-9e9qird53` | 14 h         | 200             | 200                |
+
+Both were deleted on the owner's instruction, and both now return 404. A
+re-scan of every remaining deployment returns 404 for both files. Deleting
+`atheos-h4vma0qjo` also removed the rollback target for commit `9e28f04`, which
+was accepted as the cost of withdrawal: that build _is_ the one that served the
+material.
+
+The production domain is `atheos-io.vercel.app`. **`atheos.io` is not this
+project** — it resolves to an unrelated third-party site (Liam Siira's "Atheos
+Cloud IDE"), and any verification run against it proves nothing about Atheos.
+
 ## What prevents a repeat
 
 `tests/unit/model-policy.test.ts` — "an alias cannot describe a model the
