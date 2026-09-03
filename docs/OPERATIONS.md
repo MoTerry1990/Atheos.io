@@ -125,8 +125,12 @@ Redeploy after either.
 | GPT Image 1           | `openai/gpt-image-1`     | Image    |
 | Motion 1              | `replicate/video-gen`    | Video    |
 | Motion Pro            | `replicate/video-pro`    | Video    |
-| Score (music)         | `replicate/music`        | Audio    |
-| Foley (SFX)           | `replicate/sfx`          | Audio    |
+
+Both audio models are **blocked** and appear in no catalogue. `replicate/music`
+(meta/musicgen) and `replicate/sfx` (sepal/audiogen) are Meta AudioCraft
+weights under CC-BY-NC 4.0, which a paid product cannot use. See
+[`INCIDENT-2026-09-03-AUDIOGEN.md`](INCIDENT-2026-09-03-AUDIOGEN.md) for how
+the second of those reached production before it was caught.
 
 `google/gemini-2.5-flash-image` is **already disabled in code** because its
 provider cost has never been measured. Re-enabling it means measuring the cost

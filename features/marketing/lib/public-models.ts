@@ -107,10 +107,16 @@ const EDITORIAL: Record<string, { bestFor: string; limitation: string }> = {
     limitation:
       "Produces no sound of its own. Atheos sound mix is not currently available.",
   },
-  "replicate/sfx": {
-    bestFor: "Individual sound effects and short ambiences.",
-    limitation: "Short cues rather than a continuous mix.",
-  },
+  /**
+   * No audio entry, on purpose.
+   *
+   * `replicate/sfx` sat here promising "individual sound effects and short
+   * ambiences" until 3 September 2026. It resolves to `sepal/audiogen`, whose
+   * weights are CC-BY-NC 4.0, so it is `BLOCKED_COMMERCIAL` and
+   * `isPubliclyOffered` already keeps it out of the list this copy annotates.
+   * The line is deleted rather than left inert: dead editorial copy is how a
+   * withdrawn model gets re-advertised the day somebody re-enables it.
+   */
 };
 
 /** How sound happens for a model, read from the audited capability table. */

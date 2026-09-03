@@ -31,9 +31,9 @@ export const ES: MarketingCopy = {
   sections: {
     showcase: {
       eyebrow: "El producto",
-      title: "Tres modalidades. Un solo flujo.",
+      title: "Dos modalidades. Un solo flujo.",
       description:
-        "Imagen, video y audio comparten los mismos trabajos, la misma biblioteca y los mismos créditos. Nada de esto es un segundo producto puesto al lado del primero.",
+        "Imagen y video comparten los mismos trabajos, la misma biblioteca y los mismos créditos. La generación de audio no se ofrece mientras su licencia esté sin resolver.",
     },
     features: {
       eyebrow: "Por qué Atheos",
@@ -103,12 +103,10 @@ export const ES: MarketingCopy = {
         "Una figura solitaria en una calle mojada, reflejos de neón, anamórfico",
       video:
         "Avance lento por un bosque con niebla al amanecer, haces de luz, bruma",
-      audio: "Banda sonora ambiental cálida, sintetizadores suaves, sin prisa",
     },
     modalities: [
       { id: "image", label: "Imagen" },
       { id: "video", label: "Video" },
-      { id: "audio", label: "Audio" },
     ],
     cta: "Crear",
     promptLabel: "Prompt",
@@ -153,16 +151,6 @@ export const ES: MarketingCopy = {
         "Trabajos en segundo plano: puede cerrar la pestaña",
         "Progreso real, sin barras de porcentaje inventadas",
         "Resultados servidos desde nuestro almacenamiento, no desde un enlace que caduca",
-      ],
-    },
-    {
-      label: "Audio",
-      headline: "Efectos de sonido y ambiente",
-      body: "El mismo flujo, la misma biblioteca, los mismos créditos. El audio no es un segundo producto pegado encima con reglas propias.",
-      bullets: [
-        "Generación de efectos de sonido, Foley y ambiente",
-        "Una sola biblioteca para las tres modalidades",
-        "Precio por modalidad, un solo saldo",
       ],
     },
   ],

@@ -33,10 +33,18 @@ disabled everywhere it appears.
 
 ### What Atheos _can_ do with sound today
 
-Two independent audio models, both shipped and working:
+**Nothing, as of 3 September 2026.** This section described two working audio
+models. Both are Meta AudioCraft weights under CC-BY-NC 4.0 and both are now
+`BLOCKED_COMMERCIAL`:
 
-- `replicate/music` (meta/musicgen, `stereo-large`) — 8/15/30 s, 20 credits
-- `replicate/sfx` (sepal/audiogen) — 10 credits
+- `replicate/music` (meta/musicgen, `stereo-large`) — blocked
+- `replicate/sfx` (sepal/audiogen) — blocked, and it had been recorded as
+  `zsxkib/mmaudio` under MIT until the alias was checked against the adapter.
+  See [`INCIDENT-2026-09-03-AUDIOGEN.md`](INCIDENT-2026-09-03-AUDIOGEN.md).
+
+The mechanism below is real and still works. What it has no longer got is a
+model it is allowed to run. Read the rest as a design record rather than as a
+description of a shipped capability.
 
 `features/sequences/components/soundtrack-panel.tsx` generates one and
 `muxAudio` in `features/sequences/lib/stitch.ts` lays it under an assembled

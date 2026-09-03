@@ -10,13 +10,20 @@ import { Reveal } from "@/features/marketing/components/section";
  *
  * ## Why the composer needed tests
  *
- * It was three `aria-pressed` buttons in a plain `div`. The *state* logic was
+ * It was `aria-pressed` buttons in a plain `div`. The *state* logic was
  * correct — verified in a browser: the prompt survives a modality switch, the
- * model list and aspect ratios swap, audio drops the ratio control entirely,
- * and the sign-up link carries all four values. What was missing was that a
- * screen reader was told it was looking at three unrelated toggles, and a
- * keyboard user had to Tab through all three rather than arrowing between
- * them.
+ * model list and aspect ratios swap, and the sign-up link carries all four
+ * values. What was missing was that a screen reader was told it was looking at
+ * unrelated toggles, and a keyboard user had to Tab through each one rather
+ * than arrowing between them.
+ *
+ * ## Two tabs, not three
+ *
+ * The audio modality was withdrawn on 3 September 2026: both audio models are
+ * Meta AudioCraft weights under CC-BY-NC 4.0, so the composer had a tab that
+ * could never run. The wrapping and Home/End assertions matter *more* at two
+ * tabs, not less — an off-by-one in the modulo arithmetic is invisible at three
+ * and lands on the wrong tab at two.
  *
  * These assert the semantics *and* re-assert the state logic, so the
  * conversion to a tablist cannot quietly break what already worked.
@@ -57,7 +64,7 @@ describe("composer tab semantics", () => {
     render(<HomeComposer />);
 
     const all = tabs();
-    expect(all).toHaveLength(3);
+    expect(all).toHaveLength(2);
     expect(
       all.filter((t) => t.getAttribute("aria-selected") === "true"),
     ).toHaveLength(1);
@@ -102,39 +109,42 @@ describe("composer keyboard navigation", () => {
   it("moves and selects with the arrow keys", () => {
     render(<HomeComposer />);
 
-    const [image, video, audio] = tabs();
+    const [image, video] = tabs();
     image!.focus();
 
     fireEvent.keyDown(image!, { key: "ArrowRight" });
     expect(video!.getAttribute("aria-selected")).toBe("true");
     expect(document.activeElement).toBe(video);
 
-    fireEvent.keyDown(video!, { key: "ArrowRight" });
-    expect(audio!.getAttribute("aria-selected")).toBe("true");
+    fireEvent.keyDown(video!, { key: "ArrowLeft" });
+    expect(image!.getAttribute("aria-selected")).toBe("true");
+    expect(document.activeElement).toBe(image);
   });
 
   it("wraps at both ends", () => {
     render(<HomeComposer />);
-    const [image, , audio] = tabs();
+    const [image, video] = tabs();
 
+    // The last tab is the video tab now. Left from the first must reach it, and
+    // Right from it must return — the wrap is the assertion, not the index.
     image!.focus();
     fireEvent.keyDown(image!, { key: "ArrowLeft" });
-    expect(audio!.getAttribute("aria-selected")).toBe("true");
+    expect(video!.getAttribute("aria-selected")).toBe("true");
 
-    fireEvent.keyDown(audio!, { key: "ArrowRight" });
+    fireEvent.keyDown(video!, { key: "ArrowRight" });
     expect(image!.getAttribute("aria-selected")).toBe("true");
   });
 
   it("jumps to the ends with Home and End", () => {
     render(<HomeComposer />);
-    const [image, video, audio] = tabs();
+    const [image, video] = tabs();
 
-    video!.focus();
-    fireEvent.keyDown(video!, { key: "End" });
-    expect(audio!.getAttribute("aria-selected")).toBe("true");
-    expect(document.activeElement).toBe(audio);
+    image!.focus();
+    fireEvent.keyDown(image!, { key: "End" });
+    expect(video!.getAttribute("aria-selected")).toBe("true");
+    expect(document.activeElement).toBe(video);
 
-    fireEvent.keyDown(audio!, { key: "Home" });
+    fireEvent.keyDown(video!, { key: "Home" });
     expect(image!.getAttribute("aria-selected")).toBe("true");
     expect(document.activeElement).toBe(image);
   });
@@ -163,11 +173,11 @@ describe("composer state", () => {
 
     fireEvent.change(prompt(), { target: { value: "a lighthouse at dusk" } });
 
-    const [, video, audio] = tabs();
+    const [image, video] = tabs();
     fireEvent.click(video!);
     expect(prompt().value).toBe("a lighthouse at dusk");
 
-    fireEvent.click(audio!);
+    fireEvent.click(image!);
     expect(prompt().value).toBe("a lighthouse at dusk");
   });
 
@@ -187,14 +197,22 @@ describe("composer state", () => {
     expect(video.every((id) => !image.includes(id))).toBe(true);
   });
 
-  it("drops the ratio control entirely for audio", () => {
-    // Absent, not disabled: audio has no aspect ratio, and a greyed-out
-    // control invites the reader to wonder what they did wrong.
+  it("offers a ratio on every modality it advertises", () => {
+    /**
+     * This asserted the opposite for audio — that the ratio control vanished,
+     * because an audio request has no aspect. The tab is gone with its licence,
+     * and both surviving modalities are visual, so a missing ratio control is
+     * now a fault rather than a special case.
+     */
     render(<HomeComposer />);
-    expect(screen.getByRole("combobox", { name: /ratio/i })).toBeDefined();
 
-    fireEvent.click(tabs()[2]!);
-    expect(screen.queryByRole("combobox", { name: /ratio/i })).toBeNull();
+    for (const [index] of tabs().entries()) {
+      fireEvent.click(tabs()[index]!);
+      expect(
+        screen.getByRole("combobox", { name: /ratio/i }),
+        `tab ${index}`,
+      ).toBeDefined();
+    }
   });
 
   it("carries modality, model, prompt and ratio into sign-up", () => {
@@ -208,13 +226,20 @@ describe("composer state", () => {
     expect(href).toContain("aspect=");
   });
 
-  it("omits the ratio from an audio request", () => {
+  it("never offers a modality Atheos cannot run", () => {
+    /**
+     * The composer builds the sign-up redirect the studio then reads. An audio
+     * value here would carry a request for a model that `model-policy.ts`
+     * refuses — a dead end reached after somebody has signed up.
+     */
     render(<HomeComposer />);
-    fireEvent.click(tabs()[2]!);
 
-    const href = destination();
-    expect(href).toContain("modality=audio");
-    expect(href).not.toContain("aspect=");
+    for (const [index] of tabs().entries()) {
+      fireEvent.click(tabs()[index]!);
+      const href = destination();
+      expect(href).toMatch(/modality=(image|video)/);
+      expect(href).toContain("aspect=");
+    }
   });
 
   it("never submits to a generation endpoint from the homepage", () => {

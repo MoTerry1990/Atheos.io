@@ -195,25 +195,18 @@ describe("composer destinations", () => {
         expect(model.id).toMatch(/^[a-z0-9-]+$/);
       }
 
-      // Audio has no aspect ratio and must not offer one — a ratio on an
-      // audio request is a parameter the studio would have to ignore.
-      if (modality.id === "audio") {
-        expect(modality.aspectRatios).toHaveLength(0);
-      } else {
-        expect(modality.aspectRatios.length).toBeGreaterThan(0);
-        for (const ratio of modality.aspectRatios) {
-          expect(ratio).toMatch(/^\d+:\d+$/);
-        }
+      // Image and video only, since the audio modality was withdrawn with its
+      // CC-BY-NC weights. Both remaining modalities are visual, so both owe
+      // the composer a ratio.
+      expect(modality.aspectRatios.length).toBeGreaterThan(0);
+      for (const ratio of modality.aspectRatios) {
+        expect(ratio).toMatch(/^\d+:\d+$/);
       }
     }
   });
 
   it("has one entry per advertised modality, and no more", () => {
-    expect(COMPOSER_MODALITIES.map((m) => m.id)).toEqual([
-      "image",
-      "video",
-      "audio",
-    ]);
+    expect(COMPOSER_MODALITIES.map((m) => m.id)).toEqual(["image", "video"]);
   });
 });
 

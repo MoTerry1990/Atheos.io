@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -362,6 +364,68 @@ describe("the hand-copied public ids stay in step", () => {
        */
       expect(facts.id, publicId).toBe(publicId);
       expect(catalogueModelId(publicId), publicId).not.toBeNull();
+    }
+  });
+});
+
+describe("an alias cannot describe a model the adapter does not call", () => {
+  /**
+   * The drift that caused the AudioGen incident.
+   *
+   * `replicate/sfx` recorded `zsxkib/mmaudio` at version `62871fb5`, licensed
+   * MIT and approved for public commercial use. The adapter has never called
+   * that model: it pins `154b3e51…`, which resolves to `sepal/audiogen`, whose
+   * weights are CC-BY-NC 4.0 — the same licence file this registry cites to
+   * block `replicate/music`.
+   *
+   * Nothing compared the two. The policy entry was prose about one model and
+   * the code was a version hash for another, and an internal alias sat between
+   * them so neither side looked wrong on its own.
+   */
+  const adapter = readFileSync(
+    resolve(import.meta.dirname, "../..", "services/ai/providers/replicate.ts"),
+    "utf8",
+  );
+
+  /** Every `id` → pinned `version` pair the adapter actually ships. */
+  function pinnedVersions(): Map<string, string> {
+    const pairs = new Map<string, string>();
+    const re =
+      /id:\s*"(replicate\/[a-z0-9.-]+)"[\s\S]{0,1400}?version:\s*\n?\s*"([0-9a-f]{64})"/g;
+
+    let match: RegExpExecArray | null;
+    while ((match = re.exec(adapter))) {
+      if (!pairs.has(match[1]!)) pairs.set(match[1]!, match[2]!);
+    }
+    return pairs;
+  }
+
+  it("finds the adapter's pinned versions at all", () => {
+    // If this regex stops matching, every assertion below passes vacuously.
+    expect(pinnedVersions().size).toBeGreaterThanOrEqual(6);
+  });
+
+  it("matches every policy auditedVersion to the version actually pinned", () => {
+    const pinned = pinnedVersions();
+
+    for (const policy of MODEL_POLICIES) {
+      const actual = pinned.get(policy.modelId);
+      if (!actual) continue;
+
+      expect(
+        actual.startsWith(policy.auditedVersion),
+        `${policy.modelId}: policy audited "${policy.auditedVersion}" but the adapter pins "${actual.slice(0, 8)}…". A policy entry that describes a different build than the one that runs is not a policy.`,
+      ).toBe(true);
+    }
+  });
+
+  it("keeps the recorded endpoint consistent with the provider", () => {
+    // `replicate:owner/name` — the owner half is the thing an alias can hide.
+    for (const policy of MODEL_POLICIES) {
+      if (!policy.modelId.startsWith("replicate/")) continue;
+      expect(policy.hostedEndpoint, policy.modelId).toMatch(
+        /^replicate:[a-z0-9-]+\/[a-z0-9.-]+$/,
+      );
     }
   });
 });

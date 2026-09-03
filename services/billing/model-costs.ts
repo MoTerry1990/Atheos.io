@@ -580,8 +580,15 @@ export const MODEL_COSTS: readonly ModelCostEntry[] = [
     billingUnit: "per_second",
     assumptions: { maxDurationSeconds: 8 },
     creditCost: 10,
-    enabled: true,
-    freeTierEligible: true,
+    /**
+     * Disabled 3 September 2026, with `replicate/music`, and for the same
+     * reason: this alias resolves to `sepal/audiogen`, whose weights are
+     * CC-BY-NC 4.0 under Meta's AudioCraft `LICENSE_weights`. A price on a row
+     * nobody may lawfully buy is how it stayed sellable — the policy layer
+     * refused it while the catalogue kept quoting it.
+     */
+    enabled: false,
+    freeTierEligible: false,
     minimumMarginMultiple: 2.5,
     verification: "estimated",
     checked:

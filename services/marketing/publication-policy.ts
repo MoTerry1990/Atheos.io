@@ -122,5 +122,12 @@ export function publishableModelIds(): string[] {
 export const SHOWCASE_SOURCE_MODELS: Readonly<Record<string, string>> = {
   image: "replicate/flux-dev",
   video: "replicate/video-gen",
-  audio: "replicate/sfx",
+  /**
+   * `audio: "replicate/sfx"` was here until 3 September 2026, and the tab it
+   * described was published for a day. That alias resolves to
+   * `sepal/audiogen`, whose weights are CC-BY-NC 4.0 — so the entry recorded
+   * the provenance correctly and nothing checked the licence behind it. The
+   * check now exists in `publicationVerdict`, and the entry is gone with the
+   * tab rather than left here failing it.
+   */
 };

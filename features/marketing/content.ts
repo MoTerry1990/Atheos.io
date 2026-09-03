@@ -2,7 +2,6 @@ import {
   Coins,
   Layers,
   Lock,
-  Music,
   Sparkles,
   Video,
   Image as ImageIcon,
@@ -94,14 +93,6 @@ export interface ShowcaseTab {
   mediaCaption: string;
   /** Video tab only. Muted autoplay with an explicit sound control. */
   video?: { src: string; poster: string; label: string };
-  /** Audio tab only. A real playable example, never autoplayed. */
-  audio?: {
-    src: string;
-    title: string;
-    description: string;
-    /** Fallback until `loadedmetadata` reports the real duration. */
-    seconds: number;
-  };
 }
 
 export const SHOWCASE: readonly ShowcaseTab[] = [
@@ -115,41 +106,27 @@ export const SHOWCASE: readonly ShowcaseTab[] = [
      * It is a downscale of a native capture, so it is sharp on a high-density
      * display — and it is not 4K, and is never described as 4K.
      */
-    image: "showcase/ai-core-1344.3c56384553",
-    mediaCaption: "AI-generated image - a neural energy core, 1344x768 native",
+    image: "showcase/ai-core-1344.afb5e0cbab",
+    mediaCaption:
+      "AI-generated image - a neural energy core, 1344x756 native, exact 16:9",
   },
   {
     id: "video",
     icon: Video,
     hue: 237,
-    image: "showcase/ai-core-1344.3c56384553",
+    image: "showcase/ai-core-1344.afb5e0cbab",
     video: {
-      src: "/marketing/showcase/neural-core.ae93b2317c.mp4",
-      poster: "/marketing/showcase/neural-core-1120.ae93b2317c.webp",
-      label: "AI-generated video of a processor core, with sound design",
+      src: "/marketing/showcase/core-silent.321dae2c42.mp4",
+      poster: "/marketing/showcase/core-silent-1280.321dae2c42.webp",
+      label:
+        "AI-generated visual of a neural energy core, animated locally. Silent.",
     },
     /**
      * The exact claim. The picture is model output; the sound is a separately
      * generated Foley ambience mixed in locally. No commercially approved
      * model in the catalogue generates audio, so "native audio" would be false.
      */
-    mediaCaption: "AI-generated video with sound design",
-  },
-  {
-    id: "audio",
-    icon: Music,
-    hue: 162,
-    image: "showcase/ai-core-1344.3c56384553",
-    audio: {
-      src: "/marketing/showcase/ambience.ae93b2317c.m4a",
-      title: "Futuristic Workspace Ambience",
-      description:
-        "Room tone, the faint hum of a large screen and distant city traffic.",
-      seconds: 8,
-    },
-    // Sound effects and ambience, which is what the approved model does.
-    // Music generation is not offered and is not implied here.
-    mediaCaption: "AI-generated environmental sound design",
+    mediaCaption: "AI-generated visual with cinematic animation",
   },
 ] as const;
 
@@ -336,7 +313,7 @@ export { Sparkles };
  * modality. Using the public id fixes the leak and the seed together.
  */
 export interface ComposerModality {
-  id: "image" | "video" | "audio";
+  id: "image" | "video";
   models: readonly { id: string; label: string }[];
   /** Empty for audio, which has no aspect ratio. */
   aspectRatios: readonly string[];
@@ -361,18 +338,5 @@ export const COMPOSER_MODALITIES: readonly ComposerModality[] = [
        */
     ],
     aspectRatios: ["16:9", "9:16"],
-  },
-  {
-    id: "audio",
-    models: [
-      /**
-       * Score is absent by licence, not by oversight. MusicGen's weights are
-       * CC-BY-NC-4.0, which forbids the commercial use selling it would be.
-       * See `services/ai/model-policy.ts` — that registry is the authority and
-       * refuses the model server-side; this list must agree with it.
-       */
-      { id: "foley", label: "Foley" },
-    ],
-    aspectRatios: [],
   },
 ] as const;

@@ -205,3 +205,60 @@ history and stored assets are preserved untouched; the block is on running it,
 not on remembering that it ran.
 
 - <https://github.com/facebookresearch/audiocraft/blob/main/LICENSE_weights>
+
+## Audit: the three models that published without approval — 3 September 2026
+
+Triggered by the containment hotfix in commit `28107ef`, which withdrew 25
+public gallery cards. Sources read directly from the provider's live model
+pages on the audit date.
+
+### What the evidence says
+
+All three are Replicate **Official** models — published and maintained by the
+model owner rather than a community mirror — and all three carry Replicate's
+`Commercial use` badge. The badge's own tooltip text, verbatim:
+
+> Outputs from this model can be sold or used in paid products.
+
+`google/nano-banana-pro` additionally carries `Data privacy` ("Inputs and
+outputs are not retained") and `Zero training` ("Inputs and outputs are not
+used for training"). `bytedance/seedance-1-lite` carries `Zero training`.
+Neither page states a licence name, and neither states an attribution
+requirement.
+
+| Model                       | Atheos id                   | Owner                          | Badges                                                |
+| --------------------------- | --------------------------- | ------------------------------ | ----------------------------------------------------- |
+| `google/nano-banana-pro`    | `replicate/nano-banana-pro` | Google DeepMind (Gemini 3 Pro) | Official, Commercial use, Data privacy, Zero training |
+| `google/nano-banana-2`      | `replicate/nano-banana-2`   | Google                         | Official, Commercial use                              |
+| `bytedance/seedance-1-lite` | `replicate/video-pro`       | ByteDance                      | Official, Commercial use, Zero training               |
+
+Sources, read 3 September 2026:
+
+- <https://replicate.com/google/nano-banana-pro>
+- <https://replicate.com/bytedance/seedance-1-lite>
+
+### Verdict: no policy entry added
+
+The bar for an entry is that authoritative evidence **conclusively** establishes
+commercial output permission _and_ public marketing permission. Only the first
+is established.
+
+"Sold or used in paid products" is a statement about commerce in the output.
+The Atheos home page is not a paid product: it is free, public advertising for
+one. Using a generation as marketing on a free page is adjacent to that
+permission and is not the same sentence, and the rule here is that approval is
+never inferred. Neither page links the model owner's own terms, so what Google
+or ByteDance require of the Replicate route could not be read at all.
+
+So all three remain absent from `services/ai/model-policy.ts`, the fail-closed
+rule continues to apply, and the 25 withdrawn cards stay withdrawn.
+
+### The same question applies to a model already in use
+
+`replicate/flux-dev` is `ALLOWED_PROVIDER_ENDPOINT_ONLY` on exactly this
+reasoning — non-commercial weights, commercial output granted through the
+hosted endpoint — and it currently supplies the showcase Image tab. If
+"commercial output" is not read as covering public marketing, that entry needs
+the same scrutiny and the Image tab needs a different source. Flagged rather
+than resolved here, because it is a change to an existing approval and not
+mine to make silently.

@@ -73,9 +73,18 @@ export interface MarketingCopy {
    */
   composer: {
     /** One per modality — a video prompt and an audio prompt are not alike. */
-    placeholders: Record<"image" | "video" | "audio", string>;
+    /**
+     * Image and video only.
+     *
+     * `audio` was removed on 3 September 2026 with the modality itself: both
+     * audio models are Meta AudioCraft weights under CC-BY-NC 4.0, so there is
+     * nothing the composer could run. Narrowing the type rather than leaving an
+     * unused key means a future audio model has to be added deliberately, in
+     * the registry first.
+     */
+    placeholders: Record<"image" | "video", string>;
     modalities: readonly {
-      id: "image" | "video" | "audio";
+      id: "image" | "video";
       label: string;
     }[];
     cta: string;

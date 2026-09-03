@@ -205,12 +205,33 @@ describe("an allowed model is not affected", () => {
     /**
      * Without this the suite would pass just as well if the gate refused
      * everything, which is a safe product nobody can use.
+     *
+     * The example used to be `replicate/sfx`. It cannot be any more: that alias
+     * resolves to `sepal/audiogen`, whose CC-BY-NC 4.0 weights made it
+     * `BLOCKED_COMMERCIAL` on 3 September 2026. Flux Schnell is Apache-2.0 and
+     * genuinely allowed.
+     */
+    findModel.mockReturnValue(undefined);
+
+    await expect(
+      submitGeneration(request("replicate/flux-schnell")),
+    ).rejects.not.toMatchObject({ code: "model_unavailable" });
+  });
+
+  it("refuses AudioGen, whatever alias asks for it", async () => {
+    /**
+     * The other half of the same guarantee. `replicate/sfx` reads like a
+     * generic sound-effects endpoint and is in fact Meta's AudioGen under
+     * non-commercial weights, so a paid generation must never reach the
+     * provider — the request dies here, before any reservation.
      */
     findModel.mockReturnValue(undefined);
 
     await expect(
       submitGeneration(request("replicate/sfx")),
-    ).rejects.not.toMatchObject({ code: "model_unavailable" });
+    ).rejects.toMatchObject({ code: "model_unavailable" });
+
+    expect(reserveWithin).not.toHaveBeenCalled();
   });
 
   it("lets Motion 1 through, now its licence chain is documented", async () => {

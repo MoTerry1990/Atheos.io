@@ -84,9 +84,20 @@ describe("the registry decides, and it fails closed", () => {
     }
   });
 
+  it("refuses AudioGen behind its generic alias", () => {
+    /**
+     * `replicate/sfx` read as a house sound-effects endpoint and was published
+     * as one. It resolves to `sepal/audiogen`, whose weights are CC-BY-NC 4.0
+     * under Meta's AudioCraft `LICENSE_weights` — the same file this repository
+     * already cites to block `replicate/music`. Its output supplied a
+     * commercial marketing page for a day, which is the incident this line
+     * exists to keep from recurring.
+     */
+    expect(isPublishable("replicate/sfx")).toBe(false);
+  });
+
   it("permits the two statuses that genuinely allow publication", () => {
     expect(isPublishable("replicate/video-gen")).toBe(true);
-    expect(isPublishable("replicate/sfx")).toBe(true);
     // Non-commercial weights, commercial output through the hosted endpoint
     // the approval is scoped to — which is the endpoint publication uses.
     expect(isPublishable("replicate/flux-dev")).toBe(true);

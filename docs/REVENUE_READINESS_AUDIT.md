@@ -1,5 +1,12 @@
 # Revenue Readiness Audit — Atheos.io
 
+> **Superseded for the audio rows, 3 September 2026.** Every statement in this
+> document about `replicate/music` or `replicate/sfx` being ready, verified or
+> sellable is wrong. Both are Meta AudioCraft weights under CC-BY-NC 4.0 and
+> both are `BLOCKED_COMMERCIAL`. The `replicate/sfx` row in particular recorded
+> a licence that belonged to a different model. See
+> [`INCIDENT-2026-09-03-AUDIOGEN.md`](INCIDENT-2026-09-03-AUDIOGEN.md).
+
 **Type:** audit, plus a Sprint 4 addendum (§ 21) recording what was built
 against it. No migration applied to production, no Stripe object created,
 **no paid generation run**, no secret value printed or read.

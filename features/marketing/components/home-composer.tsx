@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight, AudioLines, ImageIcon, Video } from "lucide-react";
+import { ArrowRight, ImageIcon, Video } from "lucide-react";
 import { useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -65,9 +65,7 @@ export function HomeComposer() {
   const { composer } = useCopy();
 
   const [prompt, setPrompt] = useState("");
-  const [modality, setModality] = useState<"image" | "video" | "audio">(
-    "image",
-  );
+  const [modality, setModality] = useState<"image" | "video">("image");
 
   const config =
     COMPOSER_MODALITIES.find((entry) => entry.id === modality) ??
@@ -83,7 +81,7 @@ export function HomeComposer() {
   const [model, setModel] = useState(config.models[0]!.id);
   const [ratio, setRatio] = useState(config.aspectRatios[0] ?? "");
 
-  function chooseModality(next: "image" | "video" | "audio") {
+  function chooseModality(next: "image" | "video") {
     const target = COMPOSER_MODALITIES.find((entry) => entry.id === next);
     if (!target) return;
 
@@ -111,10 +109,15 @@ export function HomeComposer() {
     return `/sign-up?redirect_url=${encodeURIComponent(`/studio?${query}`)}`;
   })();
 
+  /**
+   * Image and video. Audio was removed on 3 September 2026 along with the
+   * modality: both audio models are Meta AudioCraft weights under CC-BY-NC 4.0,
+   * so there is nothing the composer could run. A tab that cannot produce
+   * anything is a promise the product cannot keep.
+   */
   const options = [
     { id: "image" as const, icon: ImageIcon },
     { id: "video" as const, icon: Video },
-    { id: "audio" as const, icon: AudioLines },
   ];
 
   const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);

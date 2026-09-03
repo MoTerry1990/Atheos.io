@@ -11,20 +11,19 @@ import { ES } from "@/features/marketing/i18n/es";
  *
  * ## What is actually at risk here
  *
- * Not layout. Two things, both of which are claims rather than code:
+ * Not layout. Claims, and whether the bytes support them.
  *
- *   1. **Audio described as music.** The panel headline said "Music and sound
- *      effects" while `replicate/music` is `BLOCKED_COMMERCIAL` under
- *      CC-BY-NC — an advertised capability the product cannot legally provide.
- *      It shipped that way, above a working audio player, until this test
- *      existed.
- *   2. **Sound design described as native audio.** The video's picture is model
- *      output and its sound is a separately generated Foley bed mixed in
- *      locally. No commercially approved model in the catalogue generates
- *      audio at all, so "native audio" would be false on the face of it.
+ * The section shipped an Audio tab and a video with a soundtrack, both derived
+ * from `replicate/sfx`. That alias resolves to `sepal/audiogen`, whose weights
+ * are CC-BY-NC 4.0 under Meta's AudioCraft `LICENSE_weights` — the same file
+ * this repository already cites to block `replicate/music`. Non-commercial
+ * weights cannot supply a commercial marketing page, so all of it was withdrawn
+ * on 3 September 2026.
  *
- * The rest checks that the files the tabs point at exist and contain what they
- * claim — an audio tab whose file is silent is worse than no audio tab.
+ * What remains is two tabs and a silent video, and these tests exist to keep
+ * the page from claiming anything more than that. The audio assertions check
+ * for *absence* now: no tab, no track in the file, no controls, no capability
+ * claim in either language.
  */
 
 const ROOT = resolve(import.meta.dirname, "..", "..");
@@ -53,62 +52,70 @@ const code = component
 
 const image = SHOWCASE.find((tab) => tab.id === "image")!;
 const video = SHOWCASE.find((tab) => tab.id === "video")!;
-const audio = SHOWCASE.find((tab) => tab.id === "audio")!;
 
-describe("the audio claim is one the product can keep", () => {
-  it("never advertises music generation", () => {
+describe("the withdrawn audio stays withdrawn", () => {
+  it("has no Audio tab", () => {
     /**
-     * `replicate/music` is MusicGen, CC-BY-NC-4.0, and `model-policy.ts`
-     * records it as `BLOCKED_COMMERCIAL` with `permittedAudience: "nobody"`.
-     * Atheos cannot generate music, so the marketing page must not say it can
-     * — in either language.
+     * Removed 3 September 2026. `replicate/sfx` resolves to `sepal/audiogen`,
+     * whose weights are CC-BY-NC 4.0 under Meta's AudioCraft LICENSE_weights —
+     * the same file that blocks `replicate/music`. Its output cannot be
+     * published on a commercial page, so the tab that played it is gone rather
+     * than merely emptied.
      */
+    expect(SHOWCASE.map((tab) => tab.id)).not.toContain("audio");
+  });
+
+  it("never advertises music, sound effects or ambience generation", () => {
+    // Atheos has no approved audio model at all now. Claiming any audio
+    // generation capability would be advertising something it cannot provide.
     for (const [name, copy] of [
       ["en", EN],
       ["es", ES],
     ] as const) {
-      const panel = copy.showcase.find((entry) => /audio/i.test(entry.label))!;
-      const text = [panel.headline, panel.body, ...panel.bullets]
+      const text = copy.showcase
+        .flatMap((entry) => [entry.headline, entry.body, ...entry.bullets])
         .join(" ")
         .toLowerCase();
 
-      expect(text, `${name} headline claims music`).not.toMatch(
-        /\bmusic\b|\bmúsica\b/,
-      );
+      expect(text, `${name} claims music`).not.toMatch(/\bmusic\b|\bmúsica\b/);
     }
-  });
-
-  it("describes what the approved model actually does", () => {
-    const panel = EN.showcase.find((entry) => /audio/i.test(entry.label))!;
-    const text = [panel.headline, ...panel.bullets].join(" ").toLowerCase();
-    expect(text).toMatch(/sound effect|foley|ambience/);
-  });
-
-  it("labels the example honestly", () => {
-    expect(audio.audio?.title.trim().length).toBeGreaterThan(4);
-    expect(audio.mediaCaption.toLowerCase()).toContain("sound design");
-    expect(audio.mediaCaption.toLowerCase()).not.toMatch(/\bmusic\b/);
   });
 });
 
-describe("the video claim is one the file can keep", () => {
-  it("never says native audio", () => {
-    const claim =
-      `${video.mediaCaption} ${video.video?.label ?? ""}`.toLowerCase();
-    expect(claim).toContain("sound design");
-    expect(claim).not.toContain("native audio");
-    expect(code.toLowerCase()).not.toContain("native audio");
-  });
-
-  it("ships a video that really has an audio track", () => {
+describe("the video is silent, and says so", () => {
+  it("carries no audio stream at all", () => {
     /**
-     * A "with sound design" label on a silent file is the same lie as
-     * "native audio" on a mixed one. The `mp4a` box is the AAC sample entry;
-     * it is not present in a stripped file.
+     * The published file had an AudioGen-derived track muxed in. `mp4a` is the
+     * AAC sample-entry box; its absence is what proves the withdrawal reached
+     * the bytes and not just the markup.
      */
     const file = media(video.video!.src);
     expect(existsSync(file), video.video!.src).toBe(true);
-    expect(readFileSync(file).includes(Buffer.from("mp4a"))).toBe(true);
+    expect(readFileSync(file).includes(Buffer.from("mp4a"))).toBe(false);
+  });
+
+  it("makes no claim about sound", () => {
+    const claim =
+      `${video.mediaCaption} ${video.video?.label ?? ""}`.toLowerCase();
+    expect(claim).toContain("cinematic animation");
+    for (const banned of [
+      "sound design",
+      "native audio",
+      "ai-generated video",
+    ]) {
+      expect(claim, banned).not.toContain(banned);
+    }
+  });
+
+  it("offers no sound controls, because there is no sound", () => {
+    for (const banned of [
+      "Play with sound",
+      "Volume2",
+      "VolumeX",
+      "toggleSound",
+    ]) {
+      expect(code, banned).not.toContain(banned);
+    }
   });
 
   it("has a poster so the panel is never an empty box", () => {
@@ -119,15 +126,6 @@ describe("the video claim is one the file can keep", () => {
 });
 
 describe("every file a tab points at exists and has content", () => {
-  it("ships the audio example, and it is not silent", () => {
-    const file = media(audio.audio!.src);
-    expect(existsSync(file), audio.audio!.src).toBe(true);
-    // 128 KB of AAC is not an empty container. A silent-but-present track
-    // would still be caught by the runtime check in the browser evidence.
-    expect(statSync(file).size).toBeGreaterThan(20_000);
-    expect(readFileSync(file).includes(Buffer.from("mp4a"))).toBe(true);
-  });
-
   it("ships the still at a size the panel can use", () => {
     const file = resolve(PUBLIC, `marketing/${image.image}.webp`);
     expect(existsSync(file), image.image).toBe(true);
@@ -146,7 +144,7 @@ describe("every file a tab points at exists and has content", () => {
      * anyone calls it native 16:9.
      */
     expect(image.mediaCaption.toLowerCase()).not.toMatch(/\b4k\b/);
-    expect(image.mediaCaption).toContain("1344x768");
+    expect(image.mediaCaption).toContain("1344x756");
   });
 });
 
@@ -156,59 +154,22 @@ describe("only the active tab's media can play", () => {
     // subtree and the element goes with it. That is what makes the rule
     // structural rather than a listener somebody has to remember to add.
     expect(code).toMatch(/if \(panel\.video\) return <ShowcaseVideo/);
-    expect(code).toMatch(/if \(panel\.audio\) return <ShowcaseAudio/);
-  });
-
-  it("never autoplays the audio tab", () => {
-    /**
-     * Sound that starts because a tab opened is the thing every visitor
-     * resents, and on mobile it is the thing that gets a tab closed. The video
-     * may autoplay because it is muted; the audio may not, at all.
-     */
-    const audioBlock = code.slice(code.indexOf("function ShowcaseAudio"));
-    expect(audioBlock).not.toMatch(/autoPlay/);
   });
 
   it("autoplays the video only muted", () => {
-    const videoBlock = code.slice(
-      code.indexOf("function ShowcaseVideo"),
-      code.indexOf("function ShowcaseAudio"),
-    );
+    const videoBlock = code.slice(code.indexOf("function ShowcaseVideo"));
     expect(videoBlock).toMatch(/autoPlay/);
     expect(videoBlock).toMatch(/\bmuted\b/);
   });
 });
 
 describe("the controls are real controls", () => {
-  it("gives the audio player play, seek, volume and mute", () => {
-    for (const label of ['aria-label="Seek"', 'aria-label="Volume"']) {
-      expect(component, label).toContain(label);
-    }
-    expect(component).toMatch(/Pause audio|Play audio/);
-    expect(component).toMatch(/Unmute — currently muted/);
-  });
-
-  it("seeks with a range input rather than a clickable div", () => {
-    // A div with a click handler cannot be dragged with a keyboard, and
-    // seeking is exactly the interaction a keyboard user needs.
-    expect(component).toMatch(/<input\s+type="range"/);
-  });
-
-  it("puts playback state in the accessible name, not only the icon", () => {
-    expect(component).toMatch(/Play with sound — currently muted/);
-    expect(component).toMatch(/Mute — sound is on/);
-  });
-
-  it("drives the waveform from playback rather than animating regardless", () => {
-    // A bar pattern that moves while nothing plays is decoration pretending to
-    // be information.
-    expect(component).toMatch(/index \/ BARS\.length <= progress/);
-  });
-
   it("follows the element rather than leading it", () => {
     // Autoplay can be refused and a user can use the native context menu.
     // State that leads the element ends up describing something else.
-    for (const event of ["play", "pause", "volumechange", "timeupdate"]) {
+    // Only play/pause now: the volume and time events belonged to the audio
+    // player and to the sound control, both withdrawn with the AudioGen track.
+    for (const event of ["play", "pause"]) {
       expect(component, event).toContain(`"${event}"`);
     }
   });

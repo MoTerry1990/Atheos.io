@@ -445,24 +445,49 @@ export const MODEL_POLICIES: readonly ModelPolicy[] = [
   },
   {
     modelId: "replicate/sfx",
-    hostedEndpoint: "replicate:zsxkib/mmaudio",
-    auditedVersion: "62871fb5",
+    /**
+     * Corrected 3 September 2026. Every field above this line was wrong.
+     *
+     * The entry said `zsxkib/mmaudio` at version `62871fb5`, licensed MIT, and
+     * approved for public commercial use. The adapter has never called that
+     * model. `services/ai/providers/replicate.ts` pins
+     * `154b3e5141493cb1b8cec976d9aa90f2b691137e39ad906d2421b74c2a8c52b8`, and
+     * that version resolves to `sepal/audiogen` — HTTP 200 on
+     * `sepal/audiogen`, HTTP 404 on `zsxkib/mmaudio`.
+     *
+     * AudioGen is Meta's, from the AudioCraft repository. Its own model page
+     * says so: "based on Meta's Audiocraft library, the same on which MusicGen
+     * is based". Its weights licence is the same `LICENSE_weights` file this
+     * registry already cites to block `replicate/music` — CC-BY-NC 4.0,
+     * "NonCommercial means not primarily intended for or directed towards
+     * commercial advantage or monetary compensation".
+     *
+     * So an alias described one model while the code called another with an
+     * incompatible licence, and the marketing page published its output. The
+     * structural check that now prevents a repeat is in
+     * `tests/unit/model-policy.test.ts`: a policy entry's `auditedVersion` must
+     * be a prefix of the version the adapter actually pins.
+     */
+    hostedEndpoint: "replicate:sepal/audiogen",
+    auditedVersion: "154b3e51",
     publicId: "foley",
     publicName: "Foley",
-    status: "ALLOWED_PUBLIC",
-    permittedAudience: "public",
-    permittedProvider: "replicate",
-    commercialOutput: "permitted",
-    licence: "MIT (MMAudio)",
-    attribution: "MIT notice retained upstream; none required on output.",
-    trademark: "None.",
-    acceptableUse: "No field-of-use restriction.",
+    status: "BLOCKED_COMMERCIAL",
+    permittedAudience: "nobody",
+    permittedProvider: "none",
+    commercialOutput: "denied",
+    licence: "CC-BY-NC-4.0 (AudioGen weights, Meta AudioCraft)",
+    attribution: "Not applicable — the model does not run.",
+    trademark: "Not applicable.",
+    acceptableUse: "Not applicable.",
     evidenceUrls: [
-      "https://replicate.com/zsxkib/mmaudio",
-      "https://github.com/hkchengrex/MMAudio/blob/main/LICENSE",
+      "https://replicate.com/sepal/audiogen",
+      "https://github.com/facebookresearch/audiocraft/blob/main/LICENSE_weights",
+      "https://github.com/facebookresearch/audiocraft/blob/main/docs/AUDIOGEN.md",
     ],
-    verifiedOn: "2026-08-25",
-    notes: "Permissive open source; nothing endpoint-specific.",
+    verifiedOn: "2026-09-03",
+    notes:
+      "Same position as Score, and for the same licence file. Non-commercial weights cannot serve a paid product or a marketing page, whoever presses the button.",
   },
 ];
 

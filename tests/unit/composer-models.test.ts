@@ -96,13 +96,17 @@ describe("composer model list", () => {
     }
   });
 
-  it("gives audio no aspect ratio and everything else at least one", () => {
+  it("gives every modality at least one aspect ratio", () => {
+    /**
+     * Audio was the one modality without a ratio, and it is gone: both audio
+     * models are AudioCraft weights under CC-BY-NC 4.0. What remains is image
+     * and video, and a visual modality with no ratio to offer is a broken
+     * control rather than a special case.
+     */
+    expect(COMPOSER_MODALITIES.map((m) => m.id)).toEqual(["image", "video"]);
+
     for (const modality of COMPOSER_MODALITIES) {
-      if (modality.id === "audio") {
-        expect(modality.aspectRatios).toHaveLength(0);
-      } else {
-        expect(modality.aspectRatios.length).toBeGreaterThan(0);
-      }
+      expect(modality.aspectRatios.length).toBeGreaterThan(0);
     }
   });
 });

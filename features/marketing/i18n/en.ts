@@ -11,9 +11,9 @@ export const EN: MarketingCopy = {
   sections: {
     showcase: {
       eyebrow: "The product",
-      title: "Three modalities. One pipeline.",
+      title: "Two modalities. One pipeline.",
       description:
-        "Image, video and audio share the same jobs, the same library and the same credits. Nothing here is a second product bolted on beside the first.",
+        "Image and video share the same jobs, the same library and the same credits. Audio generation is not offered while its licensing is unresolved.",
     },
     features: {
       eyebrow: "Why Atheos",
@@ -90,12 +90,10 @@ export const EN: MarketingCopy = {
         "A lone figure on a rain-slick street, neon reflections, anamorphic",
       video:
         "Slow push through a foggy forest at dawn, shafts of light, drifting mist",
-      audio: "Warm ambient score, soft synth pads, calm and unhurried",
     },
     modalities: [
       { id: "image", label: "Image" },
       { id: "video", label: "Video" },
-      { id: "audio", label: "Audio" },
     ],
     cta: "Create",
     promptLabel: "Prompt",
@@ -145,20 +143,6 @@ export const EN: MarketingCopy = {
         "Background jobs you can navigate away from",
         "Honest progress — no fake percentage bars",
         "Results delivered from our storage, not an expiring vendor link",
-      ],
-    },
-    {
-      label: "Audio",
-      // Sound effects, Foley and ambience — not music. The only audio model
-      // approved for commercial output is MMAudio (MIT); MusicGen is
-      // CC-BY-NC and blocked, so music generation is not something Atheos can
-      // offer and must not be advertised. See services/ai/model-policy.ts.
-      headline: "Sound effects and ambience",
-      body: "The same pipeline, the same library, the same credits. Audio is not a bolted-on second product with its own rules.",
-      bullets: [
-        "Sound-effect, Foley and ambience generation",
-        "One asset library across all three modalities",
-        "Per-modality pricing, one balance",
       ],
     },
   ],
