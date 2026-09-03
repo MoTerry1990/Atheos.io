@@ -115,15 +115,14 @@ export const SHOWCASE: readonly ShowcaseTab[] = [
      * It is a downscale of a native capture, so it is sharp on a high-density
      * display — and it is not 4K, and is never described as 4K.
      */
-    image: "showcase/ai-technology-2048.acd3b7032d",
-    mediaCaption:
-      "AI-generated image - macro of a circuit board, 2048px from a 2752px native generation",
+    image: "showcase/ai-core-1344.3c56384553",
+    mediaCaption: "AI-generated image - a neural energy core, 1344x768 native",
   },
   {
     id: "video",
     icon: Video,
     hue: 237,
-    image: "showcase/ai-technology-2048.acd3b7032d",
+    image: "showcase/ai-core-1344.3c56384553",
     video: {
       src: "/marketing/showcase/neural-core.ae93b2317c.mp4",
       poster: "/marketing/showcase/neural-core-1120.ae93b2317c.webp",
@@ -140,7 +139,7 @@ export const SHOWCASE: readonly ShowcaseTab[] = [
     id: "audio",
     icon: Music,
     hue: 162,
-    image: "showcase/ai-technology-2048.acd3b7032d",
+    image: "showcase/ai-core-1344.3c56384553",
     audio: {
       src: "/marketing/showcase/ambience.ae93b2317c.m4a",
       title: "Futuristic Workspace Ambience",

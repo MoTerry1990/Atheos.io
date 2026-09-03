@@ -89,25 +89,30 @@ const HOMEPAGE_SOURCES = [
 ];
 
 /**
- * The size the gallery is now, and why it is not thirty.
+ * The size the gallery is now, and why it collapsed.
  *
- * It was built to 30 — 18 images and 12 videos. `dragon-tower` was then
- * withdrawn by the owner on review of the published page, so the floor moved
- * to 29 / 18 / 11 rather than being left at a number the gallery no longer
- * meets. A threshold nobody lowers deliberately is one that gets lowered
- * accidentally, which is how the section sat at six cards for several sprints.
+ * It was built to 30, then 29 when `dragon-tower` was withdrawn on review. It
+ * is now **4**, because a publication-policy audit found that 25 of the 29
+ * cards came from models not approved for public commercial use: 18 images
+ * from `nano-banana-pro`, which has no entry in `model-policy.ts` at all, and
+ * 7 videos from owner-evaluation-only models.
+ *
+ * Four is not a target and is not defensible as a gallery. It is what remains
+ * after removing everything that could not lawfully be published, and the
+ * honest floor is the one the gallery actually meets. Raising it again means
+ * generating replacements on approved models.
  *
  * These are floors, not targets: adding a card must never require editing this
  * file, and removing one must always require it.
  */
-const FLOOR = { cards: 29, images: 18, videos: 11 } as const;
+const FLOOR = { cards: 4, images: 0, videos: 4 } as const;
 
 describe("the gallery is the size it claims to be", () => {
-  it("carries at least twenty-nine creations", () => {
+  it("carries at least four creations", () => {
     expect(GALLERY.length).toBeGreaterThanOrEqual(FLOOR.cards);
   });
 
-  it("is at least eighteen images and eleven videos", () => {
+  it("is at least zero images and four videos", () => {
     expect(images.length, "images").toBeGreaterThanOrEqual(FLOOR.images);
     expect(videos.length, "videos").toBeGreaterThanOrEqual(FLOOR.videos);
   });

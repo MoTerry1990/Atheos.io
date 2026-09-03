@@ -92,6 +92,55 @@ The gallery is therefore **29 cards: 18 images and 11 videos**, and
 `tests/unit/gallery.test.ts` carries 29 / 18 / 11 as its floor rather than the
 30 / 18 / 12 it was built to.
 
+## Withdrawn for publication policy, 3 September 2026
+
+A publication-policy audit found that **25 of the 29 published gallery cards**
+came from models not approved for public commercial use. All 25 were withdrawn
+the same day, before Sprint 31, because they were already public.
+
+| Model                       | Status                                                                                                      | Cards |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------- | ----- |
+| `replicate/nano-banana-pro` | **No entry in `model-policy.ts`.** A fail-closed registry means a missing row is a refusal, not an unknown. | 18    |
+| `replicate/veo-3.1-fast`    | `OWNER_EVALUATION_ONLY_PENDING_TERMS` — same.                                                               | 1     |
+| `replicate/video-pro`       | `OWNER_EVALUATION_ONLY_PENDING_TERMS` — private evaluation is not permission to publish.                    | 6     |
+
+The full list is `media-source/withdrawn-2026-09-03.json`.
+
+**Withdrawn, not deleted.** Only the published derivatives under
+`public/marketing/gallery/` were removed. Masters stay on disk, generation and
+asset rows stay in the database, and R2 objects are untouched — these are
+assets that may not be _published_, which is a narrower thing than assets that
+may not exist.
+
+### How it happened
+
+The generation path enforces `model-policy.ts`. The marketing manifest never
+went near the generation path: `scripts/build-gallery-media.mjs` assembled it
+from files on disk, and a file on disk does not know what made it. So the
+policy was enforced everywhere except the one surface that is public,
+permanent and addressed to strangers.
+
+### What stops it recurring
+
+`services/marketing/publication-policy.ts` resolves a model id against the
+registry and refuses anything it does not positively recognise — a missing
+entry, an owner-evaluation status, a blocked model, or an id invented by a
+forged manifest entry. Every card now records the model that produced it in
+`services/marketing/gallery-provenance.generated.ts`, and
+`tests/unit/publication-policy.test.ts` fails the build if any published card
+or showcase tab resolves to a model that is not publishable.
+
+The provenance record is **server-only**. Putting it in the client manifest
+was tried first and `tests/unit/bundle-boundary.test.ts` rejected it: provider
+identities in the browser bundle break the vendor-neutral promise the product
+is built on.
+
+### What is left
+
+**4 cards, all video, no images.** That is not a gallery and is not presented
+as one — it is what remains after removing everything that could not lawfully
+be published. Restoring it means generating replacements on approved models.
+
 ## Reconciliation
 
 Two counts were reported during this sprint and they did not agree. The first —

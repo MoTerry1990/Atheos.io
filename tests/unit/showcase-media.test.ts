@@ -134,11 +134,19 @@ describe("every file a tab points at exists and has content", () => {
     expect(statSync(file).size).toBeGreaterThan(50_000);
   });
 
-  it("does not claim 4K for a 2048px asset", () => {
-    // The master is a native 2752x1536 and this is a downscale of it. Sharp,
-    // and not 4K — a claim the file cannot support.
+  it("does not claim 4K, because the file is not 4K", () => {
+    /**
+     * 1344x768 native from `flux-dev`, and that is the ceiling of the approved
+     * image models — FLUX returns 1344x768 for "16:9", and the
+     * higher-resolution alternatives have no entry in `model-policy.ts`, so
+     * they cannot be used at all. The caption states the real dimensions.
+     *
+     * It is also 7:4 rather than exactly 16:9 (1.75 against 1.778), which
+     * `object-cover` trims by about 1.6% of the width. Worth knowing before
+     * anyone calls it native 16:9.
+     */
     expect(image.mediaCaption.toLowerCase()).not.toMatch(/\b4k\b/);
-    expect(image.image).toContain("2048");
+    expect(image.mediaCaption).toContain("1344x768");
   });
 });
 
