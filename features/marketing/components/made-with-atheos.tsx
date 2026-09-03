@@ -60,9 +60,12 @@ import { cn } from "@/lib/utils";
  *
  * ## Hover is not available on a phone
  *
- * So the same control is a real button on every card. `onFocus` covers
- * keyboard, `onClick` covers touch, and the play affordance is drawn rather
- * than implied — "hover to play" is not an instruction a touch user can follow.
+ * So the same control is a real button on every card, and the play affordance
+ * is drawn rather than implied — "hover to play" is not an instruction a touch
+ * user can follow. Click covers touch and keyboard alike, because Enter and
+ * Space fire a click. Focus deliberately does *not* start playback: it used
+ * to, and it raced the click handler into leaving the video paused while the
+ * button claimed otherwise. See `toggle` below.
  *
  * ## Reduced motion means posters
  *
@@ -283,6 +286,36 @@ function MediaCard({
     void video.play().catch(() => undefined);
   }
 
+  /**
+   * The click path, answered by the element rather than by React state.
+   *
+   * `active` is React's belief about playback; `video.paused` is the fact. The
+   * two came apart on the built page — a card was observed paused while its
+   * button reported `aria-pressed="true"` — because the viewport observer
+   * pauses the element directly, without going through `stop()`. Anything that
+   * reads `active` to decide what a click means inherits that staleness, so
+   * this reads the element instead. The `onPlay`/`onPause` handlers below close
+   * the loop from the other side.
+   *
+   * `onFocus={start}` and `onBlur={stop}` are gone with it. They were a second
+   * way to start and stop the same video, racing the click handler on any
+   * pointer interaction, and focus-to-play means tabbing through a thirty-card
+   * gallery starts thirty previews. Keyboard users lose nothing: Enter and
+   * Space fire a click.
+   */
+  function toggle() {
+    const video = videoRef.current;
+    if (!video) {
+      // First interaction: no source yet. Arm it; the effect below plays it as
+      // soon as the element exists.
+      setArmed(true);
+      setActive(true);
+      return;
+    }
+    if (video.paused) start();
+    else stop();
+  }
+
   function stop() {
     const video = videoRef.current;
     if (!video) return;
@@ -345,6 +378,17 @@ function MediaCard({
             playsInline
             // No `autoPlay`. Playing is a decision made by hover, focus or tap.
             preload="none"
+            /**
+             * State follows the element, not the other way round.
+             *
+             * `active` drives both the crossfade and `aria-pressed`. Anything
+             * that pauses the video without going through `stop()` — the
+             * viewport observer, another card claiming playback, the browser
+             * refusing autoplay — would otherwise leave the button claiming it
+             * is playing something that has stopped.
+             */
+            onPlay={() => setActive(true)}
+            onPause={() => setActive(false)}
             aria-hidden
             className={cn(
               "absolute inset-0 size-full object-cover transition-opacity duration-500",
@@ -362,9 +406,7 @@ function MediaCard({
         {playable ? (
           <button
             type="button"
-            onClick={() => (active ? stop() : start())}
-            onFocus={start}
-            onBlur={stop}
+            onClick={toggle}
             aria-label={`${playLabel}: ${item.prompt}`}
             aria-pressed={active}
             className={cn(

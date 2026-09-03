@@ -242,10 +242,37 @@ describe("only the hero autoplays", () => {
      */
     expect(code).toMatch(/\{armed \? <source/);
     expect(code).toMatch(/setArmed\(true\)/);
-    // `start` is what hover, focus and click all call, and it is the only
-    // thing that arms a card.
     expect(code).toMatch(/onMouseEnter=\{playable \? start : undefined\}/);
-    expect(code).toMatch(/onFocus=\{start\}/);
+    expect(code).toMatch(/onClick=\{toggle\}/);
+  });
+
+  it("lets the element, not React state, decide what a click does", () => {
+    /**
+     * `active` is React's belief; `video.paused` is the fact.
+     *
+     * They were measured disagreeing on the built page — a card paused while
+     * its button reported `aria-pressed="true"` — because the viewport
+     * observer pauses the element directly rather than through `stop()`. A
+     * click handler that branches on `active` inherits that staleness, so it
+     * branches on the element.
+     *
+     * `onFocus={start}` and `onBlur={stop}` go with it: a second way to start
+     * and stop the same video, racing the click handler on any pointer
+     * interaction, and focus-to-play would start a preview for every card a
+     * keyboard user tabs past.
+     */
+    expect(code).toMatch(/if \(video\.paused\) start\(\);/);
+    expect(code).not.toMatch(/onFocus=\{start\}/);
+    expect(code).not.toMatch(/onBlur=\{stop\}/);
+    expect(code).not.toMatch(/active \? stop\(\) : start\(\)/);
+  });
+
+  it("keeps the button's state tied to the element", () => {
+    // The observer, another card claiming playback and a refused autoplay all
+    // pause the video without going through `stop()`. Without these the badge
+    // would keep claiming it is playing.
+    expect(code).toMatch(/onPlay=\{\(\) => setActive\(true\)\}/);
+    expect(code).toMatch(/onPause=\{\(\) => setActive\(false\)\}/);
   });
 
   it("keeps one video playing at a time", () => {
