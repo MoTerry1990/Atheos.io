@@ -90,6 +90,18 @@ export interface ShowcaseTab {
    * makes it checkable.
    */
   image: string;
+  /** One line under the media, stating exactly what it is. */
+  mediaCaption: string;
+  /** Video tab only. Muted autoplay with an explicit sound control. */
+  video?: { src: string; poster: string; label: string };
+  /** Audio tab only. A real playable example, never autoplayed. */
+  audio?: {
+    src: string;
+    title: string;
+    description: string;
+    /** Fallback until `loadedmetadata` reports the real duration. */
+    seconds: number;
+  };
 }
 
 export const SHOWCASE: readonly ShowcaseTab[] = [
@@ -97,13 +109,49 @@ export const SHOWCASE: readonly ShowcaseTab[] = [
     id: "image",
     icon: ImageIcon,
     hue: 303,
-    // `showcase-image.webp` was withdrawn. This is the same still the gallery
-    // carries as "hotel-corridor" — 2752x1536 native, well clear of the
-    // 1152px this panel needs after the crop.
-    image: "gallery/hotel-corridor-1280.f19b9ea967",
+    /**
+     * `img-technology-01`, generated 2 September at a native 2752x1536 and
+     * downscaled here to 2048 for a panel that paints up to ~1200 CSS px.
+     * It is a downscale of a native capture, so it is sharp on a high-density
+     * display — and it is not 4K, and is never described as 4K.
+     */
+    image: "showcase/ai-technology-2048.acd3b7032d",
+    mediaCaption:
+      "AI-generated image - macro of a circuit board, 2048px from a 2752px native generation",
   },
-  { id: "video", icon: Video, hue: 237, image: "showcase-video" },
-  { id: "audio", icon: Music, hue: 162, image: "showcase-audio" },
+  {
+    id: "video",
+    icon: Video,
+    hue: 237,
+    image: "showcase/ai-technology-2048.acd3b7032d",
+    video: {
+      src: "/marketing/showcase/neural-core.ae93b2317c.mp4",
+      poster: "/marketing/showcase/neural-core-1120.ae93b2317c.webp",
+      label: "AI-generated video of a processor core, with sound design",
+    },
+    /**
+     * The exact claim. The picture is model output; the sound is a separately
+     * generated Foley ambience mixed in locally. No commercially approved
+     * model in the catalogue generates audio, so "native audio" would be false.
+     */
+    mediaCaption: "AI-generated video with sound design",
+  },
+  {
+    id: "audio",
+    icon: Music,
+    hue: 162,
+    image: "showcase/ai-technology-2048.acd3b7032d",
+    audio: {
+      src: "/marketing/showcase/ambience.ae93b2317c.m4a",
+      title: "Futuristic Workspace Ambience",
+      description:
+        "Room tone, the faint hum of a large screen and distant city traffic.",
+      seconds: 8,
+    },
+    // Sound effects and ambience, which is what the approved model does.
+    // Music generation is not offered and is not implied here.
+    mediaCaption: "AI-generated environmental sound design",
+  },
 ] as const;
 
 /* -------------------------------------------------------------------------- */

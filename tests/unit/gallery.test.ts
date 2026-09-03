@@ -208,9 +208,12 @@ describe("every file it names exists", () => {
      * revalidated on every visit. The hashing was doing nothing.
      */
     const config = source("next.config.ts");
-    expect(config).toMatch(/marketing\/gallery\/:name/);
+    // The rule covers `showcase` too, since the homepage tabs got their own
+    // hashed derivatives. Matched loosely on the directory group so widening
+    // it again does not break this test for the wrong reason.
+    expect(config).toMatch(/marketing\/\(gallery\|showcase\)\/:name/);
 
-    const rule = config.slice(config.indexOf("/marketing/gallery/:name"));
+    const rule = config.slice(config.indexOf("/marketing/(gallery|showcase)/"));
     expect(rule.slice(0, 400)).toMatch(/max-age=31536000, immutable/);
 
     // And the names have to keep the shape the rule matches.

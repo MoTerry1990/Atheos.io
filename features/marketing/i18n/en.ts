@@ -149,10 +149,14 @@ export const EN: MarketingCopy = {
     },
     {
       label: "Audio",
-      headline: "Music and sound effects",
+      // Sound effects, Foley and ambience — not music. The only audio model
+      // approved for commercial output is MMAudio (MIT); MusicGen is
+      // CC-BY-NC and blocked, so music generation is not something Atheos can
+      // offer and must not be advertised. See services/ai/model-policy.ts.
+      headline: "Sound effects and ambience",
       body: "The same pipeline, the same library, the same credits. Audio is not a bolted-on second product with its own rules.",
       bullets: [
-        "Music and sound-effect generation",
+        "Sound-effect, Foley and ambience generation",
         "One asset library across all three modalities",
         "Per-modality pricing, one balance",
       ],

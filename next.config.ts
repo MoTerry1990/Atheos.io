@@ -338,10 +338,14 @@ const nextConfig: NextConfig = {
        * that grants the year only matched names beginning with `hero`.
        * Measured in production before this: 42 hashed files, every one
        * revalidating on every visit.
+       *
+       * `showcase` and `m4a` joined later, when the three homepage tabs got
+       * their own derivatives. Same reasoning, same naming scheme — a rule that
+       * covers one directory and not its sibling is how the first gap happened.
        */
       {
         source:
-          "/marketing/gallery/:name([a-z0-9-]+\.[0-9a-f]{10}\.(?:mp4|webp))",
+          "/marketing/(gallery|showcase)/:name([a-z0-9-]+\.[0-9a-f]{10}\.(?:mp4|webp|m4a))",
         headers: [
           {
             key: "Cache-Control",

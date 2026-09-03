@@ -4,12 +4,12 @@ import { motion } from "motion/react";
 import { Check } from "lucide-react";
 import { useRef, useState } from "react";
 
-import { GeneratedImage } from "@/features/marketing/components/generated-image";
 import {
   Reveal,
   Section,
   SectionHeading,
 } from "@/features/marketing/components/section";
+import { ShowcaseMedia } from "@/features/marketing/components/showcase-media";
 import { SHOWCASE } from "@/features/marketing/content";
 import { useCopy } from "@/features/marketing/i18n";
 import { duration, easing } from "@/components/ui/motion";
@@ -213,13 +213,7 @@ export function AIShowcase() {
           {/* Order flips on mobile so the artwork does not push the copy
                 below the fold on a phone. */}
           <div className="order-first lg:order-last">
-            <div className="relative aspect-[4/3] w-full overflow-hidden rounded-xl ring-1 ring-white/10">
-              <GeneratedImage
-                src={panel.image}
-                prompt={panelCopy?.headline ?? ""}
-                sizes="(max-width: 1024px) 100vw, 50vw"
-              />
-            </div>
+            <ShowcaseMedia panel={panel} />
           </div>
         </div>
       </div>
