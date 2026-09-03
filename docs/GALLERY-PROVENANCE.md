@@ -55,16 +55,42 @@ sixteen clear the 1600 px floor natively rather than by upscaling.
 
 ## What is on the page
 
-26 cards: 16 images and 10 videos, listed in
+**29 cards: 18 images and 11 videos**, listed in
 `media-source/gallery-selection.json` and built into
 `features/marketing/gallery.generated.ts` by
 `scripts/build-gallery-media.mjs`. Every entry records the SHA-256 of the
 master it came from; the masters live in `media-source/` and are gitignored.
 
+It was built to 30 and one card was withdrawn afterwards — see "Withdrawn after
+publication" below.
+
 Derivatives, exactly as for the hero: the master is never overwritten, the
 published file is a re-encode, and the two are linked by hash. Posters are a
 single 1280w WebP that `next/image` resizes down from; clips are H.264 capped
-at 1280 on the long edge, CRF 32, audio stripped. 36 files, 7.3 MB total.
+at 1280 on the long edge, CRF 32, audio stripped. 40 files, 7.7 MB total.
+
+## Withdrawn after publication
+
+**`dragon-tower`**, 3 September 2026, on the owner's review of the live page.
+
+|                     |                                                                                         |
+| ------------------- | --------------------------------------------------------------------------------------- |
+| Prompt              | "A red dragon on a castle throwing fire from its mouth, cinematic lighting, anamorphic" |
+| Master              | `media-source/candidates/video-65z46ye3.mp4` (a real product generation)                |
+| Master SHA-256      | `9282f7c982c24fdb…`                                                                     |
+| Derivatives removed | `dragon-tower-1280.9282f7c982.webp`, `dragon-tower.9282f7c982.mp4`                      |
+
+Only the published derivatives were deleted. The master is untouched on disk,
+the generation and asset rows are untouched in the database, and the R2 object
+is untouched — the card is unpublished, not erased, and this record is why it
+can be told apart from a card that never existed.
+
+`dragon-modern` is a separate generation with its own prompt and remains in the
+gallery. The withdrawal was of one card, not of the subject.
+
+The gallery is therefore **29 cards: 18 images and 11 videos**, and
+`tests/unit/gallery.test.ts` carries 29 / 18 / 11 as its floor rather than the
+30 / 18 / 12 it was built to.
 
 ## Reconciliation
 

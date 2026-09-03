@@ -320,20 +320,6 @@ export const GALLERY: readonly GalleryItem[] = [
       "d92ff7a0406c7a51fc99df3d12ae642fd6c5435724603fc92d1d59b4754402b5",
   },
   {
-    id: "dragon-tower",
-    kind: "video",
-    category: "Fantasy",
-    prompt:
-      "A red dragon on a castle throwing fire from its mouth, cinematic lighting, anamorphic",
-    modality: "VIDEO",
-    width: 1280,
-    height: 720,
-    poster: "/marketing/gallery/dragon-tower-1280.9282f7c982.webp",
-    src: "/marketing/gallery/dragon-tower.9282f7c982.mp4",
-    masterSha256:
-      "9282f7c982c24fdbdf297846c00b9168f8e86df2def13672558558b7622d8e9a",
-  },
-  {
     id: "dragon-modern",
     kind: "video",
     category: "Fantasy",

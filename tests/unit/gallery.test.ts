@@ -88,14 +88,47 @@ const HOMEPAGE_SOURCES = [
   "app/(marketing)/es/page.tsx",
 ];
 
+/**
+ * The size the gallery is now, and why it is not thirty.
+ *
+ * It was built to 30 — 18 images and 12 videos. `dragon-tower` was then
+ * withdrawn by the owner on review of the published page, so the floor moved
+ * to 29 / 18 / 11 rather than being left at a number the gallery no longer
+ * meets. A threshold nobody lowers deliberately is one that gets lowered
+ * accidentally, which is how the section sat at six cards for several sprints.
+ *
+ * These are floors, not targets: adding a card must never require editing this
+ * file, and removing one must always require it.
+ */
+const FLOOR = { cards: 29, images: 18, videos: 11 } as const;
+
 describe("the gallery is the size it claims to be", () => {
-  it("carries at least thirty creations", () => {
-    expect(GALLERY.length).toBeGreaterThanOrEqual(30);
+  it("carries at least twenty-nine creations", () => {
+    expect(GALLERY.length).toBeGreaterThanOrEqual(FLOOR.cards);
   });
 
-  it("is at least eighteen images and twelve videos", () => {
-    expect(images.length, "images").toBeGreaterThanOrEqual(18);
-    expect(videos.length, "videos").toBeGreaterThanOrEqual(12);
+  it("is at least eighteen images and eleven videos", () => {
+    expect(images.length, "images").toBeGreaterThanOrEqual(FLOOR.images);
+    expect(videos.length, "videos").toBeGreaterThanOrEqual(FLOOR.videos);
+  });
+
+  it("does not carry the withdrawn dragon card", () => {
+    /**
+     * Named, not merely absent from a count. The manifest is regenerated from
+     * `media-source/gallery-selection.json`, so a re-add would be one line and
+     * would keep every other assertion in this file green.
+     *
+     * `dragon-modern` is a different generation with a different prompt and is
+     * deliberately still here — the withdrawal was of one card, not of the
+     * subject.
+     */
+    expect(GALLERY.map((item) => item.id)).not.toContain("dragon-tower");
+    expect(GALLERY.map((item) => item.id)).toContain("dragon-modern");
+
+    for (const item of GALLERY) {
+      expect(item.poster, item.id).not.toContain("dragon-tower");
+      expect(item.src ?? "", item.id).not.toContain("dragon-tower");
+    }
   });
 
   it("counts a video once, not twice", () => {
