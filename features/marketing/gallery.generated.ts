@@ -375,4 +375,58 @@ export const GALLERY: readonly GalleryItem[] = [
     masterSha256:
       "ec50228c6d02f8360e3e88c30253b425fa0d63b74ff4a41b04ab0d2a374f5f27",
   },
+  {
+    id: "hotel-corridor",
+    kind: "image",
+    category: "Cinematic",
+    prompt:
+      "A film still of a figure alone at the end of a hotel corridor, anamorphic framing, one practical lamp",
+    modality: "IMAGE",
+    width: 2752,
+    height: 1536,
+    poster: "/marketing/gallery/hotel-corridor-1280.f19b9ea967.webp",
+    masterSha256:
+      "f19b9ea96713ecad92407702d15269609c2a851a9da60ae1ac83d325ce6ae6c8",
+  },
+  {
+    id: "reading-corner",
+    kind: "image",
+    category: "Interior",
+    prompt:
+      "A reading corner with a worn leather chair and a tall window, late winter light, dust in the air",
+    modality: "IMAGE",
+    width: 2528,
+    height: 1696,
+    poster: "/marketing/gallery/reading-corner-1280.c8f69b0165.webp",
+    masterSha256:
+      "c8f69b0165db46b352ddde673ea839cb95561d08f1cedd061f33b3b42795e826",
+  },
+  {
+    id: "vase-turntable",
+    kind: "video",
+    category: "Product",
+    prompt:
+      "A slow turntable shot of a matte ceramic vase on a lit plinth, shadow sweeping as it turns",
+    modality: "VIDEO",
+    width: 1920,
+    height: 1088,
+    poster: "/marketing/gallery/vase-turntable-1280.b4a621dfa8.webp",
+    src: "/marketing/gallery/vase-turntable.b4a621dfa8.mp4",
+    masterSha256:
+      "b4a621dfa80a1a1e41e8f2b2a33465d9844e03a5fd25a230248eba2b1d475c20",
+  },
+  {
+    id: "grass-goldenhour",
+    kind: "video",
+    category: "Nature",
+    prompt:
+      "A slow push through tall grass at golden hour, seed heads moving in the wind, sun flaring through",
+    modality: "VIDEO",
+    width: 1920,
+    height: 1088,
+    poster: "/marketing/gallery/grass-goldenhour-1280.35adc54372.webp",
+    src: "/marketing/gallery/grass-goldenhour.35adc54372.mp4",
+    masterSha256:
+      "35adc543729c3b1edf2606a5d41a935a0aed1c8bd2705768e00caf3a61a0c800",
+  },
 ] as const;
